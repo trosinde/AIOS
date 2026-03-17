@@ -39,28 +39,37 @@ die Ergebnisse konsolidiert. ~4 Sekunden statt ~10.
 
 ### In Claude Code (empfohlen)
 
-AIOS-Patterns direkt in Claude Code nutzen – ohne CLI:
+AIOS-Patterns direkt in Claude Code nutzen – keine CLI nötig:
 
 ```bash
 # In deinem Projekt
 git clone https://github.com/trosinde/AIOS.git .aios
 ```
 
-Dann in `CLAUDE.md`:
+Dann einfach in natürlicher Sprache arbeiten:
 
-```markdown
-## AIOS Patterns
+```
+Du: "Review src/api.ts mit dem code_review Pattern"
 
-Nutze die Patterns aus `.aios/patterns/` für strukturierte Aufgaben:
+Du: "Extrahiere Requirements aus spec.md und generiere daraus Testfälle"
 
-- **Code Review:** Lies `.aios/patterns/code_review/system.md` und wende es an
-- **Security Review:** `.aios/patterns/security_review/system.md`
-- **Requirements extrahieren:** `.aios/patterns/extract_requirements/system.md`
+Du: "Mach ein Security Review von src/auth/ – nutze das security_review Pattern"
 
-Bei komplexen Aufgaben: Kombiniere mehrere Patterns sequentiell oder parallel.
+Du: "Fasse die Meeting-Notizen zusammen (Pattern: summarize)"
 ```
 
-Claude Code liest die Pattern-Prompts und wendet sie automatisch an.
+Claude Code liest die Pattern-Dateien aus `.aios/patterns/` und wendet sie an.
+
+**Optional:** In `CLAUDE.md` explizit auf Patterns verweisen:
+
+```markdown
+## Patterns
+
+Für strukturierte Aufgaben nutze die Patterns aus `.aios/patterns/`:
+- code_review, security_review, architecture_review
+- extract_requirements, generate_tests, generate_code
+- summarize, refactor, translate_technical
+```
 
 ### CLI Installation
 
