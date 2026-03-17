@@ -19,6 +19,9 @@ npx tsx src/cli.ts plan "Implementiere OAuth2 mit IEC 62443 Compliance"
 
 # Patterns auflisten
 npx tsx src/cli.ts patterns list
+
+# Pattern-Details anzeigen
+npx tsx src/cli.ts patterns show code_review
 ```
 
 ## Architektur

@@ -28,7 +28,13 @@ program
 
     const config = loadConfig();
     const registry = new PatternRegistry(config.paths.patterns);
-    const providerCfg = config.providers[opts.provider || config.defaults.provider];
+    const providerName = opts.provider || config.defaults.provider;
+    const providerCfg = config.providers[providerName];
+    if (!providerCfg) {
+      console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+      console.error(chalk.gray("Verfügbar: " + Object.keys(config.providers).join(", ")));
+      process.exit(1);
+    }
     const provider = createProvider(providerCfg);
     const router = new Router(registry, provider);
     const engine = new Engine(registry, provider);

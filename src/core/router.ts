@@ -25,12 +25,24 @@ export class Router {
     const response = await this.provider.complete(systemPrompt, parts.join("\n\n"));
 
     // JSON aus Antwort extrahieren (LLM könnte es in ```json``` wrappen)
-    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Router hat keinen gültigen Plan erzeugt:\n" + response.content);
+    let jsonStr: string;
+    const fencedMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (fencedMatch) {
+      jsonStr = fencedMatch[1];
+    } else {
+      const rawMatch = response.content.match(/\{[\s\S]*\}/);
+      if (!rawMatch) {
+        throw new Error("Router hat keinen gültigen Plan erzeugt:\n" + response.content);
+      }
+      jsonStr = rawMatch[0];
     }
 
-    const plan: ExecutionPlan = JSON.parse(jsonMatch[0]);
+    let plan: ExecutionPlan;
+    try {
+      plan = JSON.parse(jsonStr);
+    } catch {
+      throw new Error("Router hat ungültiges JSON erzeugt:\n" + jsonStr.slice(0, 200));
+    }
     this.validate(plan);
     return plan;
   }

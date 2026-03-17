@@ -65,7 +65,24 @@ class OllamaProvider implements LLMProvider {
       }),
     });
 
-    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as {
+      message?: { content: string };
+      error?: string;
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+
+    if (data.error) {
+      throw new Error(`Ollama error: ${data.error}`);
+    }
+    if (!data.message?.content) {
+      throw new Error("Ollama: Keine Antwort erhalten");
+    }
+
     return {
       content: data.message.content,
       model: this.model,

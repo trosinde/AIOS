@@ -29,11 +29,7 @@ export class Engine {
         return step.depends_on.every((dep) => status.get(dep) === "done");
       });
 
-      if (ready.length === 0) {
-        if (![...status.values()].some((s) => s === "running")) break;
-        await sleep(50);
-        continue;
-      }
+      if (ready.length === 0) break;
 
       if (ready.length > 1) {
         console.error(chalk.green(`  🔀 Parallel: ${ready.map((s) => s.id).join(" + ")}`));
@@ -110,7 +106,7 @@ export class Engine {
         console.error(chalk.yellow(`  ⬆️  ${step.id} → eskaliert zu ${target}`));
         feedback.set(target, `Problem in "${step.id}": ${errMsg}`);
         status.set(target, "pending");
-        status.set(step.id, "pending");
+        status.set(step.id, "failed");
       } else {
         console.error(chalk.red(`  ❌ ${step.id} gescheitert`));
         status.set(step.id, "failed");
@@ -130,12 +126,14 @@ export class Engine {
   }
 
   private async checkQualityGate(step: ExecutionStep, content: string): Promise<number> {
-    const gatePattern = this.registry.get(step.quality_gate!.pattern);
-    if (!gatePattern) return 10;
+    if (!step.quality_gate) return 10;
+    const gatePattern = this.registry.get(step.quality_gate.pattern);
+    if (!gatePattern) {
+      console.error(chalk.yellow(`  ⚠️  Quality Gate Pattern "${step.quality_gate.pattern}" nicht gefunden, übersprungen`));
+      return 10;
+    }
     const resp = await this.provider.complete(gatePattern.systemPrompt, content);
     const match = resp.content.match(/(\d+)\s*\/?\s*10/);
     return match ? parseInt(match[1]) : 5;
   }
 }
-
-function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }

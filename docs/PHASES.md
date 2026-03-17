@@ -18,32 +18,32 @@ Foundation   Patterns    Personas    Workflows    Team
 
 ### Deliverables
 
-- [ ] AIOS Verzeichnisstruktur unter `~/.aios/`
-- [ ] `aios` CLI-Wrapper (Bash/Python) als Entry Point
-- [ ] `config.yaml` mit Provider-Konfiguration (Claude API + Ollama)
-- [ ] Erste 3 Patterns portiert (z.B. `summarize`, `extract_requirements`, `review_code`)
-- [ ] `aios run <pattern>` funktioniert mit Pipe-Input
-- [ ] Knowledge Base Grundstruktur (Filesystem + SQLite Schema)
+- [x] AIOS Projektstruktur (src/, patterns/, docs/)
+- [x] CLI Entry Point (Commander.js + chalk)
+- [x] `aios.yaml` mit Provider-Konfiguration (Claude API + Ollama)
+- [x] 13 Patterns implementiert (summarize, code_review, security_review, etc.)
+- [x] `aios run <pattern>` funktioniert mit Pipe-Input
+- [ ] Knowledge Base Grundstruktur (better-sqlite3, geplant Phase 3)
 
 ### Technische Schritte
 
 ```bash
-# 1. Projektstruktur anlegen
-mkdir -p ~/.aios/{bus/{inbox,topics,dead-letter},knowledge,patterns,personas,workflows,projects}
+# 1. Repository klonen & Dependencies installieren
+git clone https://github.com/trosinde/AIOS.git && cd AIOS
+npm install
 
-# 2. CLI Entry Point
-# Python-basiert mit Click/Typer für sauberes CLI
-pip install typer rich
+# 2. API Key setzen
+export ANTHROPIC_API_KEY=your-key
 
 # 3. Erster Test
-echo "Analyse diese Architektur..." | aios run summarize
+echo "Analyse diese Architektur..." | npx tsx src/cli.ts run summarize
 ```
 
 ### Definition of Done Phase 1
 - `aios run <pattern>` funktioniert mit stdin/stdout
 - Mindestens 3 Patterns sind nutzbar
 - Provider-Switching zwischen Claude und Ollama funktioniert
-- Grundlegendes Logging in SQLite
+- Logging auf stderr (Unix-Konvention)
 
 ---
 
@@ -104,7 +104,7 @@ patterns/
 - [ ] Persona-Spezifikationsformat definiert (YAML)
 - [ ] 8+ Personas implementiert (siehe `03-PERSONAS.md`)
 - [ ] `aios ask <persona> "<aufgabe>"` funktioniert
-- [ ] Knowledge Base mit Vektor-Suche (ChromaDB oder ähnlich)
+- [ ] Knowledge Base (better-sqlite3, ggf. Vektor-Suche)
 - [ ] Automatischer Knowledge-Import aus Agent-Outputs
 - [ ] Kontext-Injection: Relevantes Wissen wird automatisch zum Prompt hinzugefügt
 - [ ] Persona-Memory: Agenten erinnern sich an projektspezifische Entscheidungen
@@ -223,7 +223,7 @@ steps:
 - [ ] Requirements-Coverage-Matrix
 - [ ] Review-Protokolle mit Audit-Trail
 - [ ] Integration mit externen Tools (Git, Jira-Export, Azure DevOps-Export)
-- [ ] Team-Dashboard (CLI-basiert mit `rich`)
+- [ ] Team-Dashboard (CLI-basiert)
 - [ ] Continuous Improvement: Patterns werden basierend auf Nutzung optimiert
 - [ ] Multi-Projekt-Support
 

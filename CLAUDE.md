@@ -57,17 +57,20 @@ docs/                   # Konzeptdokumentation
 aios "Natürlichsprachliche Aufgabe"      # Router plant dynamisch
 aios run <pattern> [< input]             # Ein Pattern direkt (Fabric-Style)
 aios plan "Aufgabe"                      # Nur planen, nicht ausführen
-aios patterns list|show <n>           # Pattern Management
+aios patterns list                       # Alle Patterns auflisten
+aios patterns show <name>                # Pattern-Details anzeigen
 ```
 
 ## Aktueller Fokus: Phase 1
 
-- [ ] Pattern Registry (Frontmatter parsen, Katalog bauen)
-- [ ] Provider Abstraction (Claude + Ollama)
-- [ ] CLI (`aios run <pattern>` + `aios "Aufgabe"`)
-- [ ] Router (Meta-Agent)
-- [ ] DAG Engine (parallele Ausführung)
-- [ ] Saga Engine (Retry/Rollback)
+- [x] Pattern Registry (Frontmatter parsen, Katalog bauen)
+- [x] Provider Abstraction (Claude + Ollama)
+- [x] CLI (`aios run <pattern>` + `aios "Aufgabe"`)
+- [x] Router (Meta-Agent)
+- [x] DAG Engine (parallele Ausführung)
+- [x] Saga Engine (Retry/Rollback)
+- [x] Bug-Fixes (provider.ts, engine.ts, router.ts, cli.ts)
+- [x] Tests (vitest, 35 Tests)
 
 ## Wichtige Konzeptdocs
 
