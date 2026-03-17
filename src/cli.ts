@@ -2,6 +2,8 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
 import { PatternRegistry } from "./core/registry.js";
 import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
@@ -59,11 +61,12 @@ program
     if (output) process.stdout.write(output.output);
   });
 
-// ─── aios run <pattern> (Fabric-Style) ───────────────────
+// ─── aios run <pattern> (Fabric-Style, mit Parametern) ───
 program
   .command("run <pattern>")
   .description("Ein Pattern direkt ausführen (stdin → LLM → stdout)")
-  .action(async (patternName: string) => {
+  .allowUnknownOption(true)
+  .action(async (patternName: string, _opts, cmd: Command) => {
     const input = await readStdin();
     if (!input) {
       console.error(chalk.red(`Kein Input. Nutze: echo "text" | aios run ${patternName}`));
@@ -79,8 +82,20 @@ program
       process.exit(1);
     }
 
+    // Parameter aus CLI-Args extrahieren (--key=value)
+    const params = parsePatternParams(cmd.args);
+    let systemPrompt = pattern.systemPrompt;
+
+    // Parameter in Prompt injizieren
+    if (Object.keys(params).length > 0) {
+      const paramBlock = Object.entries(params)
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join("\n");
+      systemPrompt += `\n\n## PARAMETER\n\n${paramBlock}`;
+    }
+
     const provider = createProvider(config.providers[config.defaults.provider]);
-    const response = await provider.complete(pattern.systemPrompt, input);
+    const response = await provider.complete(systemPrompt, input);
     process.stdout.write(response.content);
   });
 
@@ -97,32 +112,175 @@ program
     console.log(JSON.stringify(plan, null, 2));
   });
 
-// ─── aios patterns list ──────────────────────────────────
+// ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 
+// ─── aios patterns list [--category=X] ──────────────────
 patternsCmd
   .command("list")
   .description("Alle Patterns auflisten")
-  .action(() => {
+  .option("--category <cat>", "Nach Kategorie filtern")
+  .action((opts) => {
     const config = loadConfig();
     const registry = new PatternRegistry(config.paths.patterns);
-    for (const p of registry.all()) {
-      if (p.meta.internal) continue;
-      console.log(`${chalk.cyan(p.meta.name.padEnd(25))} ${chalk.gray(p.meta.category.padEnd(12))} ${p.meta.description}`);
+    const patterns = opts.category
+      ? registry.byCategory(opts.category)
+      : registry.all();
+
+    if (patterns.length === 0) {
+      console.error(chalk.yellow("Keine Patterns gefunden."));
+      if (opts.category) {
+        console.error(chalk.gray("Kategorien: " + registry.categories().join(", ")));
+      }
+      return;
     }
+
+    // Gruppiert nach Kategorie ausgeben
+    const grouped = new Map<string, typeof patterns>();
+    for (const p of patterns) {
+      if (p.meta.internal) continue;
+      const cat = p.meta.category;
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(p);
+    }
+
+    for (const [cat, pats] of [...grouped.entries()].sort()) {
+      console.log(chalk.bold.blue(`\n  ${cat.toUpperCase()}`));
+      for (const p of pats) {
+        const ver = p.meta.version ? chalk.gray(` v${p.meta.version}`) : "";
+        const paramCount = p.meta.parameters?.length ?? 0;
+        const paramHint = paramCount > 0 ? chalk.yellow(` [${paramCount} params]`) : "";
+        console.log(`    ${chalk.cyan(p.meta.name.padEnd(25))} ${p.meta.description}${ver}${paramHint}`);
+      }
+    }
+    console.log();
   });
 
+// ─── aios patterns search <query> ───────────────────────
+patternsCmd
+  .command("search <query...>")
+  .description("Patterns durchsuchen (Name, Beschreibung, Tags)")
+  .action((queryParts: string[]) => {
+    const config = loadConfig();
+    const registry = new PatternRegistry(config.paths.patterns);
+    const results = registry.search(queryParts.join(" "));
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine Patterns gefunden."));
+      return;
+    }
+
+    console.log(chalk.bold(`\n  ${results.length} Treffer:\n`));
+    for (const p of results) {
+      const tags = p.meta.tags.length > 0 ? chalk.gray(` [${p.meta.tags.join(", ")}]`) : "";
+      console.log(`    ${chalk.cyan(p.meta.name.padEnd(25))} ${p.meta.description}${tags}`);
+    }
+    console.log();
+  });
+
+// ─── aios patterns show <name> ──────────────────────────
 patternsCmd
   .command("show <name>")
-  .description("Pattern-Prompt anzeigen")
+  .description("Pattern-Details anzeigen")
   .action((name: string) => {
     const config = loadConfig();
     const registry = new PatternRegistry(config.paths.patterns);
     const p = registry.get(name);
     if (!p) { console.error(chalk.red("Nicht gefunden.")); process.exit(1); }
+
     console.log(chalk.bold(p.meta.name) + chalk.gray(` (${p.meta.category})`));
+    if (p.meta.version) console.log(chalk.gray(`Version: ${p.meta.version}`));
     console.log(chalk.gray(`${p.meta.description}\n`));
+
+    if (p.meta.tags.length > 0) {
+      console.log(chalk.gray(`Tags: ${p.meta.tags.join(", ")}`));
+    }
+
+    console.log(chalk.gray(`Input: ${p.meta.input_type} → Output: ${p.meta.output_type}`));
+
+    if (p.meta.parameters?.length) {
+      console.log(chalk.bold("\nParameter:"));
+      for (const param of p.meta.parameters) {
+        const vals = param.values ? ` (${param.values.join(" | ")})` : "";
+        const def = param.default !== undefined ? ` [default: ${param.default}]` : "";
+        console.log(`  --${param.name}${vals}${def}`);
+        if (param.description) console.log(`    ${chalk.gray(param.description)}`);
+      }
+    }
+
+    if (p.meta.can_follow?.length) console.log(chalk.gray(`\nFolgt auf: ${p.meta.can_follow.join(", ")}`));
+    if (p.meta.can_precede?.length) console.log(chalk.gray(`Gefolgt von: ${p.meta.can_precede.join(", ")}`));
+    if (p.meta.parallelizable_with?.length) console.log(chalk.gray(`Parallel mit: ${p.meta.parallelizable_with.join(", ")}`));
+
+    console.log(chalk.bold("\n─── Prompt ───\n"));
     console.log(p.systemPrompt);
   });
+
+// ─── aios patterns create <name> ────────────────────────
+patternsCmd
+  .command("create <name>")
+  .description("Neues Pattern erstellen (Template)")
+  .option("--category <cat>", "Kategorie", "custom")
+  .option("--description <desc>", "Beschreibung", "")
+  .action((name: string, opts) => {
+    const config = loadConfig();
+    const dir = join(config.paths.patterns, name);
+
+    if (existsSync(dir)) {
+      console.error(chalk.red(`Pattern "${name}" existiert bereits.`));
+      process.exit(1);
+    }
+
+    mkdirSync(dir, { recursive: true });
+
+    const template = `---
+name: ${name}
+version: "1.0"
+description: "${opts.description || `Beschreibung für ${name}`}"
+category: ${opts.category}
+input_type: text
+output_type: text
+tags: []
+---
+
+# IDENTITY and PURPOSE
+
+Du bist ein Experte für [Bereich]. [Beschreibung deiner Rolle und Expertise.]
+
+# STEPS
+
+1. [Erster Schritt]
+2. [Zweiter Schritt]
+3. [Dritter Schritt]
+
+# OUTPUT FORMAT
+
+[Beschreibung des gewünschten Output-Formats]
+
+# INPUT
+`;
+
+    writeFileSync(join(dir, "system.md"), template, "utf-8");
+    console.log(chalk.green(`Pattern "${name}" erstellt: ${join(dir, "system.md")}`));
+    console.log(chalk.gray("Bearbeite die Datei um den Prompt anzupassen."));
+  });
+
+// ─── Helper ─────────────────────────────────────────────
+
+/** Parsed --key=value und --key value aus CLI-Args */
+function parsePatternParams(args: string[]): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith("--")) continue;
+    const eqIdx = arg.indexOf("=");
+    if (eqIdx !== -1) {
+      params[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+    } else if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
+      params[arg.slice(2)] = args[++i];
+    }
+  }
+  return params;
+}
 
 program.parse();

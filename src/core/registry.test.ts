@@ -75,4 +75,77 @@ describe("PatternRegistry", () => {
       expect(Array.isArray(p.meta.parallelizable_with)).toBe(true);
     }
   });
+
+  // ─── Phase 2: Neue Features ──────────────────────────────
+
+  it("search() findet Patterns nach Name", () => {
+    const results = registry.search("summarize");
+    expect(results.some((p) => p.meta.name === "summarize")).toBe(true);
+  });
+
+  it("search() findet Patterns nach Tag", () => {
+    const results = registry.search("security");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some((p) => p.meta.tags.includes("security"))).toBe(true);
+  });
+
+  it("search() findet nichts bei Unsinn", () => {
+    const results = registry.search("xyznonexistent123");
+    expect(results).toEqual([]);
+  });
+
+  it("search() blendet interne Patterns aus", () => {
+    const results = registry.search("router");
+    expect(results.every((p) => !p.meta.internal)).toBe(true);
+  });
+
+  it("byCategory() filtert korrekt", () => {
+    const reviews = registry.byCategory("review");
+    expect(reviews.length).toBeGreaterThan(0);
+    expect(reviews.every((p) => p.meta.category === "review")).toBe(true);
+  });
+
+  it("byCategory() gibt leer bei unbekannter Kategorie", () => {
+    const results = registry.byCategory("nonexistent_category");
+    expect(results).toEqual([]);
+  });
+
+  it("categories() listet alle Kategorien", () => {
+    const cats = registry.categories();
+    expect(cats).toContain("review");
+    expect(cats).toContain("analyze");
+    expect(cats).toContain("generate");
+    expect(cats).toContain("transform");
+    expect(cats).toContain("report");
+  });
+
+  it("enthält neue Phase-2 Patterns", () => {
+    expect(registry.get("gap_analysis")).toBeDefined();
+    expect(registry.get("identify_risks")).toBeDefined();
+    expect(registry.get("generate_docs")).toBeDefined();
+    expect(registry.get("refactor")).toBeDefined();
+    expect(registry.get("test_report")).toBeDefined();
+  });
+
+  it("hat 24+ Patterns geladen (13 alt + 13 neu)", () => {
+    expect(registry.list().length).toBeGreaterThanOrEqual(24);
+  });
+
+  it("parst parameters korrekt", () => {
+    const p = registry.get("gap_analysis")!;
+    expect(p.meta.parameters).toBeDefined();
+    expect(p.meta.parameters!.length).toBeGreaterThan(0);
+    expect(p.meta.parameters![0].name).toBe("reference");
+    expect(p.meta.parameters![0].type).toBe("enum");
+    expect(p.meta.parameters![0].values).toContain("iec62443");
+  });
+
+  it("parst version korrekt", () => {
+    const p = registry.get("gap_analysis")!;
+    expect(p.meta.version).toBe("1.0");
+  });
+
+  it("patternsDir ist gesetzt", () => {
+    expect(registry.patternsDir).toBe(PATTERNS_DIR);
+  });
 });
