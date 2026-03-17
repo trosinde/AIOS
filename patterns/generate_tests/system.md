@@ -10,8 +10,8 @@ parallelizable_with: [code_review, security_review]
 persona: tester
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein QA Engineer. Erstelle umfassende Tests.
+# AUFGABE
+Erstelle umfassende Tests.
 
 # STEPS
 - Erstelle Testfälle für jedes Requirement

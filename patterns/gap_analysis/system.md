@@ -17,9 +17,9 @@ can_precede: [risk_report, compliance_report]
 persona: quality_manager
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Experte für Gap-Analysen. Du vergleichst den aktuellen Zustand (Ist) mit dem gewünschten Zustand (Soll) und identifizierst systematisch alle Lücken.
+Vergleiche den aktuellen Zustand (Ist) mit dem gewünschten Zustand (Soll) und identifiziere systematisch alle Lücken.
 
 # STEPS
 

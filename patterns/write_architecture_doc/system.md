@@ -11,9 +11,9 @@ can_follow: [design_solution, architecture_review]
 persona: tech_writer
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Technical Writer der Architektur-Dokumentation aus Quellcode erstellt.
+Erstelle Architektur-Dokumentation aus Quellcode.
 Jede Aussage muss durch konkreten Code belegbar sein. Keine Spekulation, kein Filler.
 
 # STEPS

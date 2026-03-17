@@ -5,6 +5,7 @@ import chalk from "chalk";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { PatternRegistry } from "./core/registry.js";
+import { PersonaRegistry } from "./core/personas.js";
 import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { createProvider } from "./agents/provider.js";
@@ -38,8 +39,9 @@ program
       process.exit(1);
     }
     const provider = createProvider(providerCfg);
+    const personas = new PersonaRegistry(config.paths.personas);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, config, personas);
     const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -73,6 +75,7 @@ program
 program
   .command("run <pattern>")
   .description("Ein Pattern direkt ausführen (stdin → LLM → stdout)")
+  .option("--provider <name>", "LLM Provider überschreiben")
   .allowUnknownOption(true)
   .action(async (patternName: string, _opts, cmd: Command) => {
     const input = await readStdin();
@@ -102,10 +105,18 @@ program
       systemPrompt += `\n\n## PARAMETER\n\n${paramBlock}`;
     }
 
+    const providerName = cmd.opts().provider || config.defaults.provider;
+    const providerCfg = config.providers[providerName];
+    if (!providerCfg) {
+      console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+      process.exit(1);
+    }
+    const provider = createProvider(providerCfg);
+    const personas = new PersonaRegistry(config.paths.personas);
+
     if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
-      const provider = createProvider(config.providers[config.defaults.provider]);
-      const engine = new Engine(registry, provider, config);
+      const engine = new Engine(registry, provider, config, personas);
       const toolPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -123,9 +134,13 @@ program
         process.stdout.write(out.output);
       }
     } else {
-      // LLM-Pattern
-      const provider = createProvider(config.providers[config.defaults.provider]);
-      const response = await provider.complete(systemPrompt, input);
+      // LLM-Pattern: Persona + Pattern kombinieren
+      const personaId = pattern.meta.persona;
+      const persona = personaId ? personas.get(personaId) : undefined;
+      const fullPrompt = persona
+        ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
+        : systemPrompt;
+      const response = await provider.complete(fullPrompt, input);
       process.stdout.write(response.content);
     }
   });
@@ -134,10 +149,17 @@ program
 program
   .command("plan <task...>")
   .description("Workflow planen ohne auszuführen")
-  .action(async (taskParts: string[]) => {
+  .option("--provider <name>", "LLM Provider überschreiben")
+  .action(async (taskParts: string[], opts) => {
     const config = loadConfig();
     const registry = new PatternRegistry(config.paths.patterns);
-    const provider = createProvider(config.providers[config.defaults.provider]);
+    const providerName = opts.provider || config.defaults.provider;
+    const providerCfg = config.providers[providerName];
+    if (!providerCfg) {
+      console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+      process.exit(1);
+    }
+    const provider = createProvider(providerCfg);
     const router = new Router(registry, provider);
     const plan = await router.planWorkflow(taskParts.join(" "));
     console.log(JSON.stringify(plan, null, 2));

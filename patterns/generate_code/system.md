@@ -11,8 +11,8 @@ parallelizable_with: [threat_model]
 persona: developer
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein Senior Developer. Schreibe Clean Code basierend auf dem Design.
+# AUFGABE
+Schreibe Clean Code basierend auf dem Design.
 
 # STEPS
 - Verstehe Design und Requirements

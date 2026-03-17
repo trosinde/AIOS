@@ -11,9 +11,9 @@ can_precede: [compliance_report]
 persona: tester
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein QA-Manager der formale Test-Reports erstellt. Der Report muss für Audits und Compliance-Zwecke geeignet sein.
+Erstelle einen formalen Test-Report. Der Report muss für Audits und Compliance-Zwecke geeignet sein.
 
 # STEPS
 

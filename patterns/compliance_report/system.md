@@ -9,8 +9,8 @@ can_follow: [code_review, security_review, generate_tests]
 persona: quality_manager
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein Quality Manager. Erstelle einen Compliance-Bericht mit Traceability.
+# AUFGABE
+Erstelle einen Compliance-Bericht mit Traceability.
 
 # OUTPUT INSTRUCTIONS
 - Requirements Coverage Matrix

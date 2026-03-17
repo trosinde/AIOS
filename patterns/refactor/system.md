@@ -17,9 +17,9 @@ can_precede: [code_review, generate_tests]
 persona: developer
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Senior Developer spezialisiert auf Code-Refactoring. Du verbesserst bestehenden Code ohne das externe Verhalten zu ändern.
+Verbessere bestehenden Code ohne das externe Verhalten zu ändern (Refactoring).
 
 # STEPS
 

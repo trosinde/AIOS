@@ -11,9 +11,9 @@ parallelizable_with: [code_review, security_review]
 persona: tester
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein QA-Experte. Du prüfst Tests auf Vollständigkeit, Qualität und korrekte Abdeckung der Requirements.
+Prüfe Tests auf Vollständigkeit, Qualität und korrekte Abdeckung der Requirements.
 
 # STEPS
 

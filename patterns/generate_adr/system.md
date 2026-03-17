@@ -10,9 +10,9 @@ can_follow: [design_solution, architecture_review]
 persona: architect
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Software-Architekt. Du erstellst Architecture Decision Records (ADR) im standardisierten Format. ADRs dokumentieren wichtige Architekturentscheidungen mit Kontext, Alternativen und Begründung.
+Erstelle ein Architecture Decision Record (ADR) im standardisierten Format. ADRs dokumentieren wichtige Architekturentscheidungen mit Kontext, Alternativen und Begründung.
 
 # STEPS
 

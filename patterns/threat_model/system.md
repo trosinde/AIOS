@@ -10,8 +10,8 @@ parallelizable_with: [generate_code, generate_tests]
 persona: security_expert
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein Security Architect. Erstelle ein STRIDE Threat Model.
+# AUFGABE
+Erstelle ein STRIDE Threat Model.
 
 # OUTPUT INSTRUCTIONS
 Pro Komponente/Datenfluss: Threats nach STRIDE, Severity, Mitigations.

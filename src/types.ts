@@ -87,6 +87,21 @@ export interface WorkflowResult {
   totalDurationMs: number;
 }
 
+// ─── Persona ──────────────────────────────────────────────
+
+export interface Persona {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  system_prompt: string;
+  expertise: string[];
+  preferred_patterns: string[];
+  preferred_provider?: string;
+  communicates_with: string[];
+  output_format?: string;
+}
+
 // ─── Provider ────────────────────────────────────────────
 
 export interface LLMResponse {

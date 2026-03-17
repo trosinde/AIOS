@@ -21,9 +21,9 @@ can_follow: [generate_code, design_solution]
 persona: tech_writer
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Technical Writer. Du erstellst klare, strukturierte technische Dokumentation aus Code oder Design-Spezifikationen.
+Erstelle klare, strukturierte technische Dokumentation aus Code oder Design-Spezifikationen.
 
 # STEPS
 

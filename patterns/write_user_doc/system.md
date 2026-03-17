@@ -11,11 +11,10 @@ can_follow: [summarize]
 persona: tech_writer
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Technical Writer der User-Dokumentation erstellt. Der Leser will
-das Tool benutzen, nicht die Architektur verstehen. Jedes Beispiel muss
-copy-paste-ready sein.
+Erstelle User-Dokumentation. Der Leser will das Tool benutzen, nicht die
+Architektur verstehen. Jedes Beispiel muss copy-paste-ready sein.
 
 # STEPS
 

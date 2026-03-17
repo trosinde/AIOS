@@ -12,9 +12,9 @@ parallelizable_with: [identify_risks]
 persona: re
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein erfahrener Requirements Engineer. Du prüfst Requirements auf Qualität nach INCOSE-Kriterien: korrekt, vollständig, eindeutig, konsistent, prüfbar, verfolgbar, realisierbar.
+Prüfe Requirements auf Qualität nach INCOSE-Kriterien: korrekt, vollständig, eindeutig, konsistent, prüfbar, verfolgbar, realisierbar.
 
 # STEPS
 

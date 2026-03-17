@@ -9,8 +9,8 @@ can_precede: [design_solution, generate_tests]
 persona: re
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein Requirements Engineer in einem regulierten Umfeld.
+# AUFGABE
+Extrahiere strukturierte Requirements aus dem Input.
 
 # STEPS
 - Identifiziere funktionale und nicht-funktionale Anforderungen

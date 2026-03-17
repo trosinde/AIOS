@@ -10,8 +10,8 @@ can_precede: [generate_code, generate_tests, threat_model]
 persona: architect
 ---
 
-# IDENTITY and PURPOSE
-Du bist ein Software Architect. Erstelle ein technisches Design.
+# AUFGABE
+Erstelle ein technisches Design.
 
 # STEPS
 - Analysiere die Requirements

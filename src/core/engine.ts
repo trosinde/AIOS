@@ -4,7 +4,8 @@ import { writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
-import type { AiosConfig, ExecutionPlan, ExecutionStep, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { PersonaRegistry } from "./personas.js";
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
@@ -15,7 +16,8 @@ export class Engine {
   constructor(
     private registry: PatternRegistry,
     private provider: LLMProvider,
-    private config?: AiosConfig
+    private config?: AiosConfig,
+    private personaRegistry?: PersonaRegistry
   ) {}
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -85,7 +87,13 @@ export class Engine {
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
-        const response = await this.provider.complete(pattern.systemPrompt, input);
+        // Persona + Pattern kombinieren: WER (Persona) + WAS (Pattern)
+        const personaId = step.persona ?? pattern.meta.persona;
+        const persona = personaId ? this.personaRegistry?.get(personaId) : undefined;
+        const systemPrompt = persona
+          ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
+          : pattern.systemPrompt;
+        const response = await this.provider.complete(systemPrompt, input);
 
         // Optional: Quality Gate
         if (step.quality_gate) {

@@ -11,9 +11,9 @@ can_precede: [compliance_report]
 persona: quality_manager
 ---
 
-# IDENTITY and PURPOSE
+# AUFGABE
 
-Du bist ein Risiko-Manager der Risiko-Reports für das Management erstellt. Der Report fasst technische Risiken verständlich zusammen und gibt klare Handlungsempfehlungen.
+Erstelle einen Risiko-Report für das Management. Der Report fasst technische Risiken verständlich zusammen und gibt klare Handlungsempfehlungen.
 
 # STEPS
 
