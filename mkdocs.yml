@@ -1,0 +1,64 @@
+site_name: AIOS – AI Orchestration System
+site_description: CLI-basiertes AI-Orchestrierungssystem mit dynamischen Workflows
+repo_url: https://github.com/trosinde/AIOS
+repo_name: trosinde/AIOS
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: de
+  palette:
+    - scheme: slate
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Light Mode
+    - scheme: default
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Dark Mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - Installation & First Steps: USER_GUIDE.md
+  - Architektur:
+      - Systemübersicht: ARCHITECTURE.md
+  - Konzepte:
+      - Patterns: PATTERNS.md
+      - Workflows: WORKFLOWS.md
+      - Personas: PERSONAS.md
+      - Knowledge Base: KNOWLEDGE.md
+  - Referenz:
+      - Vision: VISION.md
+      - Phasenplan: PHASES.md
+      - Router-Insight: ROUTER_INSIGHT.md
+      - Dynamische Orchestrierung: DYNAMIC.md
+      - Workflow-Definitionen: WORKFLOW_DEFINITIONS.md
+      - Regulierte Umgebungen: REGULATED.md
+      - Tech Stack: TECHSTACK.md
