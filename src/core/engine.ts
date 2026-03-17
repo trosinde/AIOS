@@ -3,8 +3,9 @@ import { execFile } from "child_process";
 import { writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
+import { createImageProvider } from "../agents/image-provider.js";
 import type { PatternRegistry } from "./registry.js";
-import type { AiosConfig, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ExecutionPlan, ExecutionStep, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import type { PersonaRegistry } from "./personas.js";
 
 /**
@@ -84,6 +85,10 @@ export class Engine {
         // ── Tool-Pattern: CLI-Tool ausführen ──
         console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
         stepResult = await this.executeTool(step, pattern, input, t0);
+      } else if (pattern.meta.type === "image") {
+        // ── Image-Pattern: Bild generieren ──
+        console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE: ${pattern.meta.image_provider ?? "openai"}]`));
+        stepResult = await this.executeImage(step, pattern, input, t0);
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
@@ -211,6 +216,47 @@ export class Engine {
         }
       });
     });
+  }
+
+  // ─── Image Generation (TypeScript-native) ─────────────────────
+
+  private async executeImage(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number
+  ): Promise<StepResult> {
+    const providerType = pattern.meta.image_provider ?? "openai";
+    const provider = createImageProvider({ type: providerType });
+
+    // Input ist der Prompt (ggf. aus vorherigem Step)
+    const prompt = input.replace(/^##.*\n\n/gm, "").trim();
+
+    const result = await provider.generate(prompt, {
+      size: pattern.meta.image_size,
+    });
+
+    // Output-Verzeichnis
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    // Datei speichern
+    const timestamp = Date.now();
+    const outputFile = join(outputDir, `${step.id}-${timestamp}.${result.format}`);
+    writeFileSync(outputFile, result.data);
+
+    const info = result.revisedPrompt 
+      ? `Bild erzeugt: ${outputFile}\nRevisierter Prompt: ${result.revisedPrompt}`
+      : `Bild erzeugt: ${outputFile}`;
+
+    return {
+      stepId: step.id,
+      pattern: step.pattern,
+      output: info,
+      outputType: "file",
+      filePath: outputFile,
+      durationMs: Date.now() - t0,
+    };
   }
 
   // ─── Saga Rollback ────────────────────────────────────────────

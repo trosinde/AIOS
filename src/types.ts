@@ -27,11 +27,15 @@ export interface PatternMeta {
   internal?: boolean;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool";          // Default: "llm"
+  type?: "llm" | "tool" | "image"; // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
   output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
+  
+  // Image-Pattern Felder
+  image_provider?: ImageProviderType;  // openai, stability, replicate
+  image_size?: string;                  // z.B. "1024x1024"
 }
 
 export interface Pattern {
@@ -129,6 +133,28 @@ export interface ProviderConfig {
   type: "anthropic" | "ollama";
   model: string;
   endpoint?: string;
+}
+
+// ─── Image Provider ──────────────────────────────────────
+
+export type ImageProviderType = "openai" | "stability" | "replicate";
+
+export interface ImageProviderConfig {
+  type: ImageProviderType;
+  model?: string;              // Optional: spezifisches Modell
+  apiKey?: string;             // Falls nicht aus ENV
+}
+
+export interface ImageOptions {
+  size?: string;               // z.B. "1024x1024"
+  format?: "png" | "jpeg" | "webp";
+  quality?: "standard" | "hd";
+}
+
+export interface ImageResult {
+  data: Buffer;
+  format: string;
+  revisedPrompt?: string;      // DALL-E gibt manchmal revised prompt zurück
 }
 
 // ─── Config ──────────────────────────────────────────────
