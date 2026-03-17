@@ -419,7 +419,127 @@ YAML-Datei in `personas/` erstellen mit `id`, `role`, `expertise`, `preferred_pa
 
 ---
 
-## 8. Verzeichnisstruktur
+## 9. Dynamische Orchestrierung
+
+### Drei Schichten
+
+```
+┌──────────────────────────────────────────────────────┐
+│  SCHICHT 1: Pattern Registry (passiv, deklarativ)    │
+│  Markdown-Dateien mit YAML-Frontmatter die           │
+│  beschreiben WAS ein Pattern kann, nicht WIE          │
+│  es orchestriert wird.                               │
+├──────────────────────────────────────────────────────┤
+│  SCHICHT 2: Meta-Agent / Planner (intelligent)       │
+│  Ein LLM-Call der den Pattern-Katalog kennt           │
+│  und daraus einen Execution Plan baut.               │
+├──────────────────────────────────────────────────────┤
+│  SCHICHT 3: Workflow Engine (mechanisch)             │
+│  Nimmt den Plan und führt ihn aus.                   │
+│  Kennt keine AI – nur DAG-Ausführung,                │
+│  Promise.all, Retry-Logik.                           │
+└──────────────────────────────────────────────────────┘
+```
+
+### Konkretes Beispiel: OAuth2 mit Compliance
+
+```bash
+aios "Implementiere OAuth2 mit IEC 62443 Compliance"
+```
+
+**Was passiert:**
+
+1. **Katalog laden** – Registry liest alle `system.md`, extrahiert YAML-Frontmatter, baut kompakten Katalog-Text.
+2. **Router-Call** – Ein normaler LLM-Call: `system` = Router-Prompt, `user` = Aufgabe + Katalog + Projektkontext.
+3. **Plan parsen** – JSON-Antwort parsen und validieren.
+4. **Plan ausführen** – DAG/Saga-Engine führt mechanisch aus.
+5. **Ergebnisse sammeln** – Finaler Output (z.B. `compliance_report`) nach stdout.
+
+Der Router erzeugt für diese Aufgabe einen Saga-Plan mit 8 Steps: `extract_requirements` → `design_solution` (mit Quality Gate) → parallel `generate_code` + `threat_model` → parallel `generate_tests` + `security_review` + `code_review` → `compliance_report`.
+
+### Einfache Aufgaben → Einfache Pläne
+
+Der Router erkennt Komplexität und skaliert den Plan entsprechend:
+
+```bash
+aios "Fasse dieses Meeting-Protokoll zusammen"
+```
+
+```json
+{
+  "plan": {
+    "type": "pipe",
+    "steps": [
+      { "id": "summarize", "pattern": "summarize",
+        "depends_on": [], "input_from": ["$USER_INPUT"] }
+    ]
+  },
+  "reasoning": "Einfache Zusammenfassung, ein Pattern reicht."
+}
+```
+
+Ein einziger Schritt. Kein Overhead. Mittlere Komplexität (z.B. gründliches Code-Review) wird als `scatter_gather` mit parallelen Reviews + Aggregation geplant.
+
+---
+
+## 10. Was der Router sieht vs. was die Engine ausführt
+
+### Die zwei Gesichter einer system.md
+
+Jede Pattern-Datei hat ZWEI Rollen – der Router und die Engine lesen jeweils einen anderen Teil:
+
+```
+security_review/system.md
+═══════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────┐
+│  YAML FRONTMATTER (für den Router)                  │
+│                                                      │
+│  name: security_review                               │
+│  description: "Security-fokussiertes Code Review"    │
+│  input_type: code                                    │
+│  output_type: security_findings                      │
+│  parallelizable_with: [code_review, arch_review]     │
+│                                                      │
+│  → Der ROUTER liest NUR diesen Teil                  │
+│  → Er versteht: "Dieses Tool prüft Code auf         │
+│    Security und kann parallel mit code_review         │
+│    laufen"                                           │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│  MARKDOWN PROMPT (für die Ausführung)               │
+│                                                      │
+│  # IDENTITY and PURPOSE                              │
+│  Du bist ein Cybersecurity-Experte...                │
+│                                                      │
+│  → Die ENGINE liest NUR diesen Teil                  │
+│  → Er wird als system prompt an das LLM geschickt   │
+│  → Der Router hat diesen Teil nie gesehen            │
+└─────────────────────────────────────────────────────┘
+```
+
+### Informationsfluss: Registry → Router → Engine
+
+```
+Registry                    Router                      Engine
+─────────────────────────   ─────────────────────────   ─────────────────────────
+Liest alle system.md        Bekommt kompakten Katalog   Bekommt Execution Plan
+Extrahiert Frontmatter      (~50 Zeilen für 20          Öffnet system.md erneut
+→ baut Katalog-Text         Patterns) + Aufgabe         IGNORIERT Frontmatter
+                            → erzeugt JSON Plan          NUTZT Markdown-Prompt
+                                                         als system prompt
+```
+
+### Schlüssel-Insight
+
+Die Patterns beschreiben sich SELBST so, dass der Router sie als Bausteine verwenden kann – ohne ihre internen Prompts kennen zu müssen.
+
+Das ist wie eine **Toolbox**: Das LABEL auf dem Werkzeug (Frontmatter) sagt dem Planer was es kann. Die FUNKTIONSWEISE (Prompt) kennt nur der Ausführende. Der Router sagt: "Nimm den Kreuzschlitz-Schraubendreher." Die Engine sagt: "Ok, so benutzt man ihn."
+
+---
+
+## 11. Verzeichnisstruktur
 
 ```
 src/
