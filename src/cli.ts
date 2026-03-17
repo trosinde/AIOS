@@ -39,7 +39,7 @@ program
     }
     const provider = createProvider(providerCfg);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider);
+    const engine = new Engine(registry, provider, config);
     const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -47,8 +47,10 @@ program
 
     console.error(chalk.blue(`📋 Plan: ${plan.plan.type} (${plan.plan.steps.length} Schritte)`));
     for (const s of plan.plan.steps) {
+      const pat = registry.get(s.pattern);
+      const typeBadge = pat?.meta.type === "tool" ? chalk.magenta(" [TOOL]") : "";
       const par = s.parallel_group ? chalk.green(` [∥ ${s.parallel_group}]`) : "";
-      console.error(`   ${s.id} → ${chalk.cyan(s.pattern)}${par}`);
+      console.error(`   ${s.id} → ${chalk.cyan(s.pattern)}${typeBadge}${par}`);
     }
 
     if (opts.dryRun) { console.log(JSON.stringify(plan, null, 2)); return; }
@@ -56,9 +58,15 @@ program
     console.error(chalk.blue("\n⚡ Starte...\n"));
     const result = await engine.execute(plan, fullInput);
 
+    // Output: Letzten Step ausgeben, bei Datei-Output den Pfad
     const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
     const output = result.results.get(lastStep.id);
-    if (output) process.stdout.write(output.output);
+    if (output) {
+      if (output.outputType === "file" && output.filePath) {
+        console.error(chalk.green(`\n📁 Datei erzeugt: ${output.filePath}`));
+      }
+      process.stdout.write(output.output);
+    }
   });
 
 // ─── aios run <pattern> (Fabric-Style, mit Parametern) ───
@@ -94,9 +102,32 @@ program
       systemPrompt += `\n\n## PARAMETER\n\n${paramBlock}`;
     }
 
-    const provider = createProvider(config.providers[config.defaults.provider]);
-    const response = await provider.complete(systemPrompt, input);
-    process.stdout.write(response.content);
+    if (pattern.meta.type === "tool") {
+      // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
+      const provider = createProvider(config.providers[config.defaults.provider]);
+      const engine = new Engine(registry, provider, config);
+      const toolPlan = {
+        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
+        plan: {
+          type: "pipe" as const,
+          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+        },
+        reasoning: "Direct tool execution",
+      };
+      const result = await engine.execute(toolPlan, input);
+      const out = result.results.get("run");
+      if (out) {
+        if (out.outputType === "file" && out.filePath) {
+          console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
+        }
+        process.stdout.write(out.output);
+      }
+    } else {
+      // LLM-Pattern
+      const provider = createProvider(config.providers[config.defaults.provider]);
+      const response = await provider.complete(systemPrompt, input);
+      process.stdout.write(response.content);
+    }
   });
 
 // ─── aios plan (nur planen) ──────────────────────────────

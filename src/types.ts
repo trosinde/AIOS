@@ -25,6 +25,13 @@ export interface PatternMeta {
   persona?: string;
   preferred_provider?: string;
   internal?: boolean;
+
+  // Tool-Pattern Felder
+  type?: "llm" | "tool";          // Default: "llm"
+  tool?: string;                   // CLI-Befehl (z.B. "mmdc")
+  tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
+  input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
+  output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
 }
 
 export interface Pattern {
@@ -68,6 +75,8 @@ export interface StepResult {
   stepId: string;
   pattern: string;
   output: string;
+  outputType: "text" | "file";    // Was output enthält
+  filePath?: string;               // Bei outputType: "file"
   durationMs: number;
 }
 
@@ -94,8 +103,14 @@ export interface ProviderConfig {
 
 // ─── Config ──────────────────────────────────────────────
 
+export interface ToolsConfig {
+  output_dir: string;              // Wohin Tool-Outputs geschrieben werden
+  allowed: string[];               // Allowlist erlaubter CLI-Tools
+}
+
 export interface AiosConfig {
   providers: Record<string, ProviderConfig>;
   defaults: { provider: string };
   paths: { patterns: string; personas: string };
+  tools: ToolsConfig;
 }

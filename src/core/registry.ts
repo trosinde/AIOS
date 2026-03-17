@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
+import { execFileSync } from "child_process";
 import { join } from "path";
 import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
@@ -9,6 +10,7 @@ import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
  */
 export class PatternRegistry {
   private patterns = new Map<string, Pattern>();
+  private toolAvailability = new Map<string, boolean>();
   readonly patternsDir: string;
 
   constructor(patternsDir: string) {
@@ -40,6 +42,11 @@ export class PatternRegistry {
       persona: data.persona,
       preferred_provider: data.preferred_provider,
       internal: data.internal ?? false,
+      type: data.type ?? "llm",
+      tool: data.tool,
+      tool_args: data.tool_args,
+      input_format: data.input_format,
+      output_format: data.output_format,
     };
 
     return { meta, systemPrompt: content.trim(), filePath };
@@ -101,6 +108,27 @@ export class PatternRegistry {
     });
   }
 
+  /** Prüft ob ein CLI-Tool auf dem System verfügbar ist (cached) */
+  isToolAvailable(tool: string): boolean {
+    if (this.toolAvailability.has(tool)) {
+      return this.toolAvailability.get(tool)!;
+    }
+    let available = false;
+    try {
+      execFileSync("which", [tool], { stdio: "ignore" });
+      available = true;
+    } catch {
+      available = false;
+    }
+    this.toolAvailability.set(tool, available);
+    return available;
+  }
+
+  /** Alle Tool-Patterns auflisten */
+  toolPatterns(): Pattern[] {
+    return this.all().filter((p) => p.meta.type === "tool");
+  }
+
   /** Kompakten Katalog-Text für den Router bauen (nur Metadaten) */
   buildCatalog(): string {
     const lines: string[] = [];
@@ -109,10 +137,16 @@ export class PatternRegistry {
     for (const p of this.patterns.values()) {
       if (p.meta.internal) continue;
 
+      const typeBadge = p.meta.type === "tool" ? "TOOL" : "LLM";
+      const available = p.meta.type === "tool" && p.meta.tool
+        ? (this.isToolAvailable(p.meta.tool) ? "" : " [NICHT VERFÜGBAR]")
+        : "";
+
       lines.push(`${i}. ${p.meta.name}`);
       lines.push(`   ${p.meta.description}`);
       lines.push(`   Input: ${p.meta.input_type} → Output: ${p.meta.output_type}`);
-      lines.push(`   Kategorie: ${p.meta.category} | Tags: ${p.meta.tags.join(", ") || "-"}`);
+      lines.push(`   Typ: ${typeBadge} | Kategorie: ${p.meta.category} | Tags: ${p.meta.tags.join(", ") || "-"}${available}`);
+      if (p.meta.tool) lines.push(`   CLI-Tool: ${p.meta.tool}`);
       if (p.meta.persona) lines.push(`   Persona: ${p.meta.persona}`);
       if (p.meta.parallelizable_with?.length)
         lines.push(`   Parallel mit: ${p.meta.parallelizable_with.join(", ")}`);

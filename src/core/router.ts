@@ -104,4 +104,15 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
 - NUR Patterns verwenden die im Katalog stehen
 - Keine zirkulären Dependencies
 - Minimaler Plan der die Aufgabe erfüllt
+
+# TOOL-PATTERNS
+
+Im Katalog gibt es zwei Typen von Patterns:
+- **LLM**: Werden von einem LLM ausgeführt (Standard)
+- **TOOL**: Führen ein CLI-Tool aus (kein LLM). Markiert mit "Typ: TOOL"
+
+Wenn ein TOOL-Pattern als "NICHT VERFÜGBAR" markiert ist, verwende es NICHT im Plan.
+
+Tool-Patterns können in Workflows eingebunden werden wie LLM-Patterns.
+Typisches Beispiel: LLM erzeugt Mermaid-Code → Tool rendert zu SVG.
 `;

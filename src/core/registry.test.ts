@@ -148,4 +148,62 @@ describe("PatternRegistry", () => {
   it("patternsDir ist gesetzt", () => {
     expect(registry.patternsDir).toBe(PATTERNS_DIR);
   });
+
+  // ─── Tool-Pattern Tests ────────────────────────────────
+
+  it("parst type: tool korrekt", () => {
+    const p = registry.get("render_diagram")!;
+    expect(p.meta.type).toBe("tool");
+    expect(p.meta.tool).toBe("mmdc");
+    expect(p.meta.tool_args).toBeDefined();
+    expect(p.meta.tool_args).toContain("$INPUT");
+  });
+
+  it("parst type: llm als Default", () => {
+    const p = registry.get("summarize")!;
+    expect(p.meta.type).toBe("llm");
+    expect(p.meta.tool).toBeUndefined();
+  });
+
+  it("generate_diagram ist LLM-Pattern", () => {
+    const p = registry.get("generate_diagram")!;
+    expect(p.meta.type).toBe("llm");
+    expect(p.meta.output_type).toBe("mermaid_code");
+  });
+
+  it("render_diagram hat output_format", () => {
+    const p = registry.get("render_diagram")!;
+    expect(p.meta.output_format).toContain("svg");
+    expect(p.meta.output_format).toContain("png");
+    expect(p.meta.input_format).toBe("mmd");
+  });
+
+  it("toolPatterns() gibt nur Tool-Patterns zurück", () => {
+    const tools = registry.toolPatterns();
+    expect(tools.length).toBeGreaterThan(0);
+    expect(tools.every((p) => p.meta.type === "tool")).toBe(true);
+    expect(tools.some((p) => p.meta.name === "render_diagram")).toBe(true);
+  });
+
+  it("isToolAvailable() erkennt installierte Tools", () => {
+    // 'which' ist auf jedem System verfügbar
+    expect(registry.isToolAvailable("ls")).toBe(true);
+    expect(registry.isToolAvailable("nonexistent_tool_xyz_123")).toBe(false);
+  });
+
+  it("buildCatalog() enthält Typ-Badge", () => {
+    const catalog = registry.buildCatalog();
+    expect(catalog).toContain("Typ: TOOL");
+    expect(catalog).toContain("Typ: LLM");
+    expect(catalog).toContain("CLI-Tool: mmdc");
+  });
+
+  it("categories() enthält tool-Kategorie", () => {
+    const cats = registry.categories();
+    expect(cats).toContain("tool");
+  });
+
+  it("hat 28 Patterns geladen (26 alt + 2 diagram)", () => {
+    expect(registry.list().length).toBeGreaterThanOrEqual(28);
+  });
 });

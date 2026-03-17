@@ -15,6 +15,10 @@ const DEFAULT_CONFIG: AiosConfig = {
     patterns: join(AIOS_HOME, "patterns"),
     personas: join(AIOS_HOME, "personas"),
   },
+  tools: {
+    output_dir: "./output",
+    allowed: ["mmdc", "prettier", "eslint", "ruff", "black"],
+  },
 };
 
 export function loadConfig(): AiosConfig {
@@ -44,6 +48,7 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
     providers: { ...DEFAULT_CONFIG.providers, ...partial.providers },
     defaults: { ...DEFAULT_CONFIG.defaults, ...partial.defaults },
     paths: { ...DEFAULT_CONFIG.paths, ...partial.paths },
+    tools: { ...DEFAULT_CONFIG.tools, ...partial.tools },
   };
 }
 

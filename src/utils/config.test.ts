@@ -37,6 +37,19 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.paths.patterns).toContain("patterns");
   });
+
+  it("hat tools-Konfiguration mit Allowlist", () => {
+    const config = loadConfig();
+    expect(config.tools).toBeDefined();
+    expect(config.tools.output_dir).toBeTruthy();
+    expect(Array.isArray(config.tools.allowed)).toBe(true);
+    expect(config.tools.allowed.length).toBeGreaterThan(0);
+  });
+
+  it("tools.allowed enthält mmdc", () => {
+    const config = loadConfig();
+    expect(config.tools.allowed).toContain("mmdc");
+  });
 });
 
 describe("getAiosHome", () => {

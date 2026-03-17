@@ -1,16 +1,21 @@
 import chalk from "chalk";
+import { execFile } from "child_process";
+import { writeFileSync, mkdirSync, unlinkSync } from "fs";
+import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
-import type { ExecutionPlan, ExecutionStep, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ExecutionPlan, ExecutionStep, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
  * Topologische Sortierung, Promise.all für Paralleles, Retry bei Fehler.
+ * Unterstützt LLM-Patterns und Tool-Patterns.
  */
 export class Engine {
   constructor(
     private registry: PatternRegistry,
-    private provider: LLMProvider
+    private provider: LLMProvider,
+    private config?: AiosConfig
   ) {}
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -71,23 +76,35 @@ export class Engine {
         input += "\n\n## ⚠️ FEEDBACK AUS VORHERIGEM VERSUCH\n\n" + feedback.get(step.id);
       }
 
-      console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
-      const response = await this.provider.complete(pattern.systemPrompt, input);
+      let stepResult: StepResult;
 
-      // Optional: Quality Gate
-      if (step.quality_gate) {
-        const score = await this.checkQualityGate(step, response.content);
-        if (score < step.quality_gate.min_score) {
-          throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
+      if (pattern.meta.type === "tool") {
+        // ── Tool-Pattern: CLI-Tool ausführen ──
+        console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
+        stepResult = await this.executeTool(step, pattern, input, t0);
+      } else {
+        // ── LLM-Pattern: Provider aufrufen ──
+        console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
+        const response = await this.provider.complete(pattern.systemPrompt, input);
+
+        // Optional: Quality Gate
+        if (step.quality_gate) {
+          const score = await this.checkQualityGate(step, response.content);
+          if (score < step.quality_gate.min_score) {
+            throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
+          }
         }
+
+        stepResult = {
+          stepId: step.id,
+          pattern: step.pattern,
+          output: response.content,
+          outputType: "text",
+          durationMs: Date.now() - t0,
+        };
       }
 
-      results.set(step.id, {
-        stepId: step.id,
-        pattern: step.pattern,
-        output: response.content,
-        durationMs: Date.now() - t0,
-      });
+      results.set(step.id, stepResult);
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
@@ -113,6 +130,77 @@ export class Engine {
       }
     }
   }
+
+  // ─── Tool Execution (generisch) ────────────────────────────
+
+  private async executeTool(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number
+  ): Promise<StepResult> {
+    const tool = pattern.meta.tool;
+    if (!tool) throw new Error(`Tool-Pattern "${pattern.meta.name}" hat kein tool definiert`);
+
+    // Security: Allowlist prüfen
+    const allowed = this.config?.tools?.allowed ?? [];
+    if (allowed.length > 0 && !allowed.includes(tool)) {
+      throw new Error(`Tool "${tool}" ist nicht in der Allowlist. Erlaubt: ${allowed.join(", ")}`);
+    }
+
+    // Verfügbarkeit prüfen
+    if (!this.registry.isToolAvailable(tool)) {
+      throw new Error(`Tool "${tool}" ist nicht installiert. Installiere es mit: npm install -g ${tool}`);
+    }
+
+    // Output-Verzeichnis
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    // Temp-Input und Output-Dateien
+    const timestamp = Date.now();
+    const ext = pattern.meta.input_format ?? "txt";
+    const outExt = pattern.meta.output_format?.[0] ?? "txt";
+    const tmpInput = join(outputDir, `${step.id}-${timestamp}.${ext}`);
+    const outputFile = join(outputDir, `${step.id}-${timestamp}.${outExt}`);
+
+    writeFileSync(tmpInput, input, "utf-8");
+
+    try {
+      // Args-Template auflösen: $INPUT → tmpInput, $OUTPUT → outputFile
+      const args = (pattern.meta.tool_args ?? ["-i", "$INPUT", "-o", "$OUTPUT"]).map((arg) =>
+        arg.replace("$INPUT", tmpInput).replace("$OUTPUT", outputFile)
+      );
+
+      await this.execFileAsync(tool, args);
+
+      return {
+        stepId: step.id,
+        pattern: step.pattern,
+        output: `Datei erzeugt: ${outputFile}`,
+        outputType: "file",
+        filePath: outputFile,
+        durationMs: Date.now() - t0,
+      };
+    } finally {
+      // Temp-Input aufräumen
+      try { unlinkSync(tmpInput); } catch { /* ignore */ }
+    }
+  }
+
+  private execFileAsync(cmd: string, args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile(cmd, args, { timeout: 60_000 }, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`${cmd} fehlgeschlagen: ${stderr || error.message}`));
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
+  }
+
+  // ─── Input & Quality Gate ──────────────────────────────────
 
   private buildInput(step: ExecutionStep, userInput: string, results: Map<string, StepResult>): string {
     return step.input_from

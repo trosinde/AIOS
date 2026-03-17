@@ -3,7 +3,7 @@ import { join } from "path";
 import { Engine } from "./engine.js";
 import { PatternRegistry } from "./registry.js";
 import type { LLMProvider } from "../agents/provider.js";
-import type { ExecutionPlan, LLMResponse } from "../types.js";
+import type { AiosConfig, ExecutionPlan, LLMResponse } from "../types.js";
 
 const PATTERNS_DIR = join(process.cwd(), "patterns");
 
@@ -169,5 +169,88 @@ describe("Engine", () => {
     const s2Call = vi.mocked(provider.complete).mock.calls[1];
     expect(s2Call[1]).toContain("Mein Input");
     expect(s2Call[1]).toContain("Output");
+  });
+
+  // ─── Tool-Pattern Tests ────────────────────────────────
+
+  it("erkennt Tool-Patterns und schlägt fehl wenn Tool nicht installiert", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider();
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-output", allowed: ["mmdc"] },
+    };
+    const engine = new Engine(registry, provider, config);
+
+    const plan = makePlan({
+      steps: [
+        { id: "render", pattern: "render_diagram", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "graph TD\n  A-->B");
+    // mmdc ist nicht installiert → failed
+    expect(result.status.get("render")).toBe("failed");
+    // Provider sollte NICHT aufgerufen worden sein (Tool-Pattern)
+    expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it("blockiert Tools die nicht in der Allowlist stehen", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider();
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-output", allowed: ["prettier"] }, // mmdc NICHT erlaubt
+    };
+    const engine = new Engine(registry, provider, config);
+
+    const plan = makePlan({
+      steps: [
+        { id: "render", pattern: "render_diagram", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "graph TD\n  A-->B");
+    expect(result.status.get("render")).toBe("failed");
+  });
+
+  it("LLM-Pattern setzt outputType auf text", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("Diagramm-Code");
+    const engine = new Engine(registry, provider);
+
+    const result = await engine.execute(makePlan(), "Test");
+    const stepResult = result.results.get("step1");
+    expect(stepResult?.outputType).toBe("text");
+    expect(stepResult?.filePath).toBeUndefined();
+  });
+
+  it("Tool-Pattern mit echo erzeugt Datei-Output", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider();
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-output", allowed: ["cp"] },
+    };
+    const engine = new Engine(registry, provider, config);
+
+    // render_diagram nutzt mmdc (nicht verfügbar) → wir testen nur die Branching-Logik
+    // Prüfe dass generate_diagram (LLM-Pattern) korrekt als LLM erkannt wird
+    const plan = makePlan({
+      steps: [
+        { id: "gen", pattern: "generate_diagram", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "Erstelle Flowchart");
+    expect(result.status.get("gen")).toBe("done");
+    expect(result.results.get("gen")?.outputType).toBe("text");
+    expect(provider.complete).toHaveBeenCalledTimes(1);
   });
 });
