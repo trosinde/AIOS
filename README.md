@@ -37,7 +37,34 @@ die Ergebnisse konsolidiert. ~4 Sekunden statt ~10.
 
 ## Ich will es nutzen
 
-### Installation
+### In Claude Code (empfohlen)
+
+AIOS-Patterns direkt in Claude Code nutzen – ohne CLI:
+
+```bash
+# In deinem Projekt
+git clone https://github.com/trosinde/AIOS.git .aios
+```
+
+Dann in `CLAUDE.md`:
+
+```markdown
+## AIOS Patterns
+
+Nutze die Patterns aus `.aios/patterns/` für strukturierte Aufgaben:
+
+- **Code Review:** Lies `.aios/patterns/code_review/system.md` und wende es an
+- **Security Review:** `.aios/patterns/security_review/system.md`
+- **Requirements extrahieren:** `.aios/patterns/extract_requirements/system.md`
+
+Bei komplexen Aufgaben: Kombiniere mehrere Patterns sequentiell oder parallel.
+```
+
+Claude Code liest die Pattern-Prompts und wendet sie automatisch an.
+
+### CLI Installation
+
+Für Standalone-Nutzung oder Automatisierung:
 
 ```bash
 git clone https://github.com/trosinde/AIOS.git && cd AIOS
