@@ -49,8 +49,9 @@ export interface ExecutionStep {
   depends_on: string[];
   input_from: string[];         // "$USER_INPUT" oder step-IDs
   parallel_group?: string | null;
-  retry?: { max: number; on_failure?: "retry_with_feedback" | "escalate"; escalate_to?: string } | null;
+  retry?: { max: number; on_failure?: "retry_with_feedback" | "escalate" | "rollback"; escalate_to?: string } | null;
   quality_gate?: { pattern: string; min_score: number } | null;
+  compensate?: { pattern: string; input_from?: string[] } | null;  // Saga rollback
 }
 
 export interface ExecutionPlan {
@@ -100,6 +101,20 @@ export interface Persona {
   preferred_provider?: string;
   communicates_with: string[];
   output_format?: string;
+}
+
+// ─── Knowledge Base ───────────────────────────────────────
+
+export type KnowledgeType = "decision" | "fact" | "requirement" | "artifact";
+
+export interface KnowledgeItem {
+  id: string;
+  type: KnowledgeType;
+  content: string;
+  source: string;           // Which pattern/step produced this
+  tags: string[];
+  created_at: string;       // ISO timestamp
+  project?: string;
 }
 
 // ─── Provider ────────────────────────────────────────────

@@ -126,6 +126,11 @@ export class Engine {
         feedback.set(step.id, errMsg);
         retries.set(step.id, current + 1);
         status.set(step.id, "pending");
+      } else if (step.retry?.on_failure === "rollback") {
+        console.error(chalk.red(`  ⏪ ${step.id} → Saga Rollback`));
+        status.set(step.id, "failed");
+        // Execute compensating actions for completed steps (reverse order)
+        await this.rollback(plan, results, status);
       } else if (step.retry?.on_failure === "escalate" && step.retry.escalate_to) {
         const target = step.retry.escalate_to;
         console.error(chalk.yellow(`  ⬆️  ${step.id} → eskaliert zu ${target}`));
@@ -206,6 +211,45 @@ export class Engine {
         }
       });
     });
+  }
+
+  // ─── Saga Rollback ────────────────────────────────────────────
+
+  /**
+   * Saga Rollback – führt kompensierende Aktionen für abgeschlossene Steps aus.
+   * Reihenfolge: umgekehrt zur Ausführungsreihenfolge (letzter zuerst).
+   */
+  private async rollback(
+    plan: ExecutionPlan,
+    results: Map<string, StepResult>,
+    status: Map<string, StepStatus>
+  ): Promise<void> {
+    // Finde abgeschlossene Steps mit compensate-Aktion (umgekehrte Reihenfolge)
+    const completedSteps = plan.plan.steps
+      .filter(s => status.get(s.id) === "done" && s.compensate)
+      .reverse();
+
+    for (const step of completedSteps) {
+      if (!step.compensate) continue;
+      const compensatePattern = this.registry.get(step.compensate.pattern);
+      if (!compensatePattern) {
+        console.error(chalk.yellow(`  ⚠️  Compensate-Pattern "${step.compensate.pattern}" nicht gefunden, übersprungen`));
+        continue;
+      }
+
+      try {
+        // Input für Kompensation: Original-Output des Steps + Error-Kontext
+        const originalOutput = results.get(step.id)?.output ?? "";
+        const compensateInput = `## Zu kompensierender Output\n\n${originalOutput}\n\n## Kontext\n\nDieser Step wird zurückgerollt weil ein nachfolgender Step fehlgeschlagen ist.`;
+
+        console.error(chalk.yellow(`  ⏪ Kompensiere ${step.id} → ${step.compensate.pattern}`));
+        await this.provider.complete(compensatePattern.systemPrompt, compensateInput);
+        status.set(step.id, "failed"); // Mark as rolled back
+        console.error(chalk.yellow(`  ↩️  ${step.id} kompensiert`));
+      } catch (compError) {
+        console.error(chalk.red(`  ❌ Kompensation von ${step.id} fehlgeschlagen`));
+      }
+    }
   }
 
   // ─── Input & Quality Gate ──────────────────────────────────
