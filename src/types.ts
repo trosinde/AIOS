@@ -1,12 +1,23 @@
 // ─── Pattern ─────────────────────────────────────────────
 
+export interface PatternParameter {
+  name: string;
+  type: "string" | "enum" | "number" | "boolean";
+  description?: string;
+  values?: string[];
+  default?: string | number | boolean;
+  required?: boolean;
+}
+
 export interface PatternMeta {
   name: string;
+  version?: string;
   description: string;
   category: string;
   input_type: string;
   output_type: string;
   tags: string[];
+  parameters?: PatternParameter[];
   needs_context?: string[];
   can_follow?: string[];
   can_precede?: string[];

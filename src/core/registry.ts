@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import matter from "gray-matter";
-import type { Pattern, PatternMeta } from "../types.js";
+import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
 
 /**
  * Pattern Registry – lädt alle system.md Dateien,
@@ -9,8 +9,10 @@ import type { Pattern, PatternMeta } from "../types.js";
  */
 export class PatternRegistry {
   private patterns = new Map<string, Pattern>();
+  readonly patternsDir: string;
 
   constructor(patternsDir: string) {
+    this.patternsDir = patternsDir;
     this.loadAll(patternsDir);
   }
 
@@ -24,11 +26,13 @@ export class PatternRegistry {
 
     const meta: PatternMeta = {
       name: data.name ?? name,
+      version: data.version,
       description: data.description ?? "",
       category: data.category ?? "uncategorized",
       input_type: data.input_type ?? "text",
       output_type: data.output_type ?? "text",
       tags: data.tags ?? [],
+      parameters: data.parameters as PatternParameter[] | undefined,
       needs_context: data.needs_context,
       can_follow: data.can_follow,
       can_precede: data.can_precede,
@@ -65,6 +69,36 @@ export class PatternRegistry {
   /** Alle Patterns */
   all(): Pattern[] {
     return [...this.patterns.values()];
+  }
+
+  /** Patterns nach Kategorie filtern */
+  byCategory(category: string): Pattern[] {
+    return this.all().filter((p) => p.meta.category === category);
+  }
+
+  /** Alle Kategorien auflisten */
+  categories(): string[] {
+    const cats = new Set<string>();
+    for (const p of this.patterns.values()) {
+      if (!p.meta.internal) cats.add(p.meta.category);
+    }
+    return [...cats].sort();
+  }
+
+  /** Patterns durchsuchen (Name, Beschreibung, Tags) */
+  search(query: string): Pattern[] {
+    const q = query.toLowerCase();
+    const terms = q.split(/\s+/);
+    return this.all().filter((p) => {
+      if (p.meta.internal) return false;
+      const haystack = [
+        p.meta.name,
+        p.meta.description,
+        p.meta.category,
+        ...p.meta.tags,
+      ].join(" ").toLowerCase();
+      return terms.every((t) => haystack.includes(t));
+    });
   }
 
   /** Kompakten Katalog-Text für den Router bauen (nur Metadaten) */
