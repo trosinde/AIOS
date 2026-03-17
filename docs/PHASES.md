@@ -1,259 +1,125 @@
-# 02 – Phasenplan
+# Phasenplan
 
 ## Übersicht
 
-Der Aufbau erfolgt inkrementell in 5 Phasen. Jede Phase liefert sofort nutzbaren Mehrwert.
+Der Aufbau erfolgt inkrementell in 6 Phasen. Jede Phase liefert sofort nutzbaren Mehrwert.
 
 ```
-Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5
-Foundation   Patterns    Personas    Workflows    Team
-(2 Wochen)  (2 Wochen)  (3 Wochen)  (3 Wochen)  (ongoing)
+Phase 1 ──→ Phase 2 ──→ Phase 3 ──→ Phase 4 ──→ Phase 5 ──→ Phase 6
+Foundation   Patterns    Personas    Workflows    Knowledge    Team/Compliance
+  DONE         DONE        DONE      TEILWEISE    TEILWEISE    OFFEN
 ```
 
 ---
 
-## Phase 1: Foundation (Wochen 1–2)
+## Phase 1: Foundation – DONE
 
-**Ziel:** CLI-Grundgerüst, Verzeichnisstruktur, Konfiguration, erster nutzbarer Prototyp.
+**Ziel:** CLI-Grundgerüst, Provider Abstraction, Router, Engine, Tests.
 
 ### Deliverables
 
-- [x] AIOS Projektstruktur (src/, patterns/, docs/)
+- [x] Projektstruktur (src/, patterns/, docs/, personas/)
 - [x] CLI Entry Point (Commander.js + chalk)
-- [x] `aios.yaml` mit Provider-Konfiguration (Claude API + Ollama)
-- [x] 13 Patterns implementiert (summarize, code_review, security_review, etc.)
-- [x] `aios run <pattern>` funktioniert mit Pipe-Input
-- [ ] Knowledge Base Grundstruktur (better-sqlite3, geplant Phase 3)
-
-### Technische Schritte
-
-```bash
-# 1. Repository klonen & Dependencies installieren
-git clone https://github.com/trosinde/AIOS.git && cd AIOS
-npm install
-
-# 2. API Key setzen
-export ANTHROPIC_API_KEY=your-key
-
-# 3. Erster Test
-echo "Analyse diese Architektur..." | npx tsx src/cli.ts run summarize
-```
-
-### Definition of Done Phase 1
-- `aios run <pattern>` funktioniert mit stdin/stdout
-- Mindestens 3 Patterns sind nutzbar
-- Provider-Switching zwischen Claude und Ollama funktioniert
-- Logging auf stderr (Unix-Konvention)
+- [x] `aios.yaml` mit Provider-Konfiguration
+- [x] Provider Abstraction (Claude API + Ollama)
+- [x] `aios run <pattern>` mit Pipe-Input
+- [x] Router (Meta-Agent: Aufgabe → JSON Execution Plan)
+- [x] `aios "Natürlichsprachliche Aufgabe"` mit dynamischer Planung
+- [x] `aios plan "Aufgabe"` (nur planen, nicht ausführen)
+- [x] DAG Engine (parallele Ausführung)
+- [x] Saga Engine (Retry/Rollback)
+- [x] 35 Tests (vitest)
 
 ---
 
-## Phase 2: Pattern Library (Wochen 3–4)
+## Phase 2: Pattern Library – DONE
 
-**Ziel:** Umfangreiche Tool-Bibliothek, Pattern-Komposition, Auto-Discovery.
+**Ziel:** Umfangreiche Pattern-Bibliothek, Suche, Erstellung, Parameterisierung.
 
 ### Deliverables
 
-- [ ] Pattern-Spezifikationsformat definiert (YAML + Markdown)
-- [ ] 15+ Patterns implementiert (siehe `04-TOOLS.md`)
-- [ ] Pattern-Discovery: `aios patterns list`, `aios patterns search <query>`
-- [ ] Pattern-Komposition über Pipes: `aios run p1 | aios run p2`
-- [ ] Pattern-Parameterisierung: `aios run review_code --language=python --standard=iec62443`
-- [ ] Custom Pattern Creator: `aios patterns create <name>`
+- [x] Pattern-Spezifikationsformat (YAML-Frontmatter + Markdown)
+- [x] 32 Patterns in 7 Kategorien implementiert
+- [x] Pattern-Discovery: `aios patterns list`, `aios patterns search <query>`
+- [x] Pattern-Komposition über Pipes: `aios run p1 | aios run p2`
+- [x] Pattern-Parameterisierung: `aios run review_code --language=python`
+- [x] Custom Pattern Creator: `aios patterns create <name>`
+- [x] Tool-Patterns (mmdc, render-image) – Patterns die externe Tools aufrufen
+- [x] Image-Generierung via Patterns
 - [ ] Pattern-Versionierung (Git-basiert)
 
-### Pattern-Kategorien
-
-```
-patterns/
-├── analyze/          # Analyse-Patterns
-│   ├── extract_requirements.md
-│   ├── identify_risks.md
-│   └── gap_analysis.md
-├── generate/         # Generierungs-Patterns
-│   ├── generate_code.md
-│   ├── generate_tests.md
-│   └── generate_docs.md
-├── review/           # Review-Patterns
-│   ├── code_review.md
-│   ├── security_review.md
-│   └── architecture_review.md
-├── transform/        # Transformations-Patterns
-│   ├── summarize.md
-│   ├── translate.md
-│   └── refactor.md
-└── report/           # Reporting-Patterns
-    ├── test_report.md
-    ├── coverage_report.md
-    └── compliance_report.md
-```
-
-### Definition of Done Phase 2
-- 15+ Patterns nutzbar und dokumentiert
-- Pattern-Komposition über Pipes funktioniert
-- Custom Patterns können erstellt werden
-- Pattern-Suche funktioniert
-
 ---
 
-## Phase 3: Personas & Knowledge (Wochen 5–7)
+## Phase 3: Personas – DONE
 
-**Ziel:** Virtuelle Teammitglieder mit Rollen, geteiltes Wissen, Kontextmanagement.
+**Ziel:** Virtuelle Teammitglieder mit Rollen, Persona-Pattern-Trennung zur Laufzeit.
 
 ### Deliverables
 
-- [ ] Persona-Spezifikationsformat definiert (YAML)
-- [ ] 8+ Personas implementiert (siehe `03-PERSONAS.md`)
-- [ ] `aios ask <persona> "<aufgabe>"` funktioniert
-- [ ] Knowledge Base (better-sqlite3, ggf. Vektor-Suche)
-- [ ] Automatischer Knowledge-Import aus Agent-Outputs
-- [ ] Kontext-Injection: Relevantes Wissen wird automatisch zum Prompt hinzugefügt
-- [ ] Persona-Memory: Agenten erinnern sich an projektspezifische Entscheidungen
-
-### Knowledge Flow
-
-```
-Agent Output ──→ [Extractor] ──→ Knowledge Base
-                                      │
-                                      ↓
-                              [Relevance Search]
-                                      │
-                                      ↓
-                              Context für nächsten Agent
-```
-
-### Definition of Done Phase 3
-- Personas sind ansprechbar und antworten rollenkonform
-- Wissen wird automatisch extrahiert und gespeichert
-- Kontext-Injection liefert relevantes Wissen zum Prompt
-- Cross-Agent-Wissenstransfer funktioniert ohne manuelle Übertragung
+- [x] Persona-Spezifikationsformat (YAML)
+- [x] 8 Personas implementiert (RE, Architect, Dev, Tester, Security, Reviewer, TechWriter, QM)
+- [x] PersonaRegistry (Laden, Auflisten, Auswählen)
+- [x] Persona+Pattern-Separation zur Laufzeit
+- [x] `aios ask <persona> "<aufgabe>"` funktioniert
 
 ---
 
-## Phase 4: Workflows & Orchestrierung (Wochen 8–10)
+## Phase 4: Workflows & Orchestrierung – TEILWEISE
 
 **Ziel:** Definierte Workflows, EIP-Patterns, parallele Ausführung, Saga-Support.
 
-### Deliverables
+### Erledigt
+
+- [x] DAG-Ausführung (parallele Steps mit Abhängigkeiten)
+- [x] Scatter-Gather für parallele Agent-Ausführung
+- [x] Retry bei Fehlern mit Escalation
+- [x] Saga-Pattern mit Rollback/Compensation
+
+### Offen
 
 - [ ] Workflow-Definition-Format (YAML-basiert)
 - [ ] `aios workflow run <name>` startet definierten Workflow
 - [ ] `aios compose` für interaktive Workflow-Erstellung
-- [ ] Message Bus implementiert (Filesystem-basiert)
-- [ ] Pub/Sub für Topic-basierte Kommunikation
-- [ ] Scatter-Gather für parallele Agent-Ausführung
-- [ ] Saga-Pattern mit Rollback-Fähigkeit
+- [ ] Pub/Sub Message Bus (Topic-basierte Kommunikation)
 - [ ] Status-Tracking: `aios status` zeigt laufende Workflows
 - [ ] Workflow-Visualisierung (Mermaid-Output)
 
-### Workflow-Definition
+---
 
-```yaml
-# workflows/feature_development.yaml
-name: feature_development
-description: "Vollständiger Feature-Entwicklungszyklus"
-trigger: manual
+## Phase 5: Knowledge Base – TEILWEISE
 
-steps:
-  - id: analyze
-    persona: requirements_engineer
-    pattern: extract_requirements
-    input: "${trigger.input}"
-    output_to: knowledge
+**Ziel:** Geteiltes Wissen, Kontextmanagement, automatische Extraktion.
 
-  - id: design
-    persona: architect
-    pattern: design_solution
-    depends_on: [analyze]
-    input_from: [analyze.output]
+### Erledigt
 
-  - id: implement
-    type: scatter-gather
-    depends_on: [design]
-    parallel:
-      - persona: developer
-        pattern: generate_code
-        input_from: [design.output]
-      - persona: developer
-        pattern: generate_tests
-        input_from: [design.output, analyze.output]
+- [x] Knowledge Base Grundstruktur (better-sqlite3)
+- [x] CRUD-Operationen (Erstellen, Lesen, Aktualisieren, Löschen)
+- [x] Textsuche über gespeichertes Wissen
+- [x] Statistiken (`aios knowledge stats`)
 
-  - id: review
-    type: scatter-gather
-    depends_on: [implement]
-    parallel:
-      - persona: reviewer
-        pattern: code_review
-      - persona: security_expert
-        pattern: security_review
+### Offen
 
-  - id: test
-    persona: tester
-    pattern: run_test_suite
-    depends_on: [implement]
-    on_failure:
-      goto: implement
-      max_retries: 2
-
-  - id: report
-    persona: quality_manager
-    pattern: compliance_report
-    depends_on: [review, test]
-    artifacts:
-      - test_report
-      - coverage_matrix
-      - review_summary
-```
-
-### Definition of Done Phase 4
-- Workflows können definiert und ausgeführt werden
-- Parallele Ausführung funktioniert
-- Fehlerbehandlung mit Retry/Rollback
-- Status-Tracking und Visualisierung
+- [ ] Automatischer Knowledge-Import aus Agent-Outputs (Extractor)
+- [ ] Kontext-Injection: Relevantes Wissen wird automatisch zum Prompt hinzugefügt
+- [ ] Vektor-Suche (Embedding-basiert)
+- [ ] Persona-Memory: Agenten erinnern sich an projektspezifische Entscheidungen
+- [ ] Cross-Agent-Wissenstransfer
 
 ---
 
-## Phase 5: Virtual Team Operations (ab Woche 11, ongoing)
+## Phase 6: Compliance & Team Operations – OFFEN
 
 **Ziel:** Vollwertiges virtuelles Entwicklungsteam für regulierte Umgebungen.
 
 ### Deliverables
 
-- [ ] Vollständiger Requirements-to-Test-Traceability-Workflow
+- [ ] Requirements-to-Test-Traceability-Workflow
 - [ ] Automatische Test-Report-Generierung
 - [ ] Requirements-Coverage-Matrix
 - [ ] Review-Protokolle mit Audit-Trail
+- [ ] Quality Gates (automatische Prüfung vor Freigabe)
+- [ ] Compliance Reports (IEC 62443, ISO 27001 etc.)
+- [ ] `aios team "Aufgabe"` – Aufgabe ans ganze Team delegieren
+- [ ] Team-Dashboard (CLI-basiert, `aios status`)
 - [ ] Integration mit externen Tools (Git, Jira-Export, Azure DevOps-Export)
-- [ ] Team-Dashboard (CLI-basiert)
-- [ ] Continuous Improvement: Patterns werden basierend auf Nutzung optimiert
 - [ ] Multi-Projekt-Support
-
-### Team-Interaktionsmodus
-
-```bash
-# Aufgabe ans ganze Team delegieren
-aios team "Implementiere Feature X basierend auf REQ-042"
-
-# Status checken
-aios status
-# Output:
-# ┌────────────────────────────────────────────────┐
-# │ Task: Feature X (REQ-042)                      │
-# ├──────────────┬─────────┬───────────────────────┤
-# │ Agent        │ Status  │ Ergebnis              │
-# ├──────────────┼─────────┼───────────────────────┤
-# │ Architect    │ ✅ Done  │ Design doc erstellt   │
-# │ Developer    │ 🔄 WIP  │ 3/5 Module fertig     │
-# │ Tester       │ ⏳ Wait │ Wartet auf Code        │
-# │ Reviewer     │ ⏳ Wait │ Wartet auf Code        │
-# │ QA Manager   │ ⏳ Wait │ Wartet auf Test+Review │
-# └──────────────┴─────────┴───────────────────────┘
-
-# Ergebnis abrufen
-aios result task-042 --format=report
-```
-
-### Definition of Done Phase 5
-- End-to-End Feature-Entwicklung durch virtuelles Team
-- Compliance-Artefakte werden automatisch erzeugt
-- Team arbeitet weitgehend autonom nach Aufgabenstellung
-- Traceability-Matrix ist vollständig und auditierbar

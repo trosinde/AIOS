@@ -1,5 +1,36 @@
 # Parallele & Synchronisierte Workflows
 
+## Enterprise Integration Patterns in AIOS
+
+AIOS implementiert folgende Patterns aus Gregor Hohpe & Bobby Woolf's
+*Enterprise Integration Patterns* (Addison-Wesley, 2003):
+
+| EIP Pattern | AIOS Umsetzung | Implementierung |
+|-------------|---------------|-----------------|
+| **Pipes and Filters** | `aios run p1 \| aios run p2` – Unix-Pipes | `cli.ts` stdout→stdin |
+| **Content-Based Router** | Router analysiert Aufgabe → wählt Patterns | `router.ts` → LLM-basiert |
+| **Scatter-Gather** | Parallele Reviews + Aggregation | `engine.ts` → `Promise.all` |
+| **Process Manager** | DAG Engine mit topologischer Sortierung | `engine.ts` → Event Loop |
+| **Message Store** | Result Store (Map<stepId, StepResult>) | `engine.ts` → in-memory |
+| **Aggregator** | `aggregate_reviews` Pattern | Pattern + Engine |
+| **Saga** | Retry → Escalation → Rollback (Kompensation) | `engine.ts` → compensate |
+| **Dead Letter Channel** | Failed Steps → status "failed" + Error-Log | `engine.ts` → stderr |
+| **Wire Tap** | Logging auf stderr (Unix-Konvention) | Alle Komponenten |
+| **Claim Check** | Tool-Patterns: Input→Temp-Datei→Tool→Output-Datei | `engine.ts` → executeTool |
+
+### Noch nicht implementiert (geplant)
+
+| EIP Pattern | Geplante Umsetzung |
+|-------------|-------------------|
+| **Publish-Subscribe** | Event Bus für Persona-Kommunikation |
+| **Message Broker** | Zentrale Nachrichtenvermittlung zwischen Agenten |
+| **Idempotent Receiver** | Deduplizierung bei Retry |
+| **Correlation Identifier** | Workflow-ID für Tracing über Steps hinweg |
+
+
+---
+
+
 ## Das Problem mit reinen Pipes
 
 Pipes sind sequentiell – jeder Schritt wartet auf den vorherigen:
@@ -95,6 +126,12 @@ Gesamt: ~45 Sekunden statt ~105 Sekunden sequentiell
 ═══════════════════════════════════════════════════════════
 ```
 
+> **EIP-Referenz:** Dieses Pattern entspricht dem *Scatter-Gather* Pattern
+> (Hohpe/Woolf, Kap. 3) – ein *Composed Message Processor*, der eine Nachricht
+> an mehrere Empfänger verteilt (Fan-Out) und die Antworten über einen
+> *Aggregator* zusammenführt (Fan-In). In AIOS: `engine.ts` → `Promise.all`
+> für den Scatter, ein dediziertes Aggregator-Pattern für den Gather.
+
 
 ---
 
@@ -176,6 +213,12 @@ t=140s   FERTIG.
          Mit DAG:          30+30+40+20+20       = 140s
 ```
 
+> **EIP-Referenz:** Dieses Pattern entspricht dem *Process Manager* Pattern
+> (Hohpe/Woolf, Kap. 5) – ein zentraler Koordinator, der den Nachrichtenfluss
+> über mehrere Processing Steps steuert. Die topologische Sortierung des DAG
+> bestimmt die Ausführungsreihenfolge. Der *Message Store* (Result Store)
+> speichert Zwischenergebnisse und ermöglicht die Dependency-Resolution.
+
 
 ---
 
@@ -234,6 +277,12 @@ FEHLER BEI REVIEW (nach erfolgreichem Test):
               → Muss NUR die Findings fixen
 ```
 
+> **EIP-Referenz:** Dieses Pattern kombiniert das *Saga* Pattern (Garcia-Molina/Salem, 1987)
+> mit dem *Process Manager* (Hohpe/Woolf, Kap. 5). Die Kompensationslogik
+> (Retry → Escalation → Rollback) implementiert semantisches Undo über
+> `compensate`-Funktionen. Fehlgeschlagene Steps landen im *Dead Letter Channel*
+> (stderr + status "failed"), vergleichbar mit Hohpe/Woolf's *Invalid Message Channel*.
+
 
 ---
 
@@ -282,3 +331,23 @@ der weiß, welche Ergebnisse da sind und welche noch fehlen:
 
 Das ist im Kern eine **topologische Sortierung** des DAG
 kombiniert mit einem **Event-Loop** der auf Completion prüft.
+
+
+---
+
+
+## Dynamische Pattern-Wahl durch den Router
+
+Der Router (selbst ein LLM-Call) wählt das Workflow-Pattern basierend auf der Aufgabe:
+
+| Aufgabe | Router erkennt | Gewähltes EIP-Pattern |
+|---------|---------------|----------------------|
+| "Fasse zusammen" | Einfach, 1 Disziplin | Pipes and Filters (1 Step) |
+| "Review diesen Code" | Multi-Perspektive | Scatter-Gather (parallel + Aggregator) |
+| "Implementiere Feature X" | Abhängige Schritte | Process Manager (DAG) |
+| "Feature mit Compliance" | Reguliert, Quality Gates | Saga (DAG + Rollback) |
+
+Der Router nutzt die Pattern-Metadaten (`parallelizable_with`, `can_follow`, `depends_on`)
+als Hinweise, entscheidet aber eigenständig basierend auf der konkreten Aufgabe.
+
+Implementierung: `src/core/router.ts` → `planWorkflow()` → JSON Execution Plan

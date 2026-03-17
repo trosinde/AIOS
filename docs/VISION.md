@@ -10,57 +10,70 @@ Ein CLI-basiertes AI-Orchestrierungssystem, das unabhängige AI-Agenten zu einem
 
 ## Kernprobleme die gelöst werden
 
-| Problem | Lösung |
-|---------|--------|
-| Agenten arbeiten isoliert, kein Wissenstransfer | Shared Knowledge Base mit Event-Bus |
-| Manuelles Wechseln zwischen CLI-Tools | Unified CLI als Router/Orchestrator |
-| Inkonsistenzen durch manuelle Übertragung | Single Source of Truth + automatische Synchronisation |
-| Keine dynamische Workflow-Komposition | Pattern-basierte Pipelines mit EIP-Routing |
-| Sequentielle statt parallele Arbeit | Message-Broker-Pattern für parallele Agenten |
+| Problem | Lösung | Status |
+|---------|--------|--------|
+| Agenten arbeiten isoliert, kein Wissenstransfer | Shared Knowledge Base (SQLite) | ✓ Basis implementiert (Vector Store geplant) |
+| Manuelles Wechseln zwischen CLI-Tools | Unified CLI als Router/Orchestrator | ✓ Implementiert |
+| Inkonsistenzen durch manuelle Übertragung | Single Source of Truth + automatische Synchronisation | ✓ Pattern Registry implementiert |
+| Keine dynamische Workflow-Komposition | Pattern-basierte Pipelines mit EIP-Routing | ✓ Router + DAG Engine (Message Bus geplant) |
+| Sequentielle statt parallele Arbeit | DAG Engine für parallele Agenten | ✓ Implementiert (Message-Broker geplant) |
 
 ## System-Übersicht
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    AIOS CLI                          │
-│              (Unified Entry Point)                   │
+│              (Unified Entry Point)            [✓]    │
 ├─────────────────────────────────────────────────────┤
 │                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │ Pattern  │  │ Persona  │  │ Workflow │          │
-│  │ Registry │  │ Registry │  │ Engine   │          │
+│  │ Pattern  │  │  Router  │  │ Workflow │          │
+│  │ Registry │  │(Meta-Ag.)│  │ Engine   │          │
+│  │   [✓]    │  │   [✓]    │  │   [✓]    │          │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘          │
 │       │              │              │                │
-│  ┌────┴──────────────┴──────────────┴────┐          │
-│  │         Message Bus (EIP)             │          │
-│  │   (Pub/Sub, Routing, Saga, DLQ)       │          │
-│  └────┬──────────────┬──────────────┬────┘          │
-│       │              │              │                │
-│  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐          │
-│  │ Agent 1  │  │ Agent 2  │  │ Agent N  │          │
-│  │(Claude)  │  │(Ollama)  │  │(OpenAI)  │          │
-│  └──────────┘  └──────────┘  └──────────┘          │
+│       └──────────────┼──────────────┘                │
+│              (direkter Aufruf)                       │
+│                      │                               │
+│  ┌────────────┐  ┌───┴────────┐                     │
+│  │ Agent      │  │ Agent      │                     │
+│  │ (Claude)   │  │ (Ollama)   │                     │
+│  │    [✓]     │  │    [✓]     │                     │
+│  └────────────┘  └────────────┘                     │
 │                                                      │
 │  ┌──────────────────────────────────────────┐       │
 │  │        Shared Knowledge Base             │       │
-│  │  (Filesystem + SQLite + Vector Store)    │       │
+│  │  (Filesystem + SQLite)            [✓]    │       │
 │  └──────────────────────────────────────────┘       │
+│                                                      │
+│  Geplant:                                            │
+│  - Message Bus (EIP: Pub/Sub, Routing, DLQ)          │
+│  - Vector Store für Knowledge Base                   │
+│  - Weitere Provider (OpenAI, etc.)                   │
+│  - Persona Registry                                  │
 └─────────────────────────────────────────────────────┘
+
+[✓] = implementiert
 ```
 
-## Dateistruktur dieses Konzepts
+## Dokumentation
 
 | Datei | Inhalt |
 |-------|--------|
-| `README.md` | Dieses Dokument – Vision und Übersicht |
-| `01-ARCHITECTURE.md` | Systemarchitektur mit EIP-Patterns |
-| `02-PHASES.md` | Implementierungsphasenplan |
-| `03-PERSONAS.md` | Virtuelle Team-Definitionen |
-| `04-TOOLS.md` | Tool-Bibliothek und Pattern-Spezifikation |
-| `05-KNOWLEDGE.md` | Shared Knowledge Management |
-| `06-WORKFLOWS.md` | Workflow-Patterns und Komposition |
-| `07-REGULATED.md` | Compliance, Traceability und Reporting |
-| `08-TECHSTACK.md` | Technische Umsetzung mit Claude Code / OpenCode |
+| `VISION.md` | Dieses Dokument – Vision und Übersicht |
+| `ARCHITECTURE.md` | Systemarchitektur mit EIP-Patterns |
+| `PHASES.md` | Implementierungsphasenplan |
+| `PERSONAS.md` | Virtuelle Team-Definitionen |
+| `PATTERNS.md` | Pattern-Katalog und Kompositions-Spezifikation |
+| `KNOWLEDGE.md` | Shared Knowledge Management |
+| `WORKFLOWS.md` | Workflow-Patterns und Komposition |
+| `WORKFLOW_DEFINITIONS.md` | YAML-basierte Workflow-Definitionen |
+| `REGULATED.md` | Compliance, Traceability und Reporting |
+| `TECHSTACK.md` | Technische Umsetzung |
+| `HOW_IT_WORKS.md` | Visuell: Wie das Pattern-System funktioniert |
+| `DYNAMIC.md` | Dynamische Workflow-Orchestrierung |
+| `ROUTER_INSIGHT.md` | Was der Router sieht vs. was ausgeführt wird |
+| `USER_GUIDE.md` | Benutzerhandbuch |
 
 ## Prinzipien
 

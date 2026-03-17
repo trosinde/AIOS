@@ -12,6 +12,7 @@ name: extract_requirements
 version: "1.0"
 description: "Extrahiert strukturierte Requirements aus natürlichsprachlichem Input"
 category: analyze
+type: llm                          # llm (Standard) oder tool
 input_type: text
 output_type: structured
 tags: [requirements, analysis, regulated]
@@ -59,6 +60,31 @@ Gefolgt von:
 # INPUT
 ```
 
+### Tool-Pattern Felder
+
+Patterns mit `type: tool` rufen kein LLM auf, sondern führen ein CLI-Tool aus. Zusätzliche Felder:
+
+| Feld | Beschreibung | Beispiel |
+|------|-------------|---------|
+| `type` | Muss `tool` sein | `tool` |
+| `tool` | Name des CLI-Tools | `mmdc`, `render-image` |
+| `tool_args` | Argumente als Array. `$INPUT`/`$OUTPUT` werden ersetzt | `["-i", "$INPUT", "-o", "$OUTPUT"]` |
+| `input_format` | Erwartetes Dateiformat des Inputs | `mmd`, `txt` |
+| `output_format` | Mögliche Ausgabeformate | `[svg, png, pdf]` |
+| `can_follow` | Patterns, deren Output als Input dient | `[generate_diagram]` |
+
+```markdown
+---
+name: render_diagram
+type: tool
+tool: mmdc
+tool_args: ["-i", "$INPUT", "-o", "$OUTPUT", "-t", "dark", "-b", "transparent"]
+input_format: mmd
+output_format: [svg, png, pdf]
+can_follow: [generate_diagram]
+---
+```
+
 ### CLI-Nutzung
 
 ```bash
@@ -69,7 +95,7 @@ cat spec.md | aios run extract_requirements
 cat spec.md | aios run extract_requirements --standard=iec62443 --detail_level=high
 
 # In einer Pipe
-cat spec.md | aios run extract_requirements | aios run classify_requirements | aios run prioritize
+cat spec.md | aios run extract_requirements | aios run identify_risks
 ```
 
 ---
@@ -81,67 +107,69 @@ cat spec.md | aios run extract_requirements | aios run classify_requirements | a
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
 | `extract_requirements` | Requirements aus Text extrahieren | Freitext, Specs | Strukturierte Requirements |
-| `gap_analysis` | Lücken in Dokumenten identifizieren | Dokument + Referenz | Gap-Report |
+| `gap_analysis` | Lücken zwischen Ist- und Soll-Zustand identifizieren | Dokument + Referenz | Gap-Report |
 | `identify_risks` | Risiken identifizieren und bewerten | Anforderungen, Design | Risk Register |
-| `classify_input` | Input nach Typ klassifizieren | Beliebiger Text | Klassifikation + Routing |
-| `extract_decisions` | Entscheidungen aus Texten extrahieren | Meeting Notes, E-Mails | ADR-Entwürfe |
-| `dependency_analysis` | Abhängigkeiten zwischen Komponenten | Code, Design | Dependency Graph |
-| `complexity_assessment` | Aufwand und Komplexität schätzen | Requirements, User Stories | Schätzung + Begründung |
+| `threat_model` | STRIDE Threat Model erstellen | Design Docs | Threat Model |
 
 ### Kategorie: Generate
 
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
+| `design_solution` | Technisches Design aus Requirements erstellen | Requirements | Design-Spezifikation |
+| `generate_adr` | Architecture Decision Record erstellen | Entscheidungskontext | ADR (Markdown) |
 | `generate_code` | Code basierend auf Spezifikation | Design Doc, Interface Spec | Source Code |
-| `generate_tests` | Testfälle generieren | Requirements, Code | Test Cases / Test Code |
-| `generate_docs` | Dokumentation erstellen | Code, Design | Technische Docs |
-| `generate_api_spec` | API-Spezifikation erstellen | Requirements | OpenAPI Spec |
-| `generate_test_data` | Testdaten generieren | Schema, Constraints | Test Fixtures |
-| `generate_adr` | Architecture Decision Record | Entscheidungskontext | ADR (Markdown) |
-| `generate_user_story` | User Stories formulieren | High-Level Requirements | User Stories |
+| `generate_diagram` | Mermaid-Diagramm-Code erzeugen | Beschreibung, Design Doc | Mermaid-Code |
+| `generate_docs` | Technische Dokumentation erstellen | Code, Design | Technische Docs |
+| `generate_image_prompt` | Bildbeschreibung zu Image-Generation-Prompt optimieren | Bildbeschreibung | Detaillierter Prompt |
+| `generate_tests` | Testfälle und Testcode generieren | Requirements, Code | Test Cases / Test Code |
+| `write_architecture_doc` | Architektur-Dokumentation aus Code erstellen | Quellcode, Konzeptdocs | Architektur-Dokument |
+| `write_user_doc` | User-Dokumentation mit Installation und Beispielen | Code, README | User-Dokumentation |
 
 ### Kategorie: Review
 
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
-| `code_review` | Systematisches Code Review | Source Code | Review Comments |
-| `security_review` | Security-fokussiertes Review | Code, Config | Security Findings |
-| `architecture_review` | Architektur bewerten | Design Docs | Architecture Assessment |
-| `requirements_review` | Requirements auf Qualität prüfen | Requirements | Review mit Verbesserungen |
-| `test_review` | Testabdeckung und -qualität prüfen | Tests + Requirements | Coverage Analysis |
-| `compliance_review` | Compliance-Check gegen Standard | Artefakte | Compliance Report |
+| `architecture_review` | Architektur-Aspekte bewerten | Design Docs, Code | Architecture Assessment |
+| `code_review` | Systematisches Code Review mit kategorisierten Findings | Source Code | Review Comments |
+| `requirements_review` | Requirements auf Qualität und Testbarkeit prüfen | Requirements | Review mit Verbesserungen |
+| `security_review` | Security-fokussiertes Review (OWASP, IEC 62443) | Code, Config | Security Findings |
+| `test_review` | Testabdeckung und Testqualität prüfen | Tests + Requirements | Coverage Analysis |
 
 ### Kategorie: Transform
 
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
-| `summarize` | Zusammenfassung erstellen | Beliebiger Text | Zusammenfassung |
-| `refactor` | Code refactoren | Code + Ziel | Refactored Code |
-| `translate_technical` | Technische Übersetzung | Text + Zielsprache | Übersetzter Text |
-| `convert_format` | Formatkonvertierung | Input + Zielformat | Konvertierter Output |
-| `simplify` | Komplex → Einfach | Technischer Text | Vereinfachte Version |
-| `formalize` | Informell → Formal | Notizen, E-Mails | Formelles Dokument |
+| `formalize` | Informelle Notizen in formelle Dokumente umwandeln | Notizen, E-Mails | Formelles Dokument |
+| `refactor` | Code nach Clean-Code-Prinzipien refactoren | Code + Ziel | Refactored Code |
+| `simplify_text` | Komplexe technische Texte vereinfachen | Technischer Text | Vereinfachte Version |
+| `summarize` | Prägnante Zusammenfassung erstellen | Beliebiger Text | Zusammenfassung |
+| `translate_technical` | Technische Übersetzung unter Beibehaltung von Fachbegriffen | Text + Zielsprache | Übersetzter Text |
 
 ### Kategorie: Report
 
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
-| `test_report` | Test-Report generieren | Test Results | Formaler Test-Report |
-| `coverage_report` | Abdeckungs-Report | Traceability Data | Coverage Matrix |
-| `compliance_report` | Compliance-Bericht | Alle Artefakte | Compliance Report |
-| `quality_gate_report` | Quality Gate Status | Metrics | Gate Report |
-| `sprint_report` | Sprint-Zusammenfassung | Task-Daten | Sprint Report |
-| `risk_report` | Risiko-Report | Risk Register | Management Summary |
+| `aggregate_reviews` | Mehrere Review-Ergebnisse konsolidieren | Multiple Reviews | Gesamtbericht |
+| `compliance_report` | Compliance-Bericht (IEC 62443 / CRA) | Alle Artefakte | Compliance Report |
+| `risk_report` | Management-tauglicher Risiko-Report | Risk Register | Management Summary |
+| `test_report` | Formalen Test-Report aus Testergebnissen erstellen | Test Results | Formaler Test-Report |
 
 ### Kategorie: Meta
 
 | Pattern | Beschreibung | Input | Output |
 |---------|-------------|-------|--------|
-| `route_task` | Aufgabe an richtigen Agenten routen | Task Description | Routing Decision |
-| `decompose_task` | Aufgabe in Teilaufgaben zerlegen | Komplexe Aufgabe | Task-Breakdown |
-| `aggregate_results` | Ergebnisse zusammenführen | Multiple Inputs | Konsolidierter Output |
-| `evaluate_quality` | Output-Qualität bewerten | Agent Output | Quality Score + Feedback |
-| `extract_knowledge` | Wissen aus Output extrahieren | Agent Output | Knowledge Items |
+| `_router` | Meta-Agent: Aufgaben analysieren und Execution Plans erstellen | Task Description | Execution Plan (JSON) |
+| `evaluate_quality` | Qualität eines Agent-Outputs bewerten (1-10) | Agent Output | Quality Score + Feedback |
+| `extract_knowledge` | Wiederverwendbares Wissen aus Agent-Outputs extrahieren | Agent Output | Knowledge Items |
+
+### Kategorie: Tool
+
+Tool-Patterns rufen kein LLM auf, sondern führen externe CLI-Tools aus. Sie werden typischerweise als Folgeschritt nach einem LLM-Pattern eingesetzt.
+
+| Pattern | Beschreibung | Tool | Input | Output |
+|---------|-------------|------|-------|--------|
+| `render_diagram` | Mermaid-Code zu SVG/PNG rendern | `mmdc` | Mermaid-Code (.mmd) | SVG, PNG, PDF |
+| `render_image` | Bild aus Text-Prompt erzeugen | `render-image` | Image-Prompt (.txt) | PNG, WebP |
 
 ---
 
@@ -151,7 +179,6 @@ cat spec.md | aios run extract_requirements | aios run classify_requirements | a
 ```bash
 cat feature_request.txt \
   | aios run extract_requirements \
-  | aios run classify_requirements \
   | aios run generate_tests
 ```
 
@@ -163,7 +190,6 @@ type: composed
 description: "Von Anforderung bis Testfälle"
 steps:
   - pattern: extract_requirements
-  - pattern: classify_requirements
   - pattern: generate_tests
     params:
       coverage: full
@@ -185,7 +211,7 @@ scatter:
   - pattern: security_review
   - pattern: architecture_review
 gather:
-  pattern: aggregate_results
+  pattern: aggregate_reviews
   params:
     format: consolidated_review
 ```
