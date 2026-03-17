@@ -355,14 +355,12 @@ Dann in `aios.yaml`: `tools.allowed: [..., eslint]`
 
 | Dokument | Inhalt |
 |----------|--------|
-| [Architektur](docs/ARCHITECTURE.md) | Komponenten, Datenfluss, Mermaid-Diagramme |
-| [Patterns-Spec](docs/PATTERNS.md) | Frontmatter-Schema, Kompositions-Regeln |
+| [Architektur](docs/ARCHITECTURE.md) | Komponenten, Datenfluss, Mermaid-Diagramme, Router-Mechanik, dynamische Orchestrierung |
+| [Patterns](docs/PATTERNS.md) | Frontmatter-Schema, Kompositions-Regeln |
 | [Workflows](docs/WORKFLOWS.md) | EIP-Patterns im Detail mit Zeitdiagrammen |
-| [Personas](docs/PERSONAS.md) | 8 Persona-Definitionen, Interaktionsdiagramm |
-| [Dynamic](docs/DYNAMIC.md) | 3-Schichten-Modell, Router-Mechanik |
-| [Router-Insight](docs/ROUTER_INSIGHT.md) | Was der Router sieht vs. was die Engine ausführt |
-| [How it Works](docs/HOW_IT_WORKS.md) | Fabric-Prinzip visuell erklärt |
+| [Personas](docs/PERSONAS.md) | 8 Personas, Team-Interaktionsdiagramm |
 | [Phasenplan](docs/PHASES.md) | 6 Phasen – was ist done, was fehlt |
+| [Compliance](docs/REGULATED.md) | Traceability, Audit Trail, Quality Gates (Zielbild) |
 | [Vision](docs/VISION.md) | Gesamtvision und Prinzipien |
 
 ---
