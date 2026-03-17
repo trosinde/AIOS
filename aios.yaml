@@ -1,0 +1,22 @@
+# AIOS Konfiguration
+# Kopiere nach ~/.aios/config.yaml oder nutze als ./aios.yaml im Projektverzeichnis
+
+providers:
+  claude:
+    type: anthropic
+    model: claude-sonnet-4-20250514
+  ollama-fast:
+    type: ollama
+    model: qwen3:235b
+    endpoint: http://localhost:11434
+  ollama-code:
+    type: ollama
+    model: qwen2.5-coder:32b
+    endpoint: http://localhost:11434
+
+defaults:
+  provider: claude
+
+paths:
+  patterns: ./patterns
+  personas: ./personas
