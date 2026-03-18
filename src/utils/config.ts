@@ -54,6 +54,7 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
     mcp: partial.mcp
       ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...partial.mcp.servers } }
       : DEFAULT_CONFIG.mcp,
+    rag: partial.rag,
   };
 }
 

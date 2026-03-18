@@ -27,7 +27,7 @@ export interface PatternMeta {
   internal?: boolean;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
@@ -37,6 +37,11 @@ export interface PatternMeta {
   mcp_server?: string;             // Server-Name aus Config
   mcp_tool?: string;               // Original MCP-Tool-Name
   mcp_input_schema?: object;       // JSON Schema für Tool-Args
+
+  // RAG-Pattern Felder
+  rag_collection?: string;
+  rag_operation?: "search" | "index" | "compare";
+  rag_overrides?: { topK?: number; minRelevance?: number };
 }
 
 export interface Pattern {
@@ -188,4 +193,5 @@ export interface AiosConfig {
   paths: { patterns: string; personas: string };
   tools: ToolsConfig;
   mcp?: McpConfig;
+  rag?: import("./rag/types.js").RagConfig;
 }

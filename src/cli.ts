@@ -10,6 +10,7 @@ import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
+import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
@@ -68,7 +69,8 @@ program
     const provider = createProvider(providerCfg);
     const personas = new PersonaRegistry(config.paths.personas);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config, personas, mcpManager);
+    const ragService = config.rag ? new RAGService(config.rag) : undefined;
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
     const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -77,7 +79,7 @@ program
     console.error(chalk.blue(`📋 Plan: ${plan.plan.type} (${plan.plan.steps.length} Schritte)`));
     for (const s of plan.plan.steps) {
       const pat = registry.get(s.pattern);
-      const typeBadge = pat?.meta.type === "mcp" ? chalk.blue(" [MCP]") : pat?.meta.type === "tool" ? chalk.magenta(" [TOOL]") : "";
+      const typeBadge = pat?.meta.type === "mcp" ? chalk.blue(" [MCP]") : pat?.meta.type === "tool" ? chalk.magenta(" [TOOL]") : pat?.meta.type === "rag" ? chalk.yellow(" [RAG]") : "";
       const par = s.parallel_group ? chalk.green(` [∥ ${s.parallel_group}]`) : "";
       console.error(`   ${s.id} → ${chalk.cyan(s.pattern)}${typeBadge}${par}`);
     }
@@ -143,9 +145,25 @@ program
     const provider = createProvider(providerCfg);
     const personas = new PersonaRegistry(config.paths.personas);
 
-    if (pattern.meta.type === "mcp") {
+    const ragService = config.rag ? new RAGService(config.rag) : undefined;
+
+    if (pattern.meta.type === "rag") {
+      // RAG-Pattern: Über Engine ausführen
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+      const ragPlan = {
+        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
+        plan: {
+          type: "pipe" as const,
+          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+        },
+        reasoning: "Direct RAG execution",
+      };
+      const result = await engine.execute(ragPlan, input);
+      const out = result.results.get("run");
+      if (out) process.stdout.write(out.output);
+    } else if (pattern.meta.type === "mcp") {
       // MCP-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
       const mcpPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -159,7 +177,7 @@ program
       if (out) process.stdout.write(out.output);
     } else if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
-      const engine = new Engine(registry, provider, config, personas, mcpManager);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
       const toolPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -229,8 +247,9 @@ program
     }
     const provider = createProvider(providerCfg);
     const personas = new PersonaRegistry(config.paths.personas);
+    const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config, personas, mcpManager);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();
@@ -275,7 +294,7 @@ patternsCmd
         const ver = p.meta.version ? chalk.gray(` v${p.meta.version}`) : "";
         const paramCount = p.meta.parameters?.length ?? 0;
         const paramHint = paramCount > 0 ? chalk.yellow(` [${paramCount} params]`) : "";
-        const typeBadge = p.meta.type === "mcp" ? chalk.blue(" [MCP]") : p.meta.type === "tool" ? chalk.magenta(" [TOOL]") : "";
+        const typeBadge = p.meta.type === "mcp" ? chalk.blue(" [MCP]") : p.meta.type === "tool" ? chalk.magenta(" [TOOL]") : p.meta.type === "rag" ? chalk.yellow(" [RAG]") : "";
         console.log(`    ${chalk.cyan(p.meta.name.padEnd(25))} ${p.meta.description}${ver}${paramHint}${typeBadge}`);
       }
     }
@@ -318,7 +337,7 @@ patternsCmd
     const p = registry.get(name);
     if (!p) { console.error(chalk.red("Nicht gefunden.")); await mcpManager?.shutdown(); process.exit(1); }
 
-    const typeBadge = p.meta.type === "mcp" ? chalk.blue(" [MCP]") : p.meta.type === "tool" ? chalk.magenta(" [TOOL]") : "";
+    const typeBadge = p.meta.type === "mcp" ? chalk.blue(" [MCP]") : p.meta.type === "tool" ? chalk.magenta(" [TOOL]") : p.meta.type === "rag" ? chalk.yellow(" [RAG]") : "";
     console.log(chalk.bold(p.meta.name) + chalk.gray(` (${p.meta.category})`) + typeBadge);
     if (p.meta.version) console.log(chalk.gray(`Version: ${p.meta.version}`));
     console.log(chalk.gray(`${p.meta.description}\n`));

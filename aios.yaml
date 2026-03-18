@@ -47,3 +47,41 @@ mcp:
       exclude: [pdf_ocr]
       env:
         MCP_PDFTOOLS_VENV: "/mnt/c/Users/rosin-1/repos/mcp_pdftools/venv/bin/python"
+
+rag:
+  defaultProvider: local
+  defaultModel: Xenova/all-MiniLM-L6-v2
+  ollama:
+    model: all-minilm
+    endpoint: http://172.24.32.82:11435
+    apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+  collections:
+    dvoi-workitems:
+      preprocessing:
+        maxChunkLength: 500
+        chunkStrategy: truncate
+        cleaners: [stripHtml, normalizeWhitespace]
+        fields: [title, description, acceptanceCriteria, tags]
+      search:
+        minRelevance: 0.3
+        topK: 20
+        queryExpansion:
+          DD: [Density Determination]
+          MID: [Measuring Instrument Directive]
+    approval-docs:
+      preprocessing:
+        maxChunkLength: 1000
+        chunkStrategy: sliding_window
+        chunkOverlap: 200
+        cleaners: [normalizeWhitespace]
+      search:
+        minRelevance: 0.35
+        topK: 15
+    code-symbols:
+      preprocessing:
+        maxChunkLength: 300
+        chunkStrategy: truncate
+        cleaners: [normalizeWhitespace]
+      search:
+        minRelevance: 0.45
+        topK: 10

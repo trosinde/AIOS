@@ -5,6 +5,7 @@ import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
+import type { RAGService } from "../rag/rag-service.js";
 import type { AiosConfig, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import type { PersonaRegistry } from "./personas.js";
 
@@ -14,13 +15,28 @@ import type { PersonaRegistry } from "./personas.js";
  * Unterstützt LLM-Patterns und Tool-Patterns.
  */
 export class Engine {
+  private registry: PatternRegistry;
+  private provider: LLMProvider;
+  private config?: AiosConfig;
+  private personaRegistry?: PersonaRegistry;
+  private mcpManager?: McpManager;
+  private ragService?: RAGService;
+
   constructor(
-    private registry: PatternRegistry,
-    private provider: LLMProvider,
-    private config?: AiosConfig,
-    private personaRegistry?: PersonaRegistry,
-    private mcpManager?: McpManager
-  ) {}
+    registry: PatternRegistry,
+    provider: LLMProvider,
+    config?: AiosConfig,
+    personaRegistry?: PersonaRegistry,
+    mcpManager?: McpManager,
+    ragService?: RAGService,
+  ) {
+    this.registry = registry;
+    this.provider = provider;
+    this.config = config;
+    this.personaRegistry = personaRegistry;
+    this.mcpManager = mcpManager;
+    this.ragService = ragService;
+  }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
     const results = new Map<string, StepResult>();
@@ -85,7 +101,11 @@ export class Engine {
 
       let stepResult: StepResult;
 
-      if (pattern.meta.type === "mcp") {
+      if (pattern.meta.type === "rag") {
+        // ── RAG-Pattern: Semantic Search/Index/Compare ──
+        console.error(chalk.gray(`  🔍 ${step.id} → ${step.pattern} [RAG: ${pattern.meta.rag_collection}/${pattern.meta.rag_operation}]`));
+        stepResult = await this.executeRag(step, pattern, input, t0);
+      } else if (pattern.meta.type === "mcp") {
         // ── MCP-Pattern: MCP-Server Tool aufrufen ──
         console.error(chalk.gray(`  🔌 ${step.id} → ${step.pattern} [MCP: ${pattern.meta.mcp_server}/${pattern.meta.mcp_tool}]`));
         stepResult = await this.executeMcpTool(step, pattern, input, t0);
@@ -151,6 +171,76 @@ export class Engine {
         status.set(step.id, "failed");
       }
     }
+  }
+
+  // ─── RAG Execution ──────────────────────────────────────────
+
+  private async executeRag(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number
+  ): Promise<StepResult> {
+    if (!this.ragService) throw new Error("RAGService nicht konfiguriert");
+    const collection = pattern.meta.rag_collection;
+    const operation = pattern.meta.rag_operation ?? "search";
+    if (!collection) throw new Error(`RAG-Pattern "${pattern.meta.name}" hat keine rag_collection`);
+
+    let output: string;
+
+    switch (operation) {
+      case "search": {
+        const results = await this.ragService.search(collection, input, pattern.meta.rag_overrides);
+        output = results.length > 0
+          ? results.map((r, i) =>
+              `### Treffer ${i + 1} (Score: ${r.score.toFixed(3)})\n\n${r.content}\n\nMetadata: ${JSON.stringify(r.metadata)}`
+            ).join("\n\n---\n\n")
+          : "Keine relevanten Ergebnisse gefunden.";
+        break;
+      }
+      case "index": {
+        // Input is JSON array of items
+        let items: Array<{ id: string; content?: string; fields?: Record<string, unknown>; metadata?: Record<string, unknown> }>;
+        try {
+          items = JSON.parse(input);
+          if (!Array.isArray(items)) items = [items];
+        } catch {
+          throw new Error("RAG index: Input muss JSON-Array von Items sein");
+        }
+        const count = await this.ragService.index(collection, items);
+        output = `${count} Chunks in Collection "${collection}" indexiert.`;
+        break;
+      }
+      case "compare": {
+        // Input: JSON { sourceCollection, sourceIds, topK?, minScore? }
+        let params: { sourceCollection: string; sourceIds: string[]; topK?: number; minScore?: number };
+        try {
+          params = JSON.parse(input);
+        } catch {
+          throw new Error("RAG compare: Input muss JSON mit sourceCollection und sourceIds sein");
+        }
+        const results = await this.ragService.compare(
+          params.sourceCollection, params.sourceIds, collection,
+          params.topK, params.minScore,
+        );
+        output = results.length > 0
+          ? results.map((r) =>
+              `${r.sourceId} ↔ ${r.targetId}: ${r.score.toFixed(3)}\n  ${r.targetContent.slice(0, 200)}`
+            ).join("\n\n")
+          : "Keine Übereinstimmungen gefunden.";
+        break;
+      }
+      default:
+        throw new Error(`Unbekannte RAG-Operation: ${operation}`);
+    }
+
+    return {
+      stepId: step.id,
+      pattern: step.pattern,
+      output,
+      outputType: "text",
+      durationMs: Date.now() - t0,
+    };
   }
 
   // ─── MCP Tool Execution ──────────────────────────────────────
