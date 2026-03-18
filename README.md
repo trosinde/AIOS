@@ -262,7 +262,7 @@ paths:
 
 tools:
   output_dir: ./output
-  allowed: [mmdc, render-image]
+  allowed: [mmdc]  # Allowlist für externe CLI-Tools
 ```
 
 ### Ollama (lokal)
@@ -345,7 +345,7 @@ personas/*.yaml            # 8 Personas (RE, Architect, Developer, Tester, ...)
 | Patterns | gray-matter (YAML-Frontmatter aus Markdown) |
 | Config | yaml |
 | Knowledge Base | better-sqlite3 |
-| Tests | vitest (81 Tests) |
+| Tests | vitest (92 Tests) |
 
 ### Tests
 

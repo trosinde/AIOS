@@ -88,35 +88,19 @@ Startet eine interaktive Session mit Multi-Turn-Konversation und Slash-Commands:
 - [x] DAG Engine (parallele Ausführung)
 - [x] Saga Engine (Retry/Rollback)
 - [x] Bug-Fixes (provider.ts, engine.ts, router.ts, cli.ts)
-- [x] Tests (vitest, 81 Tests)
+- [x] Tests (vitest, 92 Tests)
 - [x] Interactive Chat REPL (`aios chat`, Slash-Commands, Multi-Turn)
 
-## Wichtige Konzeptdocs
+## Dokumentation
 
-Architektur & Vision:
-- `docs/VISION.md` – Gesamtvision, Prinzipien, Systemübersicht
-- `docs/ARCHITECTURE.md` – EIP-Patterns, Message Bus, Provider Abstraction
-- `docs/TECHSTACK.md` – Tech-Stack-Entscheidungen, MCP-Server-Integration, Deployment
+| Dokument | Inhalt |
+|----------|--------|
+| `docs/VISION.md` | Gesamtvision und Prinzipien |
+| `docs/ARCHITECTURE.md` | Komponenten, Datenfluss, Router-Mechanik, EIP-Patterns |
+| `docs/PATTERNS.md` | Pattern-Katalog und Kompositions-Regeln |
+| `docs/WORKFLOWS.md` | Scatter-Gather, DAG, Saga mit Zeitdiagrammen |
+| `docs/PERSONAS.md` | 8 Personas und deren Rollen |
+| `docs/PHASES.md` | Implementierungsplan mit Status |
+| `docs/REGULATED.md` | Traceability, Compliance, Quality Gates |
 
-Kern-Mechanismen:
-- `docs/HOW_IT_WORKS.md` – Visuell: Wie das Pattern-System funktioniert (Fabric-Prinzip)
-- `docs/PATTERNS.md` – Pattern-Katalog und Kompositions-Spezifikation
-- `docs/ROUTER_INSIGHT.md` – Was der Router sieht vs. was ausgeführt wird
-- `docs/DYNAMIC.md` – Dynamische Workflow-Orchestrierung (3 Schichten)
-
-Workflow-Patterns:
-- `docs/WORKFLOWS.md` – Parallele Workflows: Scatter-Gather, DAG, Saga mit Zeitdiagrammen
-- `docs/WORKFLOW_DEFINITIONS.md` – YAML-basierte Workflow-Definitionen (6 Typen)
-
-Team & Compliance:
-- `docs/PERSONAS.md` – 8 Persona-Definitionen (RE, Architect, Dev, Tester, Security, Reviewer, TechWriter, QM)
-- `docs/KNOWLEDGE.md` – Shared Knowledge Base, Auto-Extraction, Kontext-Injection
-- `docs/REGULATED.md` – Traceability, Compliance Reports, Quality Gates, Audit Trail
-
-Planung:
-- `docs/PHASES.md` – 5-Phasen Implementierungsplan mit Definition of Done
-
-Referenz-Implementierungen (ausführlich kommentiert):
-- `docs/reference/01-basic-pattern-engine.ts` – Fabric-Prinzip in ~100 Zeilen
-- `docs/reference/02-parallel-workflows.ts` – Scatter-Gather, DAG, Saga komplett
-- `docs/reference/03-dynamic-orchestration.ts` – Router + Registry + Engine komplett
+Referenz-Implementierungen in `docs/reference/`.
