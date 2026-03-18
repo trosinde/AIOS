@@ -147,6 +147,41 @@ Der Router entscheidet je nach Aufgabe:
 | "Implementiere Feature X" | Requirements → Design → Code + Tests parallel |
 | "Feature mit Compliance" | Wie oben + Quality Gates + Rollback bei Fehler |
 
+### Interaktiver Chat-Modus
+
+Statt einzelner Kommandos: eine interaktive Session mit Konversations-Kontext.
+Konversationsverlauf bleibt erhalten – Nachfragen beziehen sich auf vorherige Ergebnisse.
+
+```bash
+$ npx tsx src/cli.ts chat
+
+  AIOS Interactive Chat
+  32 Patterns geladen. Tippe /help für Befehle.
+
+aios> Welche Patterns gibt es für Code-Analyse?
+  ⏳ Denke nach...
+  ✅ (130 Tokens)
+Es gibt code_review, security_review, architecture_review ...
+
+aios> /code_review --language=python def hello(): print("world")
+  ⏳ Führe Pattern code_review aus...
+  ✅ Fertig (250 Tokens)
+## Code Review ...
+
+aios> Kannst du die Security-Aspekte genauer erklären?
+  ⏳ Denke nach...
+  ✅ (180 Tokens)
+Basierend auf dem Review oben ...
+```
+
+**Slash-Commands im Chat:**
+- `/<pattern> [text] [--key=value]` – Pattern direkt ausführen
+- `/help` – Hilfe anzeigen
+- `/patterns` – Alle Patterns auflisten
+- `/history` – Chat-Verlauf anzeigen
+- `/clear` – Verlauf löschen
+- `/exit` oder `/quit` – Session beenden
+
 ### Alle Befehle
 
 ```bash
@@ -156,6 +191,9 @@ aios "Aufgabe" --provider ollama        # Anderer LLM-Provider
 
 echo "text" | aios run <pattern>       # Ein Pattern direkt
 echo "text" | aios run <p> --key=value # Mit Parametern
+
+aios chat                              # Interaktive Chat-Session
+aios chat --provider ollama            # Chat mit anderem Provider
 
 aios plan "Aufgabe"                    # Nur planen (JSON)
 aios patterns list                     # 32 Patterns anzeigen
@@ -280,6 +318,8 @@ src/
 │   ├── personas.ts        # Persona Registry – lädt YAML-Dateien
 │   ├── router.ts          # Router – LLM-Call der Execution Plans erzeugt
 │   ├── engine.ts          # Engine – DAG-Ausführung, Retry, Saga Rollback
+│   ├── repl.ts            # Interaktive Chat-Session (REPL Loop)
+│   ├── slash.ts           # Slash-Command Parser (/command --key=value)
 │   └── knowledge.ts       # Knowledge Base – SQLite (Decisions, Facts, Requirements)
 ├── agents/
 │   └── provider.ts        # LLM Provider Abstraction (Claude + Ollama)
@@ -301,7 +341,7 @@ personas/*.yaml            # 8 Personas (RE, Architect, Developer, Tester, ...)
 | Patterns | gray-matter (YAML-Frontmatter aus Markdown) |
 | Config | yaml |
 | Knowledge Base | better-sqlite3 |
-| Tests | vitest (68 Tests) |
+| Tests | vitest (81 Tests) |
 
 ### Tests
 
@@ -333,6 +373,7 @@ Die Engine implementiert diese EIP-Patterns aus
 | **Neue Rolle/Expertise** | `personas/my_role.yaml` anlegen | DevOps Engineer, Data Scientist |
 | **Persona einem Pattern zuweisen** | `persona: my_role` in Pattern-Frontmatter | Pattern nutzt jetzt die Rolle |
 | **Neuen LLM-Provider** | Klasse in `src/agents/provider.ts` + Factory | OpenAI, Mistral, Gemini |
+| **Chat-Verhalten anpassen** | `src/core/repl.ts` (REPL Loop, Slash-Commands) | Neue Built-in Commands, Auto-Routing |
 | **Neuen CLI-Befehl** | Command in `src/cli.ts` (Commander.js) | `aios knowledge search` |
 | **Workflow-Logik ändern** | `src/core/engine.ts` | Neuer Retry-Modus, Timeout |
 | **Router-Verhalten anpassen** | `patterns/_router/system.md` oder `src/core/router.ts` | Andere Planungs-Regeln |
@@ -383,7 +424,7 @@ tags: [lint, quality]
 Dann in `aios.yaml`: `tools.allowed: [..., eslint]`
 
 **Neuer LLM-Provider:**
-1. Klasse in `src/agents/provider.ts` mit Interface `complete(system, user) → LLMResponse`
+1. Klasse in `src/agents/provider.ts` mit Interface `complete(system, user)` + `chat(system, messages)` → `LLMResponse`
 2. In `createProvider()` Factory registrieren
 3. In `aios.yaml` konfigurieren: `providers.openai: { type: openai, model: gpt-4o }`
 

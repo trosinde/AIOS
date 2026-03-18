@@ -3,6 +3,7 @@ import type { LLMResponse, ProviderConfig } from "../types.js";
 
 export interface LLMProvider {
   complete(system: string, user: string): Promise<LLMResponse>;
+  chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse>;
 }
 
 // ─── Claude (Anthropic API) ──────────────────────────────
@@ -22,6 +23,29 @@ class ClaudeProvider implements LLMProvider {
       max_tokens: 4096,
       system,
       messages: [{ role: "user", content: user }],
+    });
+
+    const content = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+
+    return {
+      content,
+      model: this.model,
+      tokensUsed: {
+        input: response.usage.input_tokens,
+        output: response.usage.output_tokens,
+      },
+    };
+  }
+
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 4096,
+      system,
+      messages,
     });
 
     const content = response.content
@@ -61,6 +85,50 @@ class OllamaProvider implements LLMProvider {
           { role: "system", content: system },
           { role: "user", content: user },
         ],
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as {
+      message?: { content: string };
+      error?: string;
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+
+    if (data.error) {
+      throw new Error(`Ollama error: ${data.error}`);
+    }
+    if (!data.message?.content) {
+      throw new Error("Ollama: Keine Antwort erhalten");
+    }
+
+    return {
+      content: data.message.content,
+      model: this.model,
+      tokensUsed: {
+        input: data.prompt_eval_count ?? 0,
+        output: data.eval_count ?? 0,
+      },
+    };
+  }
+
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse> {
+    const ollamaMessages = [
+      { role: "system" as const, content: system },
+      ...messages,
+    ];
+
+    const response = await fetch(`${this.endpoint}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: this.model,
+        messages: ollamaMessages,
         stream: false,
       }),
     });

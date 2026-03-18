@@ -115,9 +115,7 @@ export class PatternRegistry {
     }
     let available = false;
     try {
-      // Cross-platform: 'where' auf Windows, 'which' auf Unix
-      const cmd = process.platform === "win32" ? "where" : "which";
-      execFileSync(cmd, [tool], { stdio: "ignore" });
+      execFileSync("which", [tool], { stdio: "ignore" });
       available = true;
     } catch {
       available = false;
