@@ -117,6 +117,10 @@ export class Engine {
         // ── Tool-Pattern: CLI-Tool ausführen ──
         console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
         stepResult = await this.executeTool(step, pattern, input, t0);
+      } else if (pattern.meta.type === "image_generation") {
+        // ── Image-Generation-Pattern: Gemini Nano Banana ──
+        console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE]`));
+        stepResult = await this.executeImageGeneration(step, pattern, input, t0);
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
@@ -367,6 +371,57 @@ export class Engine {
         }
       });
     });
+  }
+
+  // ─── Image Generation ──────────────────────────────────────────
+
+  private async executeImageGeneration(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number
+  ): Promise<StepResult> {
+    // Select image_generation provider (falls back to default)
+    let providerToUse = this.provider;
+    if (this.providerSelector) {
+      const imageProvider = this.providerSelector.select("image_generation");
+      if (imageProvider) {
+        console.error(chalk.gray(`    🎨 Provider: ${imageProvider.name}`));
+        providerToUse = imageProvider.provider;
+      }
+    }
+
+    const response = await providerToUse.complete(pattern.systemPrompt, input);
+
+    if (!response.images?.length) {
+      throw new Error(`Image generation returned no images for "${step.pattern}"`);
+    }
+
+    // Save images to output directory
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+    const timestamp = Date.now();
+    const filePaths: string[] = [];
+
+    for (let i = 0; i < response.images.length; i++) {
+      const img = response.images[i];
+      const ext = img.mimeType.includes("png") ? "png" : "jpg";
+      const suffix = response.images.length > 1 ? `-${i + 1}` : "";
+      const filePath = join(outputDir, `${step.id}-${timestamp}${suffix}.${ext}`);
+      writeFileSync(filePath, Buffer.from(img.data, "base64"));
+      filePaths.push(filePath);
+      console.error(chalk.gray(`    📁 ${filePath}`));
+    }
+
+    return {
+      stepId: step.id,
+      pattern: step.pattern,
+      output: `Bild erzeugt: ${filePaths.join(", ")}`,
+      outputType: "file",
+      filePath: filePaths[0],
+      filePaths,
+      durationMs: Date.now() - t0,
+    };
   }
 
   // ─── Saga Rollback ────────────────────────────────────────────

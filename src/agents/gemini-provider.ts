@@ -16,6 +16,10 @@ export class GeminiProvider implements LLMProvider {
     this.baseUrl = baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
   }
 
+  private isImageModel(): boolean {
+    return /image/i.test(this.model);
+  }
+
   async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
     const parts: Array<Record<string, unknown>> = [];
 
@@ -26,10 +30,14 @@ export class GeminiProvider implements LLMProvider {
     }
     parts.push({ text: user });
 
-    const body = {
+    const body: Record<string, unknown> = {
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts }],
     };
+
+    if (this.isImageModel()) {
+      body.generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
+    }
 
     const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
     const response = await fetch(url, {
@@ -43,7 +51,7 @@ export class GeminiProvider implements LLMProvider {
     }
 
     const data = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> } }>;
       usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       error?: { message: string };
     };
@@ -52,9 +60,14 @@ export class GeminiProvider implements LLMProvider {
       throw new Error(`Gemini error: ${data.error.message}`);
     }
 
-    const content = data.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("") ?? "";
+    const responseParts = data.candidates?.[0]?.content?.parts ?? [];
+    const content = responseParts
+      .map((p) => p.text ?? "")
+      .filter(Boolean)
+      .join("");
+    const imageResults = responseParts
+      .filter((p) => p.inlineData)
+      .map((p) => ({ mimeType: p.inlineData!.mimeType, data: p.inlineData!.data }));
 
     return {
       content,
@@ -63,6 +76,7 @@ export class GeminiProvider implements LLMProvider {
         input: data.usageMetadata?.promptTokenCount ?? 0,
         output: data.usageMetadata?.candidatesTokenCount ?? 0,
       },
+      ...(imageResults.length > 0 && { images: imageResults }),
     };
   }
 
@@ -81,10 +95,14 @@ export class GeminiProvider implements LLMProvider {
       };
     });
 
-    const body = {
+    const body: Record<string, unknown> = {
       systemInstruction: { parts: [{ text: system }] },
       contents,
     };
+
+    if (this.isImageModel()) {
+      body.generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
+    }
 
     const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
     const response = await fetch(url, {
@@ -98,7 +116,7 @@ export class GeminiProvider implements LLMProvider {
     }
 
     const data = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> } }>;
       usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       error?: { message: string };
     };
@@ -107,9 +125,14 @@ export class GeminiProvider implements LLMProvider {
       throw new Error(`Gemini error: ${data.error.message}`);
     }
 
-    const content = data.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("") ?? "";
+    const responseParts = data.candidates?.[0]?.content?.parts ?? [];
+    const content = responseParts
+      .map((p) => p.text ?? "")
+      .filter(Boolean)
+      .join("");
+    const imageResults = responseParts
+      .filter((p) => p.inlineData)
+      .map((p) => ({ mimeType: p.inlineData!.mimeType, data: p.inlineData!.data }));
 
     return {
       content,
@@ -118,6 +141,7 @@ export class GeminiProvider implements LLMProvider {
         input: data.usageMetadata?.promptTokenCount ?? 0,
         output: data.usageMetadata?.candidatesTokenCount ?? 0,
       },
+      ...(imageResults.length > 0 && { images: imageResults }),
     };
   }
 }

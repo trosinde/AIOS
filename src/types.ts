@@ -27,7 +27,7 @@ export interface PatternMeta {
   internal?: boolean;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
@@ -134,6 +134,7 @@ export interface LLMResponse {
   content: string;
   model: string;
   tokensUsed: { input: number; output: number };
+  images?: Array<{ mimeType: string; data: string }>;
 }
 
 export interface ProviderConfig {

@@ -7,7 +7,7 @@ type: llm
 input_type: text
 output_type: image_prompt
 tags: [image, prompt, visualization, creative]
-can_precede: [render_image]
+can_precede: [render_image, render_image_nano]
 ---
 
 # IDENTITY and PURPOSE
