@@ -69,16 +69,21 @@ class ClaudeProvider implements LLMProvider {
 class OllamaProvider implements LLMProvider {
   private model: string;
   private endpoint: string;
+  private apiKey?: string;
 
-  constructor(model: string, endpoint: string = "http://localhost:11434") {
+  constructor(model: string, endpoint: string = "http://localhost:11434", apiKey?: string) {
     this.model = model;
     this.endpoint = endpoint;
+    this.apiKey = apiKey;
   }
 
   async complete(system: string, user: string): Promise<LLMResponse> {
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.apiKey && { Authorization: `Bearer ${this.apiKey}` }),
+      },
       body: JSON.stringify({
         model: this.model,
         messages: [
@@ -125,7 +130,10 @@ class OllamaProvider implements LLMProvider {
 
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.apiKey && { Authorization: `Bearer ${this.apiKey}` }),
+      },
       body: JSON.stringify({
         model: this.model,
         messages: ollamaMessages,
@@ -169,7 +177,7 @@ export function createProvider(config: ProviderConfig): LLMProvider {
     case "anthropic":
       return new ClaudeProvider(config.model);
     case "ollama":
-      return new OllamaProvider(config.model, config.endpoint);
+      return new OllamaProvider(config.model, config.endpoint, config.apiKey);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }

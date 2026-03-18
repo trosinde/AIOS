@@ -134,6 +134,7 @@ export interface ProviderConfig {
   type: "anthropic" | "ollama";
   model: string;
   endpoint?: string;
+  apiKey?: string;       // Bearer token for authenticated Ollama endpoints
 }
 
 // ─── Chat / REPL ────────────────────────────────────────

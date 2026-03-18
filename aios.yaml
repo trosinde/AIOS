@@ -5,14 +5,21 @@ providers:
   claude:
     type: anthropic
     model: claude-sonnet-4-20250514
-  ollama-fast:
+  ollama-72b:
     type: ollama
-    model: qwen3:235b
-    endpoint: http://localhost:11434
-  ollama-code:
+    model: qwen2.5:72b
+    endpoint: http://172.24.32.82:11435
+    apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+  ollama-nemo:
     type: ollama
-    model: qwen2.5-coder:32b
-    endpoint: http://localhost:11434
+    model: mistral-nemo:12b
+    endpoint: http://172.24.32.82:11435
+    apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+  ollama-coder:
+    type: ollama
+    model: qwen2.5-coder:7b
+    endpoint: http://172.24.32.82:11435
+    apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
 
 defaults:
   provider: claude
