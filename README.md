@@ -40,7 +40,7 @@ npm install
 export ANTHROPIC_API_KEY=sk-ant-...    # or skip if using Ollama
 ```
 
-Verify: `aios patterns list` should show 34+ patterns.
+Verify: `aios patterns list` should show 35+ patterns.
 
 For local LLMs (free): configure Ollama in `aios.yaml` and pass `--provider ollama`.
 
@@ -104,18 +104,18 @@ echo "text" | aios run <p> --key=val   # With parameters
 
 aios chat                              # Interactive REPL
 aios plan "task"                       # Plan as JSON
-aios patterns list                     # 34+ patterns
+aios patterns list                     # 35+ patterns
 aios patterns search "security"        # Search
 aios patterns show code_review         # Details + prompt
 aios patterns create my_pattern        # New pattern (template)
 ```
 
-### 34 Patterns in 9 Categories
+### 35 Patterns in 9 Categories
 
 | Category | Patterns |
 |----------|----------|
 | **analyze** | `extract_requirements`, `gap_analysis`, `identify_risks`, `threat_model` |
-| **generate** | `generate_code`, `generate_tests`, `generate_docs`, `generate_adr`, `generate_diagram`, `design_solution`, `write_architecture_doc`, `write_user_doc`, `generate_image_prompt` |
+| **generate** | `generate_code`, `generate_tests`, `generate_docs`, `generate_adr`, `generate_diagram`, `design_solution`, `write_architecture_doc`, `write_user_doc`, `generate_image_prompt`, `render_image_nano` |
 | **review** | `code_review`, `security_review`, `architecture_review`, `requirements_review`, `test_review` |
 | **transform** | `summarize`, `refactor`, `translate_technical`, `simplify_text`, `formalize` |
 | **report** | `aggregate_reviews`, `compliance_report`, `test_report`, `risk_report` |
@@ -138,6 +138,8 @@ Ollama (free) -> Gemini Flash ($0.075/Mtok) -> GPT-4o-mini ($0.15) -> Claude Son
 
 **Vision/OCR** -- PDF pages analyzed as images via the cheapest vision-capable LLM provider.
 
+**Image Generation** -- Generate images from text prompts via providers with `image_generation` capability (e.g. Gemini).
+
 > **Full guide:** [docs/user-guide.md](docs/user-guide.md) | [docs/configuration.md](docs/configuration.md) | [docs/providers.md](docs/providers.md)
 
 ---
@@ -154,6 +156,7 @@ User: "Review code for security"
        +- MCP steps      -> MCP servers (external tools)
        +- RAG steps      -> Vector store (semantic search)
        +- Vision steps   -> ProviderSelector (cheapest vision provider)
+       +- Image steps    -> ProviderSelector (image_generation capability)
 ```
 
 **Persona = WHO** (role, expertise) defined in `personas/*.yaml`
@@ -189,7 +192,7 @@ src/
     +-- config.ts                # YAML config loader
     +-- stdin.ts                 # stdin helper
 
-patterns/*/system.md             # 34 patterns (YAML frontmatter + prompt)
+patterns/*/system.md             # 35 patterns (YAML frontmatter + prompt)
 personas/*.yaml                  # 8 personas (RE, Architect, Developer, Tester, ...)
 ```
 
@@ -233,7 +236,7 @@ All detailed documentation is in [`docs/`](docs/), written in English:
 | [User Guide](docs/user-guide.md) | Users | CLI reference, patterns, chat, pipes, MCP, RAG, vision |
 | [Configuration](docs/configuration.md) | Users + Ops | aios.yaml, providers, MCP, RAG, env vars, security |
 | [Architecture](docs/architecture.md) | Developers | Components, data flow, dynamic orchestration |
-| [Patterns](docs/patterns.md) | Developers | Frontmatter schema, catalog (34 patterns), composition |
+| [Patterns](docs/patterns.md) | Developers | Frontmatter schema, catalog (35 patterns), composition |
 | [Workflows](docs/workflows.md) | Developers | EIP patterns (Scatter-Gather, DAG, Saga) with timelines |
 | [Personas](docs/personas.md) | Developers | 8 personas, team interaction, runtime separation |
 | [Providers](docs/providers.md) | Developers | 4 LLM providers, cost-based selection, vision support |

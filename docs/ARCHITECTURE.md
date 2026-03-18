@@ -90,7 +90,7 @@ category: string                # analyze | generate | review | transform | repo
 input_type: string              # text | code | design | requirements | ...
 output_type: string             # text | code | findings | file | ...
 tags: [string]                  # For search and filtering
-type: llm | tool | mcp | rag   # Default: llm
+type: llm | tool | mcp | rag | image_generation  # Default: llm
 tool: string                    # Only for type: tool. CLI command (e.g. "mmdc")
 tool_args: [string]             # Args template: ["$INPUT", "-o", "$OUTPUT"]
 input_format: string            # Only for type: tool. Input file extension
@@ -200,12 +200,13 @@ sequenceDiagram
 
 Executes an `ExecutionPlan` mechanically. Topological sort determines step order, `Promise.all` runs independent steps in parallel, retry and escalation handle failures.
 
-The Engine supports four step types:
+The Engine supports five step types:
 
 - **LLM** -- Sends the pattern's Markdown prompt as `system` and the assembled input as `user` to the provider. Optionally checks a quality gate.
 - **Tool** -- Invokes a CLI tool (e.g. `mmdc` for Mermaid rendering). Input is written to a temp file, the tool is executed, output is read from the result file.
 - **MCP** -- Calls a tool on an MCP server via the `McpManager`. The MCP server is spawned on demand and tools are discovered dynamically.
 - **RAG** -- Delegates to the `RAGService` for search, index, or compare operations against vector stores.
+- **Image Generation** -- Selects a provider with the `image_generation` capability via `ProviderSelector`, sends the prompt, receives base64-encoded images in `LLMResponse.images`, and writes them to disk as PNG/JPG files.
 
 **Vision support:** When a step receives image output from upstream steps (e.g., a rendered diagram), the Engine calls `collectImages()` to gather base64-encoded images from prior `StepResult` entries. The `ProviderSelector` picks the cheapest available provider with the `vision` capability.
 
@@ -218,6 +219,7 @@ graph TD
     Tool["Tool Pattern<br/>executeTool()"]
     MCP_S["MCP Pattern<br/>mcpManager.callTool()"]
     RAG_S["RAG Pattern<br/>ragService.search/index()"]
+    IMG["Image Generation<br/>executeImageGeneration()"]
     QG["Quality Gate<br/>(optional)"]
     Done["Step: done"]
     Failed["Step: failed"]
@@ -232,12 +234,14 @@ graph TD
     Parallel --> Tool
     Parallel --> MCP_S
     Parallel --> RAG_S
+    Parallel --> IMG
     LLM --> QG
     QG -->|"Score OK"| Done
     QG -->|"Score too low"| Retry
     Tool --> Done
     MCP_S --> Done
     RAG_S --> Done
+    IMG --> Done
     LLM -->|"Error"| Retry
     Tool -->|"Error"| Retry
     Retry -->|"max not reached"| Find
@@ -279,6 +283,13 @@ graph TD
 1. Dispatch to `ragService.search()`, `.index()`, or `.compare()` based on the pattern's `rag_operation` field
 2. Store search results or indexing confirmation as `StepResult`
 
+**Image Generation Execution:**
+
+1. Select a provider with `image_generation` capability via `ProviderSelector` (cheapest first)
+2. Call `provider.complete(systemPrompt, input)` -- the provider returns `LLMResponse` with an `images` array
+3. Write each base64-encoded image to disk in the configured `tools.output_dir`
+4. Store `StepResult` with `outputType: "file"`, `filePath`, and `filePaths`
+
 **Retry / Escalation:**
 
 - `retry.max`: Maximum retry count. The error message is fed back as context for the next attempt.
@@ -309,10 +320,11 @@ The optional `images` parameter accepts base64-encoded image data. When present,
 
 Factory: `createProvider(config: ProviderConfig): LLMProvider` reads `config.type` and instantiates the matching class.
 
-**Provider Selector** (`src/agents/provider-selector.ts`): Cost-based, capability-aware selection. Given a required capability (e.g., `"vision"`), it filters providers that declare the capability in their config, skips those without API keys (except Ollama), and sorts by `cost_per_mtok` ascending. The cheapest available provider wins.
+**Provider Selector** (`src/agents/provider-selector.ts`): Cost-based, capability-aware selection. Given a required capability (e.g., `"vision"` or `"image_generation"`), it filters providers that declare the capability in their config, skips those without API keys (except Ollama), and sorts by `cost_per_mtok` ascending. The cheapest available provider wins.
 
 ```typescript
-selector.select("vision")  // -> { name: "gemini-flash", provider: GeminiProvider }
+selector.select("vision")            // -> { name: "gemini-flash", provider: GeminiProvider }
+selector.select("image_generation")  // -> { name: "gemini-image", provider: GeminiProvider }
 ```
 
 ### 2.6 MCP Manager (`src/core/mcp.ts`)
@@ -556,6 +568,7 @@ AIOS/
 │   ├── generate_docs/system.md
 │   ├── generate_image_prompt/system.md
 │   ├── generate_tests/system.md
+│   ├── render_image_nano/system.md
 │   ├── identify_risks/system.md
 │   ├── pdf_vision_ocr/system.md
 │   ├── rag_index/system.md

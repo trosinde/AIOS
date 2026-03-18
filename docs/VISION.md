@@ -23,6 +23,7 @@ AIOS is a CLI-based AI orchestration system that unites independent AI agents in
 | Single LLM vendor lock-in | 4 provider types with cost-based selection | DONE |
 | No semantic search over project data | RAG with vector store and configurable collections | DONE |
 | No visual document analysis | Vision/OCR with provider selection | DONE |
+| No AI-driven image generation | Image generation with capability-based provider selection | DONE |
 
 ## System Overview
 
@@ -63,7 +64,7 @@ AIOS is a CLI-based AI orchestration system that unites independent AI agents in
 | [user-guide.md](user-guide.md) | Users | CLI usage, patterns, chat, pipes, MCP, RAG, Vision |
 | [configuration.md](configuration.md) | Users + Ops | aios.yaml, providers, MCP, RAG, env vars |
 | [architecture.md](architecture.md) | Developers | Components, data flow, dynamic orchestration |
-| [patterns.md](patterns.md) | Developers | Frontmatter schema, catalog (34 patterns) |
+| [patterns.md](patterns.md) | Developers | Frontmatter schema, catalog (35 patterns) |
 | [workflows.md](workflows.md) | Developers | EIP patterns (Scatter-Gather, DAG, Saga) |
 | [personas.md](personas.md) | Developers | 8 personas, team interaction |
 | [providers.md](providers.md) | Developers | 4 LLM providers, cost-based selection, vision |

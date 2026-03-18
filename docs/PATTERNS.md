@@ -89,7 +89,7 @@ Followed by:
 | `input_type` | string | yes | -- | Expected input: `text`, `json`, `image` |
 | `output_type` | string | yes | -- | Output kind: `text`, `structured`, `code`, `diagram` |
 | `tags` | string[] | yes | -- | Searchable tags |
-| `type` | enum | no | `llm` | Execution type: `llm`, `tool`, `mcp`, `rag` |
+| `type` | enum | no | `llm` | Execution type: `llm`, `tool`, `mcp`, `rag`, `image_generation` |
 | `persona` | string | no | -- | Default persona ID to use for this pattern |
 | `preferred_provider` | string | no | -- | LLM provider hint (e.g. `claude`, `ollama`) |
 | `internal` | boolean | no | `false` | If `true`, hidden from user-facing listings |
@@ -178,6 +178,16 @@ Performs a semantic search or indexing operation against a vector store. The `ra
 natural-language query --> [Embedding + Vector Search] --> ranked results
 ```
 
+### Image Generation Pattern (prompt -> provider -> image file)
+
+Generates images from text prompts using a provider with the `image_generation` capability. The engine selects the appropriate provider via `ProviderSelector`, sends the prompt, receives base64-encoded image data in `LLMResponse.images`, and writes the result to disk.
+
+```
+image prompt --> [Provider with image_generation capability] --> PNG/JPG file(s)
+```
+
+Image generation patterns declare `type: image_generation` and typically specify a `preferred_provider` pointing to an image-capable model (e.g. Gemini with `gemini-2.0-flash-exp-image-generation`).
+
 ---
 
 ## Pattern Catalog
@@ -191,7 +201,7 @@ natural-language query --> [Embedding + Vector Search] --> ranked results
 | `identify_risks` | Identify and assess risks | Requirements, design | Risk register |
 | `threat_model` | Create a STRIDE threat model | Design docs | Threat model |
 
-### Generate (9 patterns)
+### Generate (10 patterns)
 
 | Pattern | Description | Input | Output |
 |---------|-------------|-------|--------|
@@ -202,6 +212,7 @@ natural-language query --> [Embedding + Vector Search] --> ranked results
 | `generate_docs` | Technical documentation | Code, design | Technical docs |
 | `generate_image_prompt` | Optimize image description for generation | Image description | Detailed prompt |
 | `generate_tests` | Test cases and test code | Requirements, code | Test cases / test code |
+| `render_image_nano` | Generate image via Gemini image model | Image prompt | PNG image file |
 | `write_architecture_doc` | Architecture documentation from code | Source code, concept docs | Architecture document |
 | `write_user_doc` | User documentation with install and examples | Code, README | User documentation |
 

@@ -37,13 +37,13 @@ Foundation    Patterns      Personas      Workflows     Knowledge     Compliance
 **Goal:** Comprehensive pattern library with discovery, parameterization, and tool patterns.
 
 - [x] Pattern specification format (YAML frontmatter + Markdown)
-- [x] 34 patterns in 9 categories
+- [x] 35 patterns in 9 categories
 - [x] Pattern discovery: `aios patterns list`, `aios patterns search <query>`
 - [x] Pattern composition via pipes: `aios run p1 | aios run p2`
 - [x] Pattern parameterization: `aios run review_code --language=python`
 - [x] Custom pattern creator: `aios patterns create <name>`
 - [x] Tool patterns (`mmdc`, `render-image`) -- patterns that invoke external CLI tools
-- [x] Image generation via patterns
+- [x] Image generation via patterns (`render_image_nano` with Gemini image model)
 
 ---
 

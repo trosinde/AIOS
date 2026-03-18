@@ -17,6 +17,8 @@ interface LLMProvider {
 
 Both methods accept an optional `images` parameter -- an array of base64-encoded PNG strings. The provider translates these into its native image format before sending the request.
 
+The response type `LLMResponse` includes an optional `images` field -- an array of `{ mimeType: string, data: string }` objects containing base64-encoded image data. This is used by providers that support image generation (e.g. Gemini with image models).
+
 ## Provider Table
 
 | Provider | Type | Auth | Vision Format | Source |
@@ -67,7 +69,7 @@ Field reference:
 - **model** -- Model identifier passed to the API (e.g. `claude-sonnet-4-20250514`, `gemini-2.0-flash`).
 - **endpoint** -- Base URL override. Required for remote Ollama; optional for OpenAI-compatible endpoints.
 - **apiKey** -- API key or Bearer token. Required for Gemini and OpenAI. Optional for Ollama. Anthropic reads `ANTHROPIC_API_KEY` from the environment instead.
-- **capabilities** -- String array declaring what this provider can do (e.g. `["vision", "code"]`). Used by `ProviderSelector` to match providers to tasks.
+- **capabilities** -- String array declaring what this provider can do (e.g. `["vision", "code"]`, `["image_generation"]`). Used by `ProviderSelector` to match providers to tasks.
 - **cost_per_mtok** -- Cost in USD per million input tokens. `0` means free/local. Used by `ProviderSelector` to rank providers.
 
 ## Cost-Based Provider Selection
@@ -173,3 +175,27 @@ providers:
 ```
 
 Since Ollama's cost is 0, it will always be preferred over cloud providers for vision tasks when available.
+
+## Image Generation
+
+Providers can declare the `image_generation` capability to support generating images from text prompts. The Gemini provider detects image models (model name matching `/image/i`) and automatically adds `responseModalities: ["IMAGE", "TEXT"]` to the request. Generated images are returned in `LLMResponse.images` as base64-encoded data.
+
+### Configuration Example
+
+```yaml
+providers:
+  gemini-image:
+    type: gemini
+    model: gemini-2.0-flash-exp-image-generation
+    apiKey: ${GOOGLE_API_KEY}
+    capabilities: [image_generation]
+    cost_per_mtok: 0
+```
+
+The `render_image_nano` pattern uses this provider to generate images from optimized prompts. A typical workflow chains `generate_image_prompt` -> `render_image_nano`:
+
+```bash
+echo "A futuristic city at sunset" | aios run generate_image_prompt | aios run render_image_nano
+```
+
+The Engine writes generated images to `tools.output_dir` (default: `./output`) with filenames based on the step ID and timestamp.
