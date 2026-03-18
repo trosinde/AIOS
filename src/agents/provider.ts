@@ -2,8 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMResponse, ProviderConfig } from "../types.js";
 
 export interface LLMProvider {
-  complete(system: string, user: string): Promise<LLMResponse>;
-  chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse>;
+  complete(system: string, user: string, images?: string[]): Promise<LLMResponse>;
+  chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse>;
 }
 
 // ─── Claude (Anthropic API) ──────────────────────────────
@@ -17,12 +17,20 @@ class ClaudeProvider implements LLMProvider {
     this.model = model;
   }
 
-  async complete(system: string, user: string): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+    const userContent: Anthropic.ContentBlockParam[] = [];
+    if (images?.length) {
+      for (const img of images) {
+        userContent.push({ type: "image", source: { type: "base64", media_type: "image/png", data: img } });
+      }
+    }
+    userContent.push({ type: "text", text: user });
+
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: 4096,
       system,
-      messages: [{ role: "user", content: user }],
+      messages: [{ role: "user", content: userContent }],
     });
 
     const content = response.content
@@ -40,12 +48,24 @@ class ClaudeProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse> {
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+    const apiMessages: Anthropic.MessageParam[] = messages.map((msg, i) => {
+      if (i === 0 && msg.role === "user" && images?.length) {
+        const content: Anthropic.MessageParam["content"] = [];
+        for (const img of images) {
+          content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: img } });
+        }
+        content.push({ type: "text", text: msg.content });
+        return { role: "user" as const, content };
+      }
+      return msg;
+    });
+
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: 4096,
       system,
-      messages,
+      messages: apiMessages,
     });
 
     const content = response.content
@@ -77,7 +97,10 @@ class OllamaProvider implements LLMProvider {
     this.apiKey = apiKey;
   }
 
-  async complete(system: string, user: string): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+    const userMsg: Record<string, unknown> = { role: "user", content: user };
+    if (images?.length) userMsg.images = images;
+
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
       headers: {
@@ -88,7 +111,7 @@ class OllamaProvider implements LLMProvider {
         model: this.model,
         messages: [
           { role: "system", content: system },
-          { role: "user", content: user },
+          userMsg,
         ],
         stream: false,
       }),
@@ -122,10 +145,15 @@ class OllamaProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>): Promise<LLMResponse> {
-    const ollamaMessages = [
-      { role: "system" as const, content: system },
-      ...messages,
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+    const ollamaMessages: Record<string, unknown>[] = [
+      { role: "system", content: system },
+      ...messages.map((msg, i) => {
+        if (i === 0 && msg.role === "user" && images?.length) {
+          return { ...msg, images };
+        }
+        return msg;
+      }),
     ];
 
     const response = await fetch(`${this.endpoint}/api/chat`, {
@@ -172,12 +200,19 @@ class OllamaProvider implements LLMProvider {
 
 // ─── Factory ─────────────────────────────────────────────
 
+import { GeminiProvider } from "./gemini-provider.js";
+import { OpenAIProvider } from "./openai-provider.js";
+
 export function createProvider(config: ProviderConfig): LLMProvider {
   switch (config.type) {
     case "anthropic":
       return new ClaudeProvider(config.model);
     case "ollama":
       return new OllamaProvider(config.model, config.endpoint, config.apiKey);
+    case "gemini":
+      return new GeminiProvider(config.model, config.apiKey!);
+    case "openai":
+      return new OpenAIProvider(config.model, config.apiKey!, config.endpoint);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }

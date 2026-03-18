@@ -1,8 +1,9 @@
 import chalk from "chalk";
 import { execFile } from "child_process";
-import { writeFileSync, mkdirSync, unlinkSync } from "fs";
+import { writeFileSync, mkdirSync, unlinkSync, readFileSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
+import type { ProviderSelector } from "../agents/provider-selector.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
@@ -21,6 +22,7 @@ export class Engine {
   private personaRegistry?: PersonaRegistry;
   private mcpManager?: McpManager;
   private ragService?: RAGService;
+  private providerSelector?: ProviderSelector;
 
   constructor(
     registry: PatternRegistry,
@@ -29,6 +31,7 @@ export class Engine {
     personaRegistry?: PersonaRegistry,
     mcpManager?: McpManager,
     ragService?: RAGService,
+    providerSelector?: ProviderSelector,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -36,6 +39,7 @@ export class Engine {
     this.personaRegistry = personaRegistry;
     this.mcpManager = mcpManager;
     this.ragService = ragService;
+    this.providerSelector = providerSelector;
   }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -122,7 +126,20 @@ export class Engine {
         const systemPrompt = persona
           ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
           : pattern.systemPrompt;
-        const response = await this.provider.complete(systemPrompt, input);
+
+        // Vision: collect images from upstream steps
+        const images = this.collectImages(step, results);
+        let providerToUse = this.provider;
+
+        if (images.length > 0 && this.providerSelector) {
+          const vision = this.providerSelector.select("vision");
+          if (vision) {
+            console.error(chalk.gray(`    👁️ Vision: ${vision.name}`));
+            providerToUse = vision.provider;
+          }
+        }
+
+        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined);
 
         // Optional: Quality Gate
         if (step.quality_gate) {
@@ -269,11 +286,16 @@ export class Engine {
 
     const output = await this.mcpManager.callTool(pattern.meta.mcp_server, pattern.meta.mcp_tool, args);
 
+    // Extract file paths from output (e.g. thumbnail paths)
+    const filePaths = this.extractFilePaths(output);
+
     return {
       stepId: step.id,
       pattern: step.pattern,
       output,
-      outputType: "text",
+      outputType: filePaths.length > 0 ? "file" : "text",
+      filePath: filePaths[0],
+      filePaths: filePaths.length > 0 ? filePaths : undefined,
       durationMs: Date.now() - t0,
     };
   }
@@ -384,6 +406,40 @@ export class Engine {
         console.error(chalk.red(`  ❌ Kompensation von ${step.id} fehlgeschlagen`));
       }
     }
+  }
+
+  // ─── Vision Helpers ──────────────────────────────────────────
+
+  /** Read image files from upstream step results as base64 */
+  private collectImages(step: ExecutionStep, results: Map<string, StepResult>): string[] {
+    const images: string[] = [];
+    for (const src of step.input_from) {
+      if (src === "$USER_INPUT") continue;
+      const r = results.get(src);
+      if (r?.filePaths) {
+        for (const fp of r.filePaths) {
+          if (/\.(png|jpg|jpeg|webp)$/i.test(fp)) {
+            try {
+              images.push(readFileSync(fp).toString("base64"));
+            } catch {
+              // Skip unreadable files
+            }
+          }
+        }
+      }
+    }
+    return images;
+  }
+
+  /** Extract image file paths from text output (e.g. MCP tool results) */
+  private extractFilePaths(output: string): string[] {
+    const re = /(?:^|\s)((?:\/|[A-Z]:\\)[^\s]+\.(?:png|jpg|jpeg|webp))/gim;
+    const paths: string[] = [];
+    let match;
+    while ((match = re.exec(output)) !== null) {
+      paths.push(match[1]);
+    }
+    return paths;
   }
 
   // ─── Input & Quality Gate ──────────────────────────────────

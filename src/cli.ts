@@ -10,11 +10,22 @@ import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
+import { ProviderSelector } from "./agents/provider-selector.js";
 import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
 import type { AiosConfig, Pattern } from "./types.js";
+import type { LLMProvider } from "./agents/provider.js";
+
+/** Build all providers and a ProviderSelector from config */
+function buildProviderSelector(config: AiosConfig): ProviderSelector {
+  const allProviders = new Map<string, LLMProvider>();
+  for (const [name, cfg] of Object.entries(config.providers)) {
+    try { allProviders.set(name, createProvider(cfg)); } catch { /* skip unconfigured */ }
+  }
+  return new ProviderSelector(allProviders, config.providers);
+}
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
 async function setupMcp(config: AiosConfig, registry: PatternRegistry): Promise<McpManager | undefined> {
@@ -70,7 +81,8 @@ program
     const personas = new PersonaRegistry(config.paths.personas);
     const router = new Router(registry, provider);
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+    const selector = buildProviderSelector(config);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
     const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -146,10 +158,11 @@ program
     const personas = new PersonaRegistry(config.paths.personas);
 
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
+    const selector = buildProviderSelector(config);
 
     if (pattern.meta.type === "rag") {
       // RAG-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
       const ragPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -163,7 +176,7 @@ program
       if (out) process.stdout.write(out.output);
     } else if (pattern.meta.type === "mcp") {
       // MCP-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
       const mcpPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -177,7 +190,7 @@ program
       if (out) process.stdout.write(out.output);
     } else if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
       const toolPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -248,8 +261,9 @@ program
     const provider = createProvider(providerCfg);
     const personas = new PersonaRegistry(config.paths.personas);
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
+    const selector = buildProviderSelector(config);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();

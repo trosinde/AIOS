@@ -5,6 +5,27 @@ providers:
   claude:
     type: anthropic
     model: claude-sonnet-4-20250514
+    capabilities: [vision, text, code]
+    cost_per_mtok: 3.0
+  ollama-vision:
+    type: ollama
+    model: minicpm-v
+    endpoint: http://172.24.32.82:11435
+    apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+    capabilities: [vision]
+    cost_per_mtok: 0
+  gemini-flash:
+    type: gemini
+    model: gemini-2.0-flash
+    apiKey: ${GEMINI_API_KEY}
+    capabilities: [vision, text]
+    cost_per_mtok: 0.075
+  openai-mini:
+    type: openai
+    model: gpt-4o-mini
+    apiKey: ${OPENAI_API_KEY}
+    capabilities: [vision, text]
+    cost_per_mtok: 0.15
   ollama-72b:
     type: ollama
     model: qwen2.5:72b

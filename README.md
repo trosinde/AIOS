@@ -85,7 +85,7 @@ npm install
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Verifizieren: `npx tsx src/cli.ts patterns list` sollte 32 Patterns zeigen.
+Verifizieren: `npx tsx src/cli.ts patterns list` sollte 34+ Patterns zeigen (plus dynamisch registrierte MCP-Tools).
 
 Für lokale LLMs (kostenlos): [Ollama einrichten →](#ollama-lokal)
 
@@ -160,7 +160,7 @@ Konversationsverlauf bleibt erhalten – Nachfragen beziehen sich auf vorherige 
 $ npx tsx src/cli.ts chat
 
   AIOS Interactive Chat
-  32 Patterns geladen. Tippe /help für Befehle.
+  34 Patterns geladen. Tippe /help für Befehle.
 
 aios> Welche Patterns gibt es für Code-Analyse?
   ⏳ Denke nach...
@@ -200,7 +200,7 @@ aios chat                              # Interaktive Chat-Session
 aios chat --provider ollama            # Chat mit anderem Provider
 
 aios plan "Aufgabe"                    # Nur planen (JSON)
-aios patterns list                     # 32 Patterns anzeigen
+aios patterns list                     # 34+ Patterns anzeigen
 aios patterns search "security"        # Suchen
 aios patterns show code_review         # Details + Prompt
 aios patterns create my_pattern        # Neues Pattern erstellen
@@ -248,10 +248,30 @@ providers:
   claude:
     type: anthropic
     model: claude-sonnet-4-20250514
+    capabilities: [vision, text, code]
+    cost_per_mtok: 3.0
   ollama:
     type: ollama
     model: llama3.2
     endpoint: http://localhost:11434
+  ollama-vision:
+    type: ollama
+    model: minicpm-v
+    endpoint: http://localhost:11434
+    capabilities: [vision]
+    cost_per_mtok: 0
+  gemini-flash:
+    type: gemini
+    model: gemini-2.0-flash
+    apiKey: ${GEMINI_API_KEY}
+    capabilities: [vision, text]
+    cost_per_mtok: 0.075
+  openai-mini:
+    type: openai
+    model: gpt-4o-mini
+    apiKey: ${OPENAI_API_KEY}
+    capabilities: [vision, text]
+    cost_per_mtok: 0.15
 
 defaults:
   provider: claude
@@ -263,9 +283,34 @@ paths:
 tools:
   output_dir: ./output
   allowed: [mmdc]  # Allowlist für externe CLI-Tools
+
+mcp:
+  servers:
+    pdftools:
+      command: node
+      args: ["/path/to/mcp-server/dist/index.js"]
+      category: pdf
+      prefix: pdf
+      exclude: [pdf_ocr]  # Tools die nicht registriert werden
 ```
 
-### Ollama (lokal)
+### LLM-Provider
+
+AIOS unterstützt vier Provider-Typen. Jeder Provider kann `capabilities` und `cost_per_mtok` deklarieren.
+Die Engine wählt automatisch den **günstigsten** verfügbaren Provider für spezielle Anforderungen (z.B. Vision):
+
+```
+Ollama (kostenlos) → Gemini Flash (0.075) → GPT-4o-mini (0.15) → Claude Sonnet (3.0)
+```
+
+Provider ohne gesetzten API-Key werden automatisch übersprungen.
+
+| Provider | Typ | Besonderheit |
+|----------|-----|-------------|
+| Anthropic (Claude) | `anthropic` | Anthropic SDK, Vision via multimodal Content Blocks |
+| Ollama | `ollama` | Lokale Modelle, optional Bearer-Auth für Remote-Server |
+| Google Gemini | `gemini` | REST API mit API-Key, Vision via `inlineData` |
+| OpenAI | `openai` | OpenAI-kompatibel (auch Custom-Endpoints), Vision via `image_url` |
 
 ```bash
 # Ollama installieren: https://ollama.ai
@@ -276,7 +321,73 @@ ollama pull llama3.2
 npx tsx src/cli.ts --provider ollama "Fasse zusammen"
 ```
 
-### Die 32 Patterns
+### MCP-Server (Model Context Protocol)
+
+AIOS kann externe Tools über MCP-Server einbinden. MCP-Tools werden beim Start automatisch
+als Patterns registriert und stehen dem Router zur Verfügung.
+
+```yaml
+# aios.yaml
+mcp:
+  servers:
+    pdftools:
+      command: node
+      args: ["/path/to/mcp-server/dist/index.js"]
+      category: pdf
+      prefix: pdf
+      exclude: [pdf_ocr]  # Bestimmte Tools ausschließen
+```
+
+MCP-Tools erscheinen als `[MCP]`-Patterns in `aios patterns list` und können direkt
+oder in automatischen Workflows verwendet werden:
+
+```bash
+# MCP-Tool direkt aufrufen
+echo '{"file_path": "/path/to/doc.pdf"}' | aios run pdf/pdf_extract_text
+
+# Router plant MCP-Tools automatisch ein
+aios "Extrahiere den Text aus report.pdf und fasse ihn zusammen"
+```
+
+### RAG (Retrieval-Augmented Generation)
+
+Semantische Suche über eigene Datenbestände. AIOS unterstützt lokale Embeddings
+(Transformers.js) und Ollama-Embeddings mit konfigurierbaren Collections:
+
+```yaml
+# aios.yaml
+rag:
+  defaultProvider: local
+  defaultModel: Xenova/all-MiniLM-L6-v2
+  collections:
+    my-docs:
+      preprocessing:
+        maxChunkLength: 500
+        chunkStrategy: truncate
+        cleaners: [stripHtml, normalizeWhitespace]
+      search:
+        minRelevance: 0.3
+        topK: 20
+```
+
+RAG-Patterns (`rag_search`, `rag_index`) werden vom Router in Workflows integriert,
+z.B. um vor einer Analyse relevante Dokumente aus einer Knowledge Base zu finden.
+
+### Vision / OCR
+
+PDF-Seiten als Bilder analysieren, ohne Tesseract. Die Engine leitet Bilder aus
+vorherigen Steps (z.B. `pdf_thumbnails`) automatisch an einen Vision-fähigen LLM-Provider weiter.
+
+```bash
+# Router plant automatisch: pdf_thumbnails → pdf_vision_ocr → summarize
+aios "Analysiere die Seiten in report.pdf und fasse den Inhalt zusammen"
+```
+
+Der **ProviderSelector** wählt den günstigsten Provider mit `capabilities: [vision]`.
+Lokales Ollama-Modell (z.B. `minicpm-v`, Kosten: 0) wird bevorzugt; wenn nicht
+verfügbar, fällt das System auf Gemini Flash, GPT-4o-mini oder Claude zurück.
+
+### Die 34 Patterns
 
 Alle Patterns auflisten: `npx tsx src/cli.ts patterns list`
 
@@ -288,6 +399,8 @@ Alle Patterns auflisten: `npx tsx src/cli.ts patterns list`
 | **transform** | `summarize`, `refactor`, `translate_technical`, `simplify_text`, `formalize` | `cat notes.txt \| aios run formalize` |
 | **report** | `aggregate_reviews`, `compliance_report`, `test_report`, `risk_report` | `cat results.json \| aios run test_report` |
 | **tool** | `render_diagram` (mmdc), `render_image` (DALL-E/Stability) | `echo "graph TD;A-->B" \| aios run render_diagram` |
+| **pdf** | `pdf_vision_ocr` + MCP-Tools (`pdf_extract_text`, `pdf_thumbnails`, ...) | `aios "OCR auf report.pdf"` |
+| **rag** | `rag_search`, `rag_index` | `echo "query" \| aios run rag_search` |
 | **meta** | `evaluate_quality`, `extract_knowledge` | (intern, vom Router verwendet) |
 
 Details zu einem Pattern: `npx tsx src/cli.ts patterns show security_review`
@@ -301,9 +414,13 @@ Details zu einem Pattern: `npx tsx src/cli.ts patterns show security_review`
 ```
 User: "Review Code auf Security"
   │
-  ├─ 1. Registry    lädt patterns/*/system.md → Katalog
+  ├─ 1. Registry    lädt patterns/*/system.md + MCP-Tools → Katalog
   ├─ 2. Router      LLM-Call: Aufgabe + Katalog → JSON Plan
   └─ 3. Engine      führt Plan aus: Promise.all, Retry, Rollback
+       ├─ LLM-Steps     → Provider (Claude/Ollama/Gemini/OpenAI)
+       ├─ MCP-Steps      → MCP-Server (externe Tools)
+       ├─ RAG-Steps      → Vector Store (Semantic Search)
+       └─ Vision-Steps   → ProviderSelector (günstigster Vision-Provider)
 ```
 
 **Persona = WER** (Rolle, Expertise) → `personas/*.yaml`
@@ -315,24 +432,32 @@ Zur Laufzeit: `system_prompt = persona.system_prompt + pattern.systemPrompt`
 
 ```
 src/
-├── cli.ts                 # CLI Entry Point (Commander.js)
-├── types.ts               # Alle TypeScript Interfaces
+├── cli.ts                       # CLI Entry Point (Commander.js)
+├── types.ts                     # Alle TypeScript Interfaces
 ├── core/
-│   ├── registry.ts        # Pattern Registry – lädt system.md, baut Katalog
-│   ├── personas.ts        # Persona Registry – lädt YAML-Dateien
-│   ├── router.ts          # Router – LLM-Call der Execution Plans erzeugt
-│   ├── engine.ts          # Engine – DAG-Ausführung, Retry, Saga Rollback
-│   ├── repl.ts            # Interaktive Chat-Session (REPL Loop)
-│   ├── slash.ts           # Slash-Command Parser (/command --key=value)
-│   └── knowledge.ts       # Knowledge Base – SQLite (Decisions, Facts, Requirements)
+│   ├── registry.ts              # Pattern Registry – lädt system.md, baut Katalog
+│   ├── personas.ts              # Persona Registry – lädt YAML-Dateien
+│   ├── router.ts                # Router – LLM-Call der Execution Plans erzeugt
+│   ├── engine.ts                # Engine – DAG-Ausführung, Retry, Saga Rollback, Vision
+│   ├── mcp.ts                   # MCP-Server Management + Tool-Registration
+│   ├── repl.ts                  # Interaktive Chat-Session (REPL Loop)
+│   ├── slash.ts                 # Slash-Command Parser (/command --key=value)
+│   └── knowledge.ts             # Knowledge Base – SQLite (Decisions, Facts, Requirements)
 ├── agents/
-│   └── provider.ts        # LLM Provider Abstraction (Claude + Ollama)
+│   ├── provider.ts              # LLM Provider Interface + Claude/Ollama
+│   ├── gemini-provider.ts       # Google Gemini REST Provider
+│   ├── openai-provider.ts       # OpenAI-kompatibler REST Provider
+│   └── provider-selector.ts     # Kostenbasierte Provider-Auswahl nach Capability
+├── rag/
+│   ├── rag-service.ts           # RAG Service – Search, Index, Compare
+│   ├── vector-store.ts          # In-Memory Vector Store
+│   └── preprocessing.ts         # Chunking, Cleaning, Embedding
 └── utils/
-    ├── config.ts           # YAML Config Loader
-    └── stdin.ts            # stdin Helper
+    ├── config.ts                # YAML Config Loader
+    └── stdin.ts                 # stdin Helper
 
-patterns/*/system.md       # 32 Patterns (YAML-Frontmatter + Prompt)
-personas/*.yaml            # 8 Personas (RE, Architect, Developer, Tester, ...)
+patterns/*/system.md             # 34 Patterns (YAML-Frontmatter + Prompt)
+personas/*.yaml                  # 8 Personas (RE, Architect, Developer, Tester, ...)
 ```
 
 ### Tech Stack
@@ -341,11 +466,13 @@ personas/*.yaml            # 8 Personas (RE, Architect, Developer, Tester, ...)
 |-----|-------|
 | Runtime | Node.js 20+, TypeScript (ESM, strict) |
 | CLI | Commander.js + chalk |
-| LLM | Anthropic SDK + Ollama REST |
+| LLM | Anthropic SDK, Ollama REST, Gemini REST, OpenAI REST |
+| MCP | @modelcontextprotocol/sdk (Model Context Protocol) |
+| RAG | Transformers.js (lokale Embeddings) + Ollama Embeddings |
 | Patterns | gray-matter (YAML-Frontmatter aus Markdown) |
-| Config | yaml |
+| Config | yaml + dotenv |
 | Knowledge Base | better-sqlite3 |
-| Tests | vitest (92 Tests) |
+| Tests | vitest (153 Tests) |
 
 ### Tests
 
@@ -376,13 +503,15 @@ Die Engine implementiert diese EIP-Patterns aus
 | **Neues Prompt-Template** | `patterns/my_pattern/system.md` anlegen | Neues Review für API-Specs |
 | **Neue Rolle/Expertise** | `personas/my_role.yaml` anlegen | DevOps Engineer, Data Scientist |
 | **Persona einem Pattern zuweisen** | `persona: my_role` in Pattern-Frontmatter | Pattern nutzt jetzt die Rolle |
-| **Neuen LLM-Provider** | Klasse in `src/agents/provider.ts` + Factory | OpenAI, Mistral, Gemini |
+| **Neuen LLM-Provider** | Klasse in `src/agents/` + Factory in `provider.ts` | Bereits: Claude, Ollama, Gemini, OpenAI |
 | **Chat-Verhalten anpassen** | `src/core/repl.ts` (REPL Loop, Slash-Commands) | Neue Built-in Commands, Auto-Routing |
 | **Neuen CLI-Befehl** | Command in `src/cli.ts` (Commander.js) | `aios knowledge search` |
 | **Workflow-Logik ändern** | `src/core/engine.ts` | Neuer Retry-Modus, Timeout |
 | **Router-Verhalten anpassen** | `patterns/_router/system.md` oder `src/core/router.ts` | Andere Planungs-Regeln |
 | **Wissen speichern/abfragen** | `src/core/knowledge.ts` (KnowledgeBase) | Neue Query-Methoden |
 | **CLI-Tool einbinden** | Tool-Pattern anlegen + `aios.yaml` Allowlist | Prettier, ESLint, Terraform |
+| **MCP-Server anbinden** | `mcp.servers` in `aios.yaml` konfigurieren | PDFTools, Azure DevOps, DB-Tools |
+| **Semantic Search (RAG)** | `rag.collections` in `aios.yaml` + RAG-Patterns nutzen | Dokument-Suche, Work-Item-Matching |
 | **Neues Frontmatter-Feld** | `PatternMeta` in `src/types.ts` + Parser in `src/core/registry.ts` | `estimated_tokens`, `timeout` |
 
 ### Die häufigsten Erweiterungen im Detail
@@ -428,9 +557,10 @@ tags: [lint, quality]
 Dann in `aios.yaml`: `tools.allowed: [..., eslint]`
 
 **Neuer LLM-Provider:**
-1. Klasse in `src/agents/provider.ts` mit Interface `complete(system, user)` + `chat(system, messages)` → `LLMResponse`
-2. In `createProvider()` Factory registrieren
-3. In `aios.yaml` konfigurieren: `providers.openai: { type: openai, model: gpt-4o }`
+1. Klasse in `src/agents/` mit Interface `complete(system, user, images?)` + `chat(system, messages, images?)` → `LLMResponse`
+2. In `createProvider()` Factory registrieren (`src/agents/provider.ts`)
+3. In `aios.yaml` konfigurieren mit `capabilities` und `cost_per_mtok`
+4. Bereits eingebaut: `anthropic`, `ollama`, `gemini`, `openai`
 
 ### Weiterführende Docs
 

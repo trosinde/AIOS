@@ -88,6 +88,7 @@ export interface StepResult {
   output: string;
   outputType: "text" | "file";    // Was output enthält
   filePath?: string;               // Bei outputType: "file"
+  filePaths?: string[];            // Multiple output files (e.g. thumbnails)
   durationMs: number;
 }
 
@@ -136,10 +137,12 @@ export interface LLMResponse {
 }
 
 export interface ProviderConfig {
-  type: "anthropic" | "ollama";
+  type: "anthropic" | "ollama" | "gemini" | "openai";
   model: string;
   endpoint?: string;
   apiKey?: string;       // Bearer token for authenticated Ollama endpoints
+  capabilities?: string[];     // e.g. ["vision", "code"]
+  cost_per_mtok?: number;      // $/million input tokens (0 = free/local)
 }
 
 // ─── Chat / REPL ────────────────────────────────────────
