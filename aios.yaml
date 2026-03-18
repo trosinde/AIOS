@@ -38,3 +38,5 @@ mcp:
       prefix: pdf
       description: "PDFTools – PDF operations (merge, split, extract, convert)"
       exclude: [pdf_ocr]
+      env:
+        MCP_PDFTOOLS_VENV: "/mnt/c/Users/rosin-1/repos/mcp_pdftools/venv/bin/python"
