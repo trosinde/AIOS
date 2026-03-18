@@ -172,6 +172,7 @@ export interface McpServerConfig {
   category?: string;       // Pattern-Kategorie (default: "mcp")
   prefix?: string;         // Pattern-Name-Prefix (default: Server-Name)
   description?: string;    // Menschenlesbarer Name für Katalog
+  exclude?: string[];      // Tool-Namen die nicht registriert werden
 }
 
 export interface McpConfig {

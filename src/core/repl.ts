@@ -261,6 +261,7 @@ async function handleMcpCommand(
       prefix: params.prefix,
       category: params.category,
       description: params.description,
+      exclude: params.exclude ? params.exclude.split(",") : undefined,
     };
 
     // Create McpManager on-the-fly if none exists
@@ -272,7 +273,7 @@ async function handleMcpCommand(
     try {
       console.error(chalk.blue(`  Verbinde mit "${name}"...`));
       const tools = await mcpManager.addServer(name, serverConfig);
-      registerMcpTools(tools, registry, name);
+      registerMcpTools(tools, registry, name, serverConfig.exclude);
       console.error(chalk.green(`  ✅ ${name}: ${tools.length} Tools registriert`));
     } catch (err) {
       console.error(chalk.red(`  Fehler: ${err instanceof Error ? err.message : err}`));
@@ -316,7 +317,7 @@ async function handleMcpCommand(
       try {
         console.error(chalk.blue(`  Lade "${name}" neu...`));
         const tools = await mcpManager.addServer(name, cfg);
-        registerMcpTools(tools, registry, name);
+        registerMcpTools(tools, registry, name, cfg.exclude);
         console.error(chalk.green(`  ✅ ${name}: ${tools.length} Tools (${removed} ersetzt)`));
       } catch (err) {
         console.error(chalk.red(`  ${name}: ${err instanceof Error ? err.message : err}`));

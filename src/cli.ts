@@ -20,10 +20,20 @@ async function setupMcp(config: AiosConfig, registry: PatternRegistry): Promise<
   if (!config.mcp || Object.keys(config.mcp.servers).length === 0) return undefined;
 
   const mcpManager = new McpManager(config.mcp);
-  const mcpTools = await mcpManager.discoverAllTools();
-  registerMcpTools(mcpTools, registry, "all");
-  if (mcpTools.length > 0) {
-    console.error(chalk.gray(`  🔌 ${mcpTools.length} MCP-Tools registriert`));
+  let totalTools = 0;
+  for (const serverName of Object.keys(config.mcp.servers)) {
+    try {
+      const tools = await mcpManager.listTools(serverName);
+      const serverCfg = config.mcp.servers[serverName];
+      registerMcpTools(tools, registry, serverName, serverCfg.exclude);
+      const excluded = serverCfg.exclude?.length ?? 0;
+      totalTools += tools.length - excluded;
+    } catch (err) {
+      console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  if (totalTools > 0) {
+    console.error(chalk.gray(`  🔌 ${totalTools} MCP-Tools registriert`));
   }
   return mcpManager;
 }

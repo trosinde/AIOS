@@ -157,8 +157,10 @@ export class McpManager {
 }
 
 /** Entdeckte MCP-Tools als virtuelle Patterns in der Registry registrieren */
-export function registerMcpTools(tools: McpToolInfo[], registry: PatternRegistry, serverName: string): void {
+export function registerMcpTools(tools: McpToolInfo[], registry: PatternRegistry, serverName: string, exclude?: string[]): void {
+  const excludeSet = exclude ? new Set(exclude) : undefined;
   for (const tool of tools) {
+    if (excludeSet?.has(tool.name)) continue;
     registry.registerVirtual({
       meta: {
         name: tool.patternName,

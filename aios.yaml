@@ -31,3 +31,10 @@ mcp:
       description: "Azure DevOps – Work Items, Git, Tests, Sprints"
       env:
         AZDO_CONFIG: "./azdo-config.json"
+    pdftools:
+      command: node
+      args: ["/mnt/c/Users/rosin-1/repos/mcp_pdftools/mcp-server/dist/index.js"]
+      category: pdf
+      prefix: pdf
+      description: "PDFTools – PDF operations (merge, split, extract, convert)"
+      exclude: [pdf_ocr]
