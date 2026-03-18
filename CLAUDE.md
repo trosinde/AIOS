@@ -30,10 +30,12 @@ src/
 ├── types.ts            # Alle Interfaces
 ├── core/
 │   ├── registry.ts     # Pattern Registry (lädt system.md, extrahiert Frontmatter)
+│   ├── personas.ts     # Persona Registry (lädt YAML-Dateien)
 │   ├── router.ts       # Meta-Agent (plant Workflows via LLM)
 │   ├── engine.ts       # DAG/Saga Execution Engine
 │   ├── repl.ts         # Interaktive Chat-Session (REPL Loop)
-│   └── slash.ts        # Slash-Command Parser (/command --key=value)
+│   ├── slash.ts        # Slash-Command Parser (/command --key=value)
+│   └── knowledge.ts    # Knowledge Base (SQLite)
 ├── agents/
 │   └── provider.ts     # LLM Provider Abstraction (Claude, Ollama)
 └── utils/
@@ -59,7 +61,7 @@ docs/                   # Konzeptdokumentation
 aios "Natürlichsprachliche Aufgabe"      # Router plant dynamisch
 aios run <pattern> [< input]             # Ein Pattern direkt (Fabric-Style)
 aios plan "Aufgabe"                      # Nur planen, nicht ausführen
-aios chat                                # Interaktive Chat-Session (REPL)
+aios chat [--provider <name>]             # Interaktive Chat-Session (REPL)
 aios patterns list                       # Alle Patterns auflisten
 aios patterns show <name>                # Pattern-Details anzeigen
 ```
@@ -86,7 +88,7 @@ Startet eine interaktive Session mit Multi-Turn-Konversation und Slash-Commands:
 - [x] DAG Engine (parallele Ausführung)
 - [x] Saga Engine (Retry/Rollback)
 - [x] Bug-Fixes (provider.ts, engine.ts, router.ts, cli.ts)
-- [x] Tests (vitest, 35 Tests)
+- [x] Tests (vitest, 81 Tests)
 - [x] Interactive Chat REPL (`aios chat`, Slash-Commands, Multi-Turn)
 
 ## Wichtige Konzeptdocs

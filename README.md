@@ -90,9 +90,31 @@ cat feature_request.txt \
 
 Jeder `|` ist ein eigener LLM-Call mit eigenem Prompt-Template.
 
+### Automatische Workflows
+
+Statt manuell Patterns zu verketten, beschreibe einfach was du willst:
+
+```bash
+# AIOS plant und führt den besten Workflow automatisch aus
+npx tsx src/cli.ts "Analysiere diese Architektur und erstelle ein Threat Model" < design.md
+
+# Nur den Plan sehen (ohne Ausführung)
+npx tsx src/cli.ts --dry-run "Implementiere OAuth2 mit Compliance-Check"
+```
+
+Der Router entscheidet je nach Aufgabe:
+
+| Du sagst | AIOS macht |
+|----------|-----------|
+| "Fasse zusammen" | 1 Pattern direkt |
+| "Review den Code" | 2-3 Reviews parallel → Konsolidierung |
+| "Implementiere Feature X" | Requirements → Design → Code + Tests parallel |
+| "Feature mit Compliance" | Wie oben + Quality Gates + Rollback bei Fehler |
+
 ### Interaktiver Chat-Modus
 
 Statt einzelner Kommandos: eine interaktive Session mit Konversations-Kontext.
+Konversationsverlauf bleibt erhalten – Nachfragen beziehen sich auf vorherige Ergebnisse.
 
 ```bash
 $ npx tsx src/cli.ts chat
@@ -122,30 +144,7 @@ Basierend auf dem Review oben ...
 - `/patterns` – Alle Patterns auflisten
 - `/history` – Chat-Verlauf anzeigen
 - `/clear` – Verlauf löschen
-- `/exit` – Session beenden
-
-Pattern-Ergebnisse werden in den Konversationsverlauf aufgenommen – Nachfragen beziehen sich automatisch auf vorherige Ergebnisse.
-
-### Automatische Workflows
-
-Statt manuell Patterns zu verketten, beschreibe einfach was du willst:
-
-```bash
-# AIOS plant und führt den besten Workflow automatisch aus
-npx tsx src/cli.ts "Analysiere diese Architektur und erstelle ein Threat Model" < design.md
-
-# Nur den Plan sehen (ohne Ausführung)
-npx tsx src/cli.ts --dry-run "Implementiere OAuth2 mit Compliance-Check"
-```
-
-Der Router entscheidet je nach Aufgabe:
-
-| Du sagst | AIOS macht |
-|----------|-----------|
-| "Fasse zusammen" | 1 Pattern direkt |
-| "Review den Code" | 2-3 Reviews parallel → Konsolidierung |
-| "Implementiere Feature X" | Requirements → Design → Code + Tests parallel |
-| "Feature mit Compliance" | Wie oben + Quality Gates + Rollback bei Fehler |
+- `/exit` oder `/quit` – Session beenden
 
 ### Alle Befehle
 
