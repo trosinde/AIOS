@@ -7,6 +7,8 @@ import type { PatternRegistry } from "./registry.js";
 import type { PersonaRegistry } from "./personas.js";
 import type { Router } from "./router.js";
 import type { Engine } from "./engine.js";
+import { McpManager, registerMcpTools } from "./mcp.js";
+import type { McpToolInfo } from "./mcp.js";
 import { parseSlashCommand, isBuiltinCommand } from "./slash.js";
 
 export interface ReplOptions {
@@ -16,6 +18,7 @@ export interface ReplOptions {
   router: Router;
   engine: Engine;
   config: AiosConfig;
+  mcpManager?: McpManager;
 }
 
 const MAX_HISTORY_MESSAGES = 50;
@@ -49,6 +52,7 @@ function printHelp(registry: PatternRegistry): void {
   console.error(`    ${chalk.cyan("/patterns")}    Alle Patterns auflisten`);
   console.error(`    ${chalk.cyan("/history")}     Chat-Verlauf anzeigen`);
   console.error(`    ${chalk.cyan("/clear")}       Chat-Verlauf löschen`);
+  console.error(`    ${chalk.cyan("/mcp")}         MCP-Server verwalten (list|tools|add|remove|reload)`);
   console.error(`    ${chalk.cyan("/exit")}        Session beenden`);
   console.error(chalk.bold("\n  Pattern-Ausführung:"));
   console.error(`    ${chalk.cyan("/<pattern>")} ${chalk.gray("[text] [--key=value]")}`);
@@ -104,6 +108,34 @@ export async function executePattern(
     throw new Error(`Pattern "${name}" nicht gefunden.`);
   }
 
+  // MCP-Pattern: direkt über McpManager aufrufen
+  if (pattern.meta.type === "mcp") {
+    if (!options.mcpManager) throw new Error("McpManager nicht konfiguriert");
+    if (!pattern.meta.mcp_server || !pattern.meta.mcp_tool) {
+      throw new Error(`MCP-Pattern "${name}" hat kein mcp_server/mcp_tool definiert`);
+    }
+
+    // Args + Params zu JSON-Args zusammenführen
+    let mcpArgs: Record<string, unknown> = { ...params };
+    if (args) {
+      try {
+        const parsed = JSON.parse(args);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          mcpArgs = { ...mcpArgs, ...parsed };
+        } else {
+          mcpArgs.input = args;
+        }
+      } catch {
+        mcpArgs.input = args;
+      }
+    }
+
+    console.error(chalk.blue(`  🔌 Führe MCP-Tool ${chalk.cyan(name)} aus...`));
+    const result = await options.mcpManager.callTool(pattern.meta.mcp_server, pattern.meta.mcp_tool, mcpArgs);
+    console.error(chalk.green(`  ✅ Fertig`));
+    return result;
+  }
+
   let systemPrompt = pattern.systemPrompt;
 
   // Inject params
@@ -148,6 +180,153 @@ export async function handleChatTurn(
   console.error(chalk.green(`  ✅ (${response.tokensUsed.input + response.tokensUsed.output} Tokens)`));
 
   return response.content;
+}
+
+/** Alle Patterns eines MCP-Servers aus der Registry entfernen */
+function unregisterServerPatterns(serverName: string, registry: PatternRegistry): number {
+  let count = 0;
+  for (const p of registry.all()) {
+    if (p.meta.mcp_server === serverName) {
+      registry.unregister(p.meta.name);
+      count++;
+    }
+  }
+  return count;
+}
+
+async function handleMcpCommand(
+  args: string,
+  params: Record<string, string>,
+  mcpManager: McpManager | undefined,
+  registry: PatternRegistry,
+): Promise<void> {
+  const parts = args.split(/\s+/).filter(Boolean);
+  const sub = parts[0] ?? "list";
+
+  if (sub === "list") {
+    if (!mcpManager) {
+      console.error(chalk.yellow("  Keine MCP-Konfiguration geladen."));
+      return;
+    }
+    const servers = mcpManager.getServerNames();
+    if (servers.length === 0) {
+      console.error(chalk.gray("  Keine MCP-Server konfiguriert."));
+      return;
+    }
+    console.error(chalk.bold("\n  MCP-Server:\n"));
+    for (const name of servers) {
+      const connected = mcpManager.isConnected(name);
+      const status = connected ? chalk.green("verbunden") : chalk.gray("getrennt");
+      const cfg = mcpManager.getServerConfig(name);
+      const desc = cfg?.description ? ` – ${cfg.description}` : "";
+      console.error(`    ${chalk.cyan(name.padEnd(20))} [${status}]${desc}`);
+    }
+    console.error();
+    return;
+  }
+
+  if (sub === "tools") {
+    if (!mcpManager) {
+      console.error(chalk.yellow("  Keine MCP-Konfiguration geladen."));
+      return;
+    }
+    const serverFilter = parts[1];
+    const servers = serverFilter ? [serverFilter] : mcpManager.getServerNames();
+    for (const name of servers) {
+      try {
+        const tools = await mcpManager.listTools(name);
+        console.error(chalk.bold(`\n  ${name} (${tools.length} Tools):\n`));
+        for (const t of tools) {
+          console.error(`    ${chalk.cyan(t.patternName.padEnd(30))} ${t.description}`);
+        }
+      } catch (err) {
+        console.error(chalk.red(`  ${name}: ${err instanceof Error ? err.message : err}`));
+      }
+    }
+    console.error();
+    return;
+  }
+
+  if (sub === "add") {
+    const name = parts[1];
+    const command = parts[2];
+    const cmdArgs = parts.slice(3);
+    if (!name || !command) {
+      console.error(chalk.yellow("  Nutzung: /mcp add <name> <command> [args...] [--prefix=X] [--category=X]"));
+      return;
+    }
+    const serverConfig = {
+      command,
+      args: cmdArgs.length > 0 ? cmdArgs : undefined,
+      prefix: params.prefix,
+      category: params.category,
+      description: params.description,
+    };
+
+    // Create McpManager on-the-fly if none exists
+    if (!mcpManager) {
+      console.error(chalk.yellow("  Kein McpManager vorhanden – kann Server nicht hinzufügen."));
+      return;
+    }
+
+    try {
+      console.error(chalk.blue(`  Verbinde mit "${name}"...`));
+      const tools = await mcpManager.addServer(name, serverConfig);
+      registerMcpTools(tools, registry, name);
+      console.error(chalk.green(`  ✅ ${name}: ${tools.length} Tools registriert`));
+    } catch (err) {
+      console.error(chalk.red(`  Fehler: ${err instanceof Error ? err.message : err}`));
+    }
+    return;
+  }
+
+  if (sub === "remove") {
+    const name = parts[1];
+    if (!name) {
+      console.error(chalk.yellow("  Nutzung: /mcp remove <name>"));
+      return;
+    }
+    if (!mcpManager) {
+      console.error(chalk.yellow("  Kein McpManager vorhanden."));
+      return;
+    }
+    const removed = unregisterServerPatterns(name, registry);
+    await mcpManager.removeServer(name);
+    console.error(chalk.green(`  ✅ Server "${name}" entfernt (${removed} Patterns deregistriert)`));
+    return;
+  }
+
+  if (sub === "reload") {
+    if (!mcpManager) {
+      console.error(chalk.yellow("  Kein McpManager vorhanden."));
+      return;
+    }
+    const targetName = parts[1];
+    const servers = targetName ? [targetName] : mcpManager.getServerNames();
+    for (const name of servers) {
+      const cfg = mcpManager.getServerConfig(name);
+      if (!cfg) {
+        console.error(chalk.yellow(`  Server "${name}" nicht gefunden.`));
+        continue;
+      }
+      // Remove patterns + disconnect
+      const removed = unregisterServerPatterns(name, registry);
+      await mcpManager.removeServer(name);
+      // Re-add
+      try {
+        console.error(chalk.blue(`  Lade "${name}" neu...`));
+        const tools = await mcpManager.addServer(name, cfg);
+        registerMcpTools(tools, registry, name);
+        console.error(chalk.green(`  ✅ ${name}: ${tools.length} Tools (${removed} ersetzt)`));
+      } catch (err) {
+        console.error(chalk.red(`  ${name}: ${err instanceof Error ? err.message : err}`));
+      }
+    }
+    return;
+  }
+
+  console.error(chalk.yellow(`  Unbekannter MCP-Befehl: ${sub}`));
+  console.error(chalk.gray("  Verfügbar: list, tools, add, remove, reload"));
 }
 
 function question(rl: ReturnType<typeof createInterface>, prompt: string): Promise<string | null> {
@@ -202,6 +381,9 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           case "clear":
             session.messages.length = 0;
             console.error(chalk.gray("  Verlauf gelöscht.\n"));
+            break;
+          case "mcp":
+            await handleMcpCommand(cmd.args, cmd.params, options.mcpManager, options.registry);
             break;
           case "exit":
           case "quit":

@@ -1,6 +1,6 @@
 import type { SlashCommand } from "../types.js";
 
-export const BUILTIN_COMMANDS = ["help", "history", "clear", "exit", "quit", "patterns"] as const;
+export const BUILTIN_COMMANDS = ["help", "history", "clear", "exit", "quit", "patterns", "mcp"] as const;
 export type BuiltinCommand = (typeof BUILTIN_COMMANDS)[number];
 
 export function isBuiltinCommand(name: string): name is BuiltinCommand {

@@ -4,6 +4,7 @@ import { writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
+import type { McpManager } from "./mcp.js";
 import type { AiosConfig, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import type { PersonaRegistry } from "./personas.js";
 
@@ -17,7 +18,8 @@ export class Engine {
     private registry: PatternRegistry,
     private provider: LLMProvider,
     private config?: AiosConfig,
-    private personaRegistry?: PersonaRegistry
+    private personaRegistry?: PersonaRegistry,
+    private mcpManager?: McpManager
   ) {}
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -73,14 +75,21 @@ export class Engine {
       if (!pattern) throw new Error(`Pattern "${step.pattern}" nicht gefunden`);
 
       // Input aus Dependencies + User-Input zusammenbauen
-      let input = this.buildInput(step, userInput, results);
+      // MCP-Patterns bekommen rohen Input (JSON), LLM-Patterns den formatierten
+      let input = pattern.meta.type === "mcp"
+        ? this.buildRawInput(step, userInput, results)
+        : this.buildInput(step, userInput, results);
       if (feedback.has(step.id)) {
         input += "\n\n## ⚠️ FEEDBACK AUS VORHERIGEM VERSUCH\n\n" + feedback.get(step.id);
       }
 
       let stepResult: StepResult;
 
-      if (pattern.meta.type === "tool") {
+      if (pattern.meta.type === "mcp") {
+        // ── MCP-Pattern: MCP-Server Tool aufrufen ──
+        console.error(chalk.gray(`  🔌 ${step.id} → ${step.pattern} [MCP: ${pattern.meta.mcp_server}/${pattern.meta.mcp_tool}]`));
+        stepResult = await this.executeMcpTool(step, pattern, input, t0);
+      } else if (pattern.meta.type === "tool") {
         // ── Tool-Pattern: CLI-Tool ausführen ──
         console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
         stepResult = await this.executeTool(step, pattern, input, t0);
@@ -142,6 +151,41 @@ export class Engine {
         status.set(step.id, "failed");
       }
     }
+  }
+
+  // ─── MCP Tool Execution ──────────────────────────────────────
+
+  private async executeMcpTool(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number
+  ): Promise<StepResult> {
+    if (!this.mcpManager) throw new Error("McpManager nicht konfiguriert");
+    if (!pattern.meta.mcp_server || !pattern.meta.mcp_tool) {
+      throw new Error(`MCP-Pattern "${pattern.meta.name}" hat kein mcp_server/mcp_tool definiert`);
+    }
+
+    // Input als JSON-Args parsen, Fallback: als { input: "..." } wrappen
+    let args: Record<string, unknown>;
+    try {
+      args = JSON.parse(input);
+      if (typeof args !== "object" || args === null || Array.isArray(args)) {
+        args = { input };
+      }
+    } catch {
+      args = { input };
+    }
+
+    const output = await this.mcpManager.callTool(pattern.meta.mcp_server, pattern.meta.mcp_tool, args);
+
+    return {
+      stepId: step.id,
+      pattern: step.pattern,
+      output,
+      outputType: "text",
+      durationMs: Date.now() - t0,
+    };
   }
 
   // ─── Tool Execution (generisch) ────────────────────────────
@@ -253,6 +297,18 @@ export class Engine {
   }
 
   // ─── Input & Quality Gate ──────────────────────────────────
+
+  /** Raw input für MCP-Patterns (kein Markdown-Wrapping, damit JSON parsebar bleibt) */
+  private buildRawInput(step: ExecutionStep, userInput: string, results: Map<string, StepResult>): string {
+    return step.input_from
+      .map((src) => {
+        if (src === "$USER_INPUT") return userInput;
+        const r = results.get(src);
+        return r ? r.output : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
 
   private buildInput(step: ExecutionStep, userInput: string, results: Map<string, StepResult>): string {
     return step.input_from

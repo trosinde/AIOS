@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
@@ -19,6 +20,7 @@ const DEFAULT_CONFIG: AiosConfig = {
     output_dir: "./output",
     allowed: ["mmdc", "render-image", "prettier", "eslint", "ruff", "black"],
   },
+  mcp: { servers: {} },
 };
 
 export function loadConfig(): AiosConfig {
@@ -49,6 +51,9 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
     defaults: { ...DEFAULT_CONFIG.defaults, ...partial.defaults },
     paths: { ...DEFAULT_CONFIG.paths, ...partial.paths },
     tools: { ...DEFAULT_CONFIG.tools, ...partial.tools },
+    mcp: partial.mcp
+      ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...partial.mcp.servers } }
+      : DEFAULT_CONFIG.mcp,
   };
 }
 

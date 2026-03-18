@@ -1,106 +1,68 @@
-# AIOS – AI Orchestration System
+# CLAUDE.md
 
-## Was ist das?
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build & Development Commands
+
+```bash
+npm run dev -- <args>        # Run CLI via tsx (no build needed): tsx src/cli.ts <args>
+npm run build                # Compile TypeScript → dist/
+npm run start -- <args>      # Run compiled: node dist/cli.js <args>
+npm run typecheck            # Type-check without emitting (tsc --noEmit)
+npm test                     # Run all tests: vitest run
+npx vitest run src/core/engine.test.ts          # Single test file
+npx vitest run -t "test name pattern"           # Single test by name
+```
+
+## What is AIOS?
 
 CLI-basiertes AI-Orchestrierungssystem. Fabric-Style Patterns + Enterprise Integration Patterns. Natürlichsprachliche Aufgaben werden dynamisch in parallele Workflows zerlegt.
 
-## Architektur (3 Schichten)
+## Architecture (3 Layers)
 
 ```
 User Input → [Router/Meta-Agent] → Execution Plan (JSON) → [DAG Engine] → Output
 ```
 
-- **Pattern Registry:** Markdown-Dateien (`patterns/*/system.md`) mit YAML-Frontmatter (Metadaten) + Prompt. Neue Patterns = neue Markdown-Datei.
-- **Router:** Selbst ein LLM-Call. Aufgabe + Pattern-Katalog → JSON Execution Plan.
-- **Engine:** Mechanische DAG-Ausführung. `Promise.all` für Paralleles, Retry/Rollback bei Fehler.
+- **Pattern Registry** (`core/registry.ts`): Loads `patterns/*/system.md` files. Each pattern = Markdown with YAML frontmatter (metadata in `PatternMeta`) + system prompt. New pattern = new Markdown file.
+- **Router** (`core/router.ts`): An LLM call itself. Takes task + pattern catalog → returns JSON `ExecutionPlan`. Parses JSON from fenced or raw LLM output.
+- **Engine** (`core/engine.ts`): Mechanical DAG execution. Topological sort, `Promise.all` for parallel steps, retry/rollback on failure. Supports both LLM patterns and tool patterns (CLI tool invocation).
 
-## Tech Stack
+### Key Data Flow
 
-- Runtime: Node.js 20+ / TypeScript (ESM)
-- CLI: Commander.js + chalk
-- LLM: Anthropic SDK + Ollama REST
-- Config: YAML (yaml) / Pattern-Parsing: gray-matter
-- DB: better-sqlite3 (Knowledge Base)
+1. `cli.ts` parses commands via Commander.js → creates `PatternRegistry`, `LLMProvider`, `Router`, `Engine`
+2. Router's `planWorkflow()` sends task + pattern catalog to LLM → gets back `ExecutionPlan` (defined in `types.ts`)
+3. Engine's `execute()` runs steps respecting `depends_on` DAG, collecting `StepResult` per step
+4. Steps reference patterns by name; input comes from `$USER_INPUT` or other step IDs via `input_from`
 
-## Projektstruktur
+### Provider Abstraction
 
-```
-src/
-├── cli.ts              # Entry Point
-├── types.ts            # Alle Interfaces
-├── core/
-│   ├── registry.ts     # Pattern Registry (lädt system.md, extrahiert Frontmatter)
-│   ├── personas.ts     # Persona Registry (lädt YAML-Dateien)
-│   ├── router.ts       # Meta-Agent (plant Workflows via LLM)
-│   ├── engine.ts       # DAG/Saga Execution Engine
-│   ├── repl.ts         # Interaktive Chat-Session (REPL Loop)
-│   ├── slash.ts        # Slash-Command Parser (/command --key=value)
-│   └── knowledge.ts    # Knowledge Base (SQLite)
-├── agents/
-│   └── provider.ts     # LLM Provider Abstraction (Claude, Ollama)
-└── utils/
-    ├── config.ts       # YAML Config Management
-    └── stdin.ts        # stdin Helper
-patterns/*/system.md    # Pattern Library
-personas/*.yaml         # Persona-Definitionen
-docs/                   # Konzeptdokumentation
-```
+`agents/provider.ts` defines the `LLMProvider` interface with `complete()` and `chat()` methods. Two implementations: `ClaudeProvider` (Anthropic SDK) and `OllamaProvider` (REST). Factory function `createProvider()` creates the right one from config.
 
-## Entwicklungsrichtlinien
+### Execution Plan Types
 
-- TypeScript strict mode, ESM modules
-- Alle I/O async/await
-- Keine Klassen wo Funktionen reichen, aber Interfaces für alle Datenstrukturen
-- Tests mit vitest
-- Pattern-Dateien werden zur Runtime gelesen, nie gebundelt
-- Logging auf stderr, Ergebnisse auf stdout (Unix-Konvention)
+Plans have a `type` field: `pipe`, `scatter_gather`, `dag`, or `saga`. Steps can have `retry`, `quality_gate`, and `compensate` (saga rollback) configuration.
 
-## CLI Befehle
+## Development Guidelines
+
+- TypeScript strict mode, ESM modules (`"type": "module"` in package.json)
+- All I/O async/await
+- Prefer functions over classes, but use Interfaces for all data structures (`types.ts`)
+- Pattern files are read at runtime, never bundled
+- Logging on stderr, results on stdout (Unix convention)
+- Tests colocated with source: `src/core/engine.test.ts` next to `src/core/engine.ts`
+
+## CLI Commands
 
 ```bash
-aios "Natürlichsprachliche Aufgabe"      # Router plant dynamisch
-aios run <pattern> [< input]             # Ein Pattern direkt (Fabric-Style)
-aios plan "Aufgabe"                      # Nur planen, nicht ausführen
-aios chat [--provider <name>]             # Interaktive Chat-Session (REPL)
-aios patterns list                       # Alle Patterns auflisten
-aios patterns show <name>                # Pattern-Details anzeigen
+aios "Natürlichsprachliche Aufgabe"      # Router plans dynamically
+aios run <pattern> [< input]             # Run single pattern (Fabric-Style)
+aios plan "Aufgabe"                      # Plan only, don't execute
+aios chat [--provider <name>]            # Interactive REPL with slash commands
+aios patterns list                       # List all patterns
+aios patterns show <name>               # Show pattern details
 ```
 
-### Interaktiver Chat-Modus (`aios chat`)
+## Documentation
 
-```bash
-aios chat [--provider <name>]
-```
-
-Startet eine interaktive Session mit Multi-Turn-Konversation und Slash-Commands:
-
-- **Natürliche Sprache:** Einfach lostippen – AIOS antwortet im Chat mit Kontext über alle Turns
-- **Pattern-Ausführung:** `/<pattern> [text] [--key=value]` führt ein Pattern direkt aus
-- **Built-in Commands:** `/help`, `/patterns`, `/history`, `/clear`, `/exit`
-- **Session-History:** Konversationsverlauf wird über Turns hinweg beibehalten (Sliding Window)
-
-## Aktueller Fokus: Phase 1
-
-- [x] Pattern Registry (Frontmatter parsen, Katalog bauen)
-- [x] Provider Abstraction (Claude + Ollama)
-- [x] CLI (`aios run <pattern>` + `aios "Aufgabe"`)
-- [x] Router (Meta-Agent)
-- [x] DAG Engine (parallele Ausführung)
-- [x] Saga Engine (Retry/Rollback)
-- [x] Bug-Fixes (provider.ts, engine.ts, router.ts, cli.ts)
-- [x] Tests (vitest, 92 Tests)
-- [x] Interactive Chat REPL (`aios chat`, Slash-Commands, Multi-Turn)
-
-## Dokumentation
-
-| Dokument | Inhalt |
-|----------|--------|
-| `docs/VISION.md` | Gesamtvision und Prinzipien |
-| `docs/ARCHITECTURE.md` | Komponenten, Datenfluss, Router-Mechanik, EIP-Patterns |
-| `docs/PATTERNS.md` | Pattern-Katalog und Kompositions-Regeln |
-| `docs/WORKFLOWS.md` | Scatter-Gather, DAG, Saga mit Zeitdiagrammen |
-| `docs/PERSONAS.md` | 8 Personas und deren Rollen |
-| `docs/PHASES.md` | Implementierungsplan mit Status |
-| `docs/REGULATED.md` | Traceability, Compliance, Quality Gates |
-
-Referenz-Implementierungen in `docs/reference/`.
+Detailed docs in `docs/`: VISION.md, ARCHITECTURE.md, PATTERNS.md, WORKFLOWS.md, PERSONAS.md, PHASES.md, REGULATED.md. Reference implementations in `docs/reference/`.

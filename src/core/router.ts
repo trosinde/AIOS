@@ -115,4 +115,16 @@ Wenn ein TOOL-Pattern als "NICHT VERFÜGBAR" markiert ist, verwende es NICHT im 
 
 Tool-Patterns können in Workflows eingebunden werden wie LLM-Patterns.
 Typisches Beispiel: LLM erzeugt Mermaid-Code → Tool rendert zu SVG.
+
+# MCP-PATTERNS
+
+Im Katalog gibt es auch MCP-Patterns (Markiert mit "Typ: MCP").
+Diese rufen externe Dienste auf (z.B. Azure DevOps, GitHub).
+
+WICHTIG für MCP-Patterns:
+- MCP-Tools erwarten strukturierte JSON-Argumente als Input
+- Wenn ein MCP-Step Input von einem LLM-Step bekommt, muss der LLM-Step
+  JSON erzeugen das zum Parameter-Schema des MCP-Tools passt
+- Die Parameter-Beschreibung im Katalog zeigt welche Felder erwartet werden (* = required)
+- Beispiel-Workflow: LLM analysiert Aufgabe → erzeugt JSON → MCP-Tool führt aus
 `;

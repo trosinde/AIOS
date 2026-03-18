@@ -27,11 +27,16 @@ export interface PatternMeta {
   internal?: boolean;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool";          // Default: "llm"
+  type?: "llm" | "tool" | "mcp";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
   output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
+
+  // MCP-Pattern Felder
+  mcp_server?: string;             // Server-Name aus Config
+  mcp_tool?: string;               // Original MCP-Tool-Name
+  mcp_input_schema?: object;       // JSON Schema für Tool-Args
 }
 
 export interface Pattern {
@@ -158,9 +163,27 @@ export interface ToolsConfig {
   allowed: string[];               // Allowlist erlaubter CLI-Tools
 }
 
+// ─── MCP ────────────────────────────────────────────────
+
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  category?: string;       // Pattern-Kategorie (default: "mcp")
+  prefix?: string;         // Pattern-Name-Prefix (default: Server-Name)
+  description?: string;    // Menschenlesbarer Name für Katalog
+}
+
+export interface McpConfig {
+  servers: Record<string, McpServerConfig>;
+}
+
+// ─── Config ─────────────────────────────────────────────
+
 export interface AiosConfig {
   providers: Record<string, ProviderConfig>;
   defaults: { provider: string };
   paths: { patterns: string; personas: string };
   tools: ToolsConfig;
+  mcp?: McpConfig;
 }

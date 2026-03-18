@@ -20,3 +20,14 @@ defaults:
 paths:
   patterns: ./patterns
   personas: ./personas
+
+mcp:
+  servers:
+    azure-devops:
+      command: node
+      args: ["/mnt/c/Users/rosin-1/repos/mcp-azure_devops/ts/dist/index.js"]
+      category: devops
+      prefix: azdo
+      description: "Azure DevOps – Work Items, Git, Tests, Sprints"
+      env:
+        AZDO_CONFIG: "./azdo-config.json"

@@ -63,6 +63,16 @@ export class PatternRegistry {
     }
   }
 
+  /** Virtuelles Pattern registrieren (z.B. MCP-Tools) */
+  registerVirtual(pattern: Pattern): void {
+    this.patterns.set(pattern.meta.name, pattern);
+  }
+
+  /** Pattern entfernen (z.B. bei MCP-Server-Entfernung) */
+  unregister(name: string): boolean {
+    return this.patterns.delete(name);
+  }
+
   /** Pattern by name */
   get(name: string): Pattern | undefined {
     return this.patterns.get(name);
@@ -139,7 +149,7 @@ export class PatternRegistry {
     for (const p of this.patterns.values()) {
       if (p.meta.internal) continue;
 
-      const typeBadge = p.meta.type === "tool" ? "TOOL" : "LLM";
+      const typeBadge = p.meta.type === "mcp" ? "MCP" : p.meta.type === "tool" ? "TOOL" : "LLM";
       const available = p.meta.type === "tool" && p.meta.tool
         ? (this.isToolAvailable(p.meta.tool) ? "" : " [NICHT VERFÜGBAR]")
         : "";
@@ -148,6 +158,19 @@ export class PatternRegistry {
       lines.push(`   ${p.meta.description}`);
       lines.push(`   Input: ${p.meta.input_type} → Output: ${p.meta.output_type}`);
       lines.push(`   Typ: ${typeBadge} | Kategorie: ${p.meta.category} | Tags: ${p.meta.tags.join(", ") || "-"}${available}`);
+      if (p.meta.type === "mcp" && p.meta.mcp_server && p.meta.mcp_tool) {
+        lines.push(`   MCP-Server: ${p.meta.mcp_server} | Tool: ${p.meta.mcp_tool}`);
+        if (p.meta.mcp_input_schema) {
+          const schema = p.meta.mcp_input_schema as { properties?: Record<string, { type?: string; description?: string }>; required?: string[] };
+          if (schema.properties) {
+            const params = Object.entries(schema.properties).map(([name, prop]) => {
+              const req = schema.required?.includes(name) ? "*" : "";
+              return `${name}${req}: ${prop.type ?? "any"}`;
+            });
+            lines.push(`   Parameter: ${params.join(", ")}`);
+          }
+        }
+      }
       if (p.meta.tool) lines.push(`   CLI-Tool: ${p.meta.tool}`);
       if (p.meta.persona) lines.push(`   Persona: ${p.meta.persona}`);
       if (p.meta.parallelizable_with?.length)
