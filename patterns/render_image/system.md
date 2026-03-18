@@ -1,47 +1,55 @@
 ---
 name: render_image
-version: "2.0"
+version: "1.0"
 description: Erzeugt ein Bild aus einem Text-Prompt via Bildgenerierungs-API
-category: generation
-type: image
-image_provider: openai
-image_size: "1024x1024"
+category: tool
+type: tool
+tool: render-image
+tool_args: ["$INPUT", "$OUTPUT"]
 input_type: image_prompt
+input_format: txt
 output_type: file
 output_format: [png, webp]
 tags: [image, render, visualization, creative]
 can_follow: [generate_image_prompt]
 ---
 
-# IMAGE GENERATION
+# TOOL CONFIGURATION
 
-Dieses Pattern nutzt den nativen TypeScript ImageProvider.
+Dieses Pattern ist ein Tool-Pattern. Es ruft das `render-image` Wrapper-Script auf,
+das verschiedene Bildgenerierungs-Backends unterstützt.
 
-## Unterstützte Provider
+## Voraussetzung
 
-- **openai** – DALL-E 3 (Standard)
-- **stability** – Stable Diffusion via Stability AI
-- **replicate** – Flux via Replicate
+Das Script `tools/render-image.sh` muss im PATH sein oder als `render-image` verfügbar:
 
-## Konfiguration
+```bash
+# Einmalig einrichten
+chmod +x tools/render-image.sh
+sudo ln -s $(pwd)/tools/render-image.sh /usr/local/bin/render-image
+```
 
-API-Keys werden aus Umgebungsvariablen gelesen:
+Zusätzlich muss ein API-Key für das gewählte Backend gesetzt sein:
 
 ```bash
 # OpenAI DALL-E (Standard)
 export OPENAI_API_KEY=your-key
 
-# Stability AI
+# ODER Stability AI
 export STABILITY_API_KEY=your-key
+export IMAGE_BACKEND=stability
 
-# Replicate (Flux)
+# ODER Replicate (Flux)
 export REPLICATE_API_TOKEN=your-token
+export IMAGE_BACKEND=replicate
 ```
 
-## Input
+## Aufruf
 
-Der Input ist ein detaillierter Bild-Prompt (idealerweise von `generate_image_prompt`).
+```bash
+render-image input.txt output.png
+```
 
 ## Output
 
-Dateipfad des erzeugten Bildes.
+Dateipfad des erzeugten Bildes (PNG).

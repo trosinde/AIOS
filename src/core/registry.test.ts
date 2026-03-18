@@ -186,8 +186,8 @@ describe("PatternRegistry", () => {
   });
 
   it("isToolAvailable() erkennt installierte Tools", () => {
-    // 'node' ist garantiert verfügbar wenn wir Tests ausführen
-    expect(registry.isToolAvailable("node")).toBe(true);
+    // 'which' ist auf jedem System verfügbar
+    expect(registry.isToolAvailable("ls")).toBe(true);
     expect(registry.isToolAvailable("nonexistent_tool_xyz_123")).toBe(false);
   });
 

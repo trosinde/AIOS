@@ -11,6 +11,7 @@ import { Engine } from "./core/engine.js";
 import { createProvider } from "./agents/provider.js";
 import { loadConfig } from "./utils/config.js";
 import { readStdin } from "./utils/stdin.js";
+import { startRepl } from "./core/repl.js";
 
 const program = new Command();
 
@@ -163,6 +164,29 @@ program
     const router = new Router(registry, provider);
     const plan = await router.planWorkflow(taskParts.join(" "));
     console.log(JSON.stringify(plan, null, 2));
+  });
+
+// ─── aios chat (Interaktive REPL) ────────────────────────
+program
+  .command("chat")
+  .description("Interaktive Chat-Session starten")
+  .option("--provider <name>", "LLM Provider überschreiben")
+  .action(async (opts) => {
+    const config = loadConfig();
+    const registry = new PatternRegistry(config.paths.patterns);
+    const providerName = opts.provider || config.defaults.provider;
+    const providerCfg = config.providers[providerName];
+    if (!providerCfg) {
+      console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+      console.error(chalk.gray("Verfügbar: " + Object.keys(config.providers).join(", ")));
+      process.exit(1);
+    }
+    const provider = createProvider(providerCfg);
+    const personas = new PersonaRegistry(config.paths.personas);
+    const router = new Router(registry, provider);
+    const engine = new Engine(registry, provider, config, personas);
+
+    await startRepl({ provider, registry, personas, router, engine, config });
   });
 
 // ─── aios patterns ───────────────────────────────────────
