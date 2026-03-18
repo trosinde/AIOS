@@ -37,39 +37,43 @@ die Ergebnisse konsolidiert. ~4 Sekunden statt ~10.
 
 ## Ich will es nutzen
 
-### In Claude Code (empfohlen)
+### In Claude Code / Open Code (empfohlen)
 
-AIOS-Patterns direkt in Claude Code nutzen – keine CLI nötig:
+AIOS-Patterns direkt in Claude Code oder Open Code nutzen – keine CLI nötig:
 
 ```bash
 # In deinem Projekt
 git clone https://github.com/trosinde/AIOS.git .aios
 ```
 
-Dann einfach in natürlicher Sprache arbeiten:
+**Slash-Commands** sind sofort verfügbar:
+
+| Command | Pattern | Beschreibung |
+|---------|---------|--------------|
+| `/review` | code_review | Code Review mit strukturierten Findings |
+| `/security` | security_review | Security Review nach OWASP/CWE |
+| `/summarize` | summarize | Text zusammenfassen |
+| `/tests` | generate_tests | Testfälle generieren |
+| `/requirements` | extract_requirements | Requirements extrahieren |
+| `/refactor` | refactor | Code refactoren |
+
+**Beispiele:**
 
 ```
-Du: "Review src/api.ts mit dem code_review Pattern"
+/review src/api.ts
+/security src/auth/
+/tests src/utils/parser.ts
+/requirements spec.md
+```
 
-Du: "Extrahiere Requirements aus spec.md und generiere daraus Testfälle"
+Oder in natürlicher Sprache:
 
-Du: "Mach ein Security Review von src/auth/ – nutze das security_review Pattern"
-
-Du: "Fasse die Meeting-Notizen zusammen (Pattern: summarize)"
+```
+"Review src/api.ts mit dem code_review Pattern"
+"Mach ein Security Review von src/auth/"
 ```
 
 Claude Code liest die Pattern-Dateien aus `.aios/patterns/` und wendet sie an.
-
-**Optional:** In `CLAUDE.md` explizit auf Patterns verweisen:
-
-```markdown
-## Patterns
-
-Für strukturierte Aufgaben nutze die Patterns aus `.aios/patterns/`:
-- code_review, security_review, architecture_review
-- extract_requirements, generate_tests, generate_code
-- summarize, refactor, translate_technical
-```
 
 ### CLI Installation
 
