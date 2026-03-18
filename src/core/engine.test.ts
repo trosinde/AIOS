@@ -8,12 +8,14 @@ import type { AiosConfig, ExecutionPlan, LLMResponse } from "../types.js";
 const PATTERNS_DIR = join(process.cwd(), "patterns");
 
 function mockProvider(content = "Test output"): LLMProvider {
+  const response = {
+    content,
+    model: "test-model",
+    tokensUsed: { input: 50, output: 100 },
+  } satisfies LLMResponse;
   return {
-    complete: vi.fn().mockResolvedValue({
-      content,
-      model: "test-model",
-      tokensUsed: { input: 50, output: 100 },
-    } satisfies LLMResponse),
+    complete: vi.fn().mockResolvedValue(response),
+    chat: vi.fn().mockResolvedValue(response),
   };
 }
 
@@ -95,6 +97,7 @@ describe("Engine", () => {
       complete: vi.fn()
         .mockRejectedValueOnce(new Error("Erster Fehler"))
         .mockResolvedValueOnce({ content: "Erfolg", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
     };
     const engine = new Engine(registry, provider);
 
@@ -113,6 +116,7 @@ describe("Engine", () => {
     const registry = new PatternRegistry(PATTERNS_DIR);
     const provider: LLMProvider = {
       complete: vi.fn().mockRejectedValue(new Error("Dauerfehler")),
+      chat: vi.fn(),
     };
     const engine = new Engine(registry, provider);
 
@@ -132,6 +136,7 @@ describe("Engine", () => {
       complete: vi.fn()
         .mockRejectedValueOnce(new Error("Fehler in step1"))
         .mockResolvedValue({ content: "Escalation result", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
     };
     const engine = new Engine(registry, provider);
 
@@ -152,6 +157,7 @@ describe("Engine", () => {
     const registry = new PatternRegistry(PATTERNS_DIR);
     const provider: LLMProvider = {
       complete: vi.fn().mockResolvedValue({ content: "Output", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
     };
     const engine = new Engine(registry, provider);
 

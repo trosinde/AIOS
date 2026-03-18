@@ -8,12 +8,14 @@ import type { LLMResponse } from "../types.js";
 const PATTERNS_DIR = join(process.cwd(), "patterns");
 
 function mockProvider(responseContent: string): LLMProvider {
+  const response = {
+    content: responseContent,
+    model: "test-model",
+    tokensUsed: { input: 100, output: 200 },
+  } satisfies LLMResponse;
   return {
-    complete: vi.fn().mockResolvedValue({
-      content: responseContent,
-      model: "test-model",
-      tokensUsed: { input: 100, output: 200 },
-    } satisfies LLMResponse),
+    complete: vi.fn().mockResolvedValue(response),
+    chat: vi.fn().mockResolvedValue(response),
   };
 }
 

@@ -131,6 +131,26 @@ export interface ProviderConfig {
   endpoint?: string;
 }
 
+// ─── Chat / REPL ────────────────────────────────────────
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  source?: string;  // "chat" | "pattern:<name>"
+}
+
+export interface ChatSession {
+  id: string;
+  messages: ChatMessage[];
+  provider: string;
+}
+
+export interface SlashCommand {
+  name: string;
+  args: string;
+  params: Record<string, string>;
+}
+
 // ─── Config ──────────────────────────────────────────────
 
 export interface ToolsConfig {
