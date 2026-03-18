@@ -1,25 +1,34 @@
-# Personas: Das virtuelle Entwicklungsteam
+> **Audience:** Developers
 
-## Was sind Personas?
+# Personas: The Virtual Team
 
-Personas sind vordefinierte Rollen mit spezifischem System-Prompt, Expertise und bevorzugten Patterns. Der Router kann Personas automatisch zuweisen, wenn eine Aufgabe zu einer Rolle passt. Jede Persona kennt ihre Kommunikationspartner im Team und abonniert relevante Events.
+## What Are Personas?
 
-Die Persona-Definitionen befinden sich in `personas/*.yaml`.
+Personas are predefined roles with a `system_prompt`, domain expertise, and preferred patterns. They represent specialized team members in the virtual development team. Each persona is defined as a YAML file in `personas/` and can be assigned to patterns in two ways:
 
-## Das Team im Ueberblick
+1. **Pattern frontmatter** -- The `persona` field in a pattern's YAML frontmatter binds that pattern to a specific role (e.g., `persona: security_expert` in `security_review/system.md`).
+2. **Router assignment** -- The Router can dynamically assign personas when planning a workflow, based on task requirements and pattern metadata.
 
-| ID | Rolle | Bevorzugte Patterns |
-|----|-------|---------------------|
-| `re` | Requirements Engineering & Analyse | `extract_requirements`, `gap_analysis`, `requirements_review` |
-| `architect` | Architektur & Technisches Design | `design_solution`, `architecture_review`, `generate_adr`, `identify_risks`, `threat_model` |
-| `developer` | Implementierung & Code-Generierung | `generate_code`, `generate_tests`, `refactor` |
-| `tester` | Testing & Qualitaetssicherung | `generate_tests`, `test_review`, `test_report` |
-| `security_expert` | Cybersecurity & Compliance | `security_review`, `threat_model`, `compliance_report` |
-| `reviewer` | Code Review & Qualitaetsanalyse | `code_review`, `architecture_review` |
-| `tech_writer` | Technical Writer & Documentation Engineer | `write_architecture_doc`, `write_user_doc`, `generate_docs`, `summarize` |
-| `quality_manager` | Qualitaetsmanagement & Compliance Reporting | `compliance_report`, `risk_report` |
+Persona definitions are loaded by the `PersonaRegistry` (`src/core/personas.ts`).
 
-## Team-Interaktion
+---
+
+## The Team
+
+| ID | Role | Preferred Patterns |
+|----|------|--------------------|
+| `re` | Requirements Engineer | `extract_requirements`, `gap_analysis`, `requirements_review` |
+| `architect` | Software Architect | `design_solution`, `architecture_review`, `generate_adr`, `identify_risks`, `threat_model` |
+| `developer` | Developer | `generate_code`, `generate_tests`, `refactor` |
+| `tester` | QA Engineer | `generate_tests`, `test_review`, `test_report` |
+| `security_expert` | Security Expert | `security_review`, `threat_model`, `compliance_report` |
+| `reviewer` | Code Reviewer | `code_review`, `architecture_review` |
+| `tech_writer` | Technical Writer | `write_architecture_doc`, `write_user_doc`, `generate_docs`, `summarize` |
+| `quality_manager` | Quality Manager | `compliance_report`, `risk_report` |
+
+---
+
+## Team Interaction
 
 ```mermaid
 graph TD
@@ -58,9 +67,33 @@ graph TD
     style QM fill:#fbe9e7
 ```
 
-## Neue Persona erstellen
+---
 
-Eine neue YAML-Datei in `personas/` anlegen:
+## Runtime Combination
+
+When the Engine executes a step that has both a persona and a pattern, the system prompts are concatenated:
+
+```
+system_prompt = persona.system_prompt + "\n\n---\n\n" + pattern.systemPrompt
+```
+
+This means the persona provides the agent's identity and communication style, while the pattern provides the task-specific instructions. For example, a `security_expert` persona running the `threat_model` pattern gets:
+
+1. **Persona prompt:** "You are a cybersecurity expert with deep knowledge of OWASP, STRIDE, IEC 62443..."
+2. **Separator:** `---`
+3. **Pattern prompt:** "# IDENTITY and PURPOSE\nAnalyze the given system design and produce a STRIDE threat model..."
+
+The persona ID is resolved in order of precedence:
+
+1. `step.persona` -- explicitly set by the Router in the execution plan
+2. `pattern.meta.persona` -- default persona declared in the pattern's frontmatter
+3. No persona -- pattern's system prompt is used alone
+
+---
+
+## Creating a New Persona
+
+Create a YAML file in `personas/`:
 
 ```yaml
 # personas/devops.yaml
@@ -69,15 +102,15 @@ id: devops
 role: CI/CD & Infrastructure
 
 description: >
-  Verwaltet Build-Pipelines, Deployment-Prozesse und Infrastruktur.
+  Manages build pipelines, deployment processes, and infrastructure.
 
 system_prompt: |
-  Du bist ein erfahrener DevOps Engineer mit Expertise in
-  CI/CD, Container-Orchestrierung und Infrastructure as Code.
+  You are an experienced DevOps engineer with expertise in
+  CI/CD, container orchestration, and Infrastructure as Code.
 
 expertise:
   - CI/CD Pipelines
-  - Container-Orchestrierung
+  - Container Orchestration
   - Infrastructure as Code
 
 preferred_patterns:
@@ -93,4 +126,4 @@ communicates_with:
 output_format: markdown
 ```
 
-Die Persona wird beim naechsten Start automatisch erkannt und ist sofort nutzbar.
+The persona is automatically discovered on the next startup and immediately available for use by the Router and Engine.

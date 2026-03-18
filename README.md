@@ -562,17 +562,25 @@ Dann in `aios.yaml`: `tools.allowed: [..., eslint]`
 3. In `aios.yaml` konfigurieren mit `capabilities` und `cost_per_mtok`
 4. Bereits eingebaut: `anthropic`, `ollama`, `gemini`, `openai`
 
-### Weiterführende Docs
+### Documentation
 
-| Dokument | Inhalt |
-|----------|--------|
-| [Architektur](docs/ARCHITECTURE.md) | Komponenten, Datenfluss, Mermaid-Diagramme, Router-Mechanik, dynamische Orchestrierung |
-| [Patterns](docs/PATTERNS.md) | Frontmatter-Schema, Kompositions-Regeln |
-| [Workflows](docs/WORKFLOWS.md) | EIP-Patterns im Detail mit Zeitdiagrammen |
-| [Personas](docs/PERSONAS.md) | 8 Personas, Team-Interaktionsdiagramm |
-| [Phasenplan](docs/PHASES.md) | 6 Phasen – was ist done, was fehlt |
-| [Compliance](docs/REGULATED.md) | Traceability, Audit Trail, Quality Gates (Zielbild) |
-| [Vision](docs/VISION.md) | Gesamtvision und Prinzipien |
+All detailed documentation is in `docs/`, written in English:
+
+| Document | Audience | Content |
+|----------|----------|---------|
+| [Getting Started](docs/getting-started.md) | All | Quick start, installation, first commands |
+| [User Guide](docs/user-guide.md) | Users | CLI usage, patterns, chat, pipes, MCP, RAG, Vision |
+| [Configuration](docs/configuration.md) | Users + Ops | aios.yaml, providers, MCP, RAG, env vars, security |
+| [Architecture](docs/architecture.md) | Developers | Components, data flow, Mermaid diagrams, dynamic orchestration |
+| [Patterns](docs/patterns.md) | Developers | Frontmatter schema, catalog (34 patterns), composition |
+| [Workflows](docs/workflows.md) | Developers | EIP patterns (Scatter-Gather, DAG, Saga) with timelines |
+| [Personas](docs/personas.md) | Developers | 8 personas, team interaction, runtime separation |
+| [Providers](docs/providers.md) | Developers | 4 LLM providers, cost-based selection, vision support |
+| [MCP Servers](docs/MCP.md) | All | MCP server integration, PAT setup, security |
+| [RAG](docs/rag.md) | Users + Dev | Semantic search, vector store, collections, embeddings |
+| [Vision & Principles](docs/vision.md) | All | Project vision, solved problems, 7 principles |
+| [Roadmap](docs/roadmap.md) | All | 6 phases — what's done, what's open |
+| [Compliance](docs/compliance.md) | Architects | Traceability, audit trail, quality gates (Phase 6 vision) |
 
 ---
 

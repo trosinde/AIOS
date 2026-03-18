@@ -1,18 +1,33 @@
-# 04 – Tool-Bibliothek & Pattern-Spezifikation
+> **Audience:** Developers
 
-## Pattern-Format
+# Pattern Specification and Catalog
 
-Patterns sind wiederverwendbare Prompt-Templates (inspiriert von Fabric), die als Markdown-Dateien mit YAML-Frontmatter gespeichert werden.
+## What Are Patterns?
 
-### Aufbau eines Patterns
+Patterns are reusable prompt templates inspired by [Fabric](https://github.com/danielmiessler/fabric). Each pattern is a Markdown file with YAML frontmatter (metadata) followed by a system prompt. Patterns live in `patterns/<name>/system.md` and are loaded at runtime by the Pattern Registry (`core/registry.ts`).
+
+Key principles:
+
+- **One file, one concern.** Each pattern encapsulates a single task (extract requirements, review code, render a diagram).
+- **Composable.** Patterns declare which other patterns they can follow or precede, enabling the Router to chain them into workflows.
+- **Typed.** A pattern can be an LLM call, a CLI tool invocation, an MCP server call, or a RAG vector-store operation. The engine dispatches accordingly.
+- **Parameterized.** Patterns accept runtime parameters (e.g. `--standard=iec62443`) that customize behavior without changing the prompt file.
+
+---
+
+## Pattern Format
+
+A pattern file consists of YAML frontmatter delimited by `---`, followed by a Markdown system prompt. The prompt typically uses the sections IDENTITY, GOAL, STEPS, OUTPUT FORMAT, and INPUT.
+
+### Full Example: `extract_requirements`
 
 ```markdown
 ---
 name: extract_requirements
 version: "1.0"
-description: "Extrahiert strukturierte Requirements aus natürlichsprachlichem Input"
+description: "Extract structured requirements from natural-language input"
 category: analyze
-type: llm                          # llm (Standard) oder tool
+type: llm
 input_type: text
 output_type: structured
 tags: [requirements, analysis, regulated]
@@ -25,230 +40,288 @@ parameters:
     type: enum
     values: [high, medium, low]
     default: high
-recommended_provider: claude
-estimated_tokens: 2000
+preferred_provider: claude
 ---
 
 # IDENTITY
 
-Du bist ein Requirements-Analyse-Experte.
+You are a requirements analysis expert.
 
 # GOAL
 
-Extrahiere strukturierte Anforderungen aus dem gegebenen Input.
+Extract structured requirements from the given input.
 
 # STEPS
 
-1. Lies den Input vollständig
-2. Identifiziere funktionale und nicht-funktionale Anforderungen
-3. Klassifiziere nach Typ und Priorität
-4. Formuliere klare Akzeptanzkriterien
-5. Identifiziere Lücken und offene Fragen
+1. Read the input completely
+2. Identify functional and non-functional requirements
+3. Classify by type and priority
+4. Formulate clear acceptance criteria
+5. Identify gaps and open questions
 
 # OUTPUT FORMAT
 
-Gib das Ergebnis als Markdown-Tabelle:
+Return results as a Markdown table:
 
-| REQ-ID | Typ | Beschreibung | Akzeptanzkriterien | Priorität | Risiko |
-|--------|-----|--------------|-------------------|-----------|--------|
+| REQ-ID | Type | Description | Acceptance Criteria | Priority | Risk |
+|--------|------|-------------|---------------------|----------|------|
 
-Gefolgt von:
-- Offene Fragen
-- Identifizierte Lücken
-- Empfehlungen
+Followed by:
+- Open questions
+- Identified gaps
+- Recommendations
 
 # INPUT
 ```
 
-### Tool-Pattern Felder
-
-Patterns mit `type: tool` rufen kein LLM auf, sondern führen ein CLI-Tool aus. Zusätzliche Felder:
-
-| Feld | Beschreibung | Beispiel |
-|------|-------------|---------|
-| `type` | Muss `tool` sein | `tool` |
-| `tool` | Name des CLI-Tools | `mmdc`, `render-image` |
-| `tool_args` | Argumente als Array. `$INPUT`/`$OUTPUT` werden ersetzt | `["-i", "$INPUT", "-o", "$OUTPUT"]` |
-| `input_format` | Erwartetes Dateiformat des Inputs | `mmd`, `txt` |
-| `output_format` | Mögliche Ausgabeformate | `[svg, png, pdf]` |
-| `can_follow` | Patterns, deren Output als Input dient | `[generate_diagram]` |
-
-```markdown
 ---
-name: render_diagram
-type: tool
-tool: mmdc
-tool_args: ["-i", "$INPUT", "-o", "$OUTPUT", "-t", "dark", "-b", "transparent"]
-input_format: mmd
-output_format: [svg, png, pdf]
-can_follow: [generate_diagram]
+
+## Frontmatter Schema
+
+### Core Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | yes | -- | Unique identifier, matches directory name |
+| `version` | string | no | -- | Semantic version |
+| `description` | string | yes | -- | One-line summary shown in pattern catalog |
+| `category` | string | yes | -- | Grouping key: `analyze`, `generate`, `review`, `transform`, `report`, `pdf`, `rag`, `tool`, `meta` |
+| `input_type` | string | yes | -- | Expected input: `text`, `json`, `image` |
+| `output_type` | string | yes | -- | Output kind: `text`, `structured`, `code`, `diagram` |
+| `tags` | string[] | yes | -- | Searchable tags |
+| `type` | enum | no | `llm` | Execution type: `llm`, `tool`, `mcp`, `rag` |
+| `persona` | string | no | -- | Default persona ID to use for this pattern |
+| `preferred_provider` | string | no | -- | LLM provider hint (e.g. `claude`, `ollama`) |
+| `internal` | boolean | no | `false` | If `true`, hidden from user-facing listings |
+| `parameters` | array | no | -- | Runtime parameters (see below) |
+
+### Parameter Object
+
+Each entry in the `parameters` array:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Parameter name, used on CLI: `--name=value` |
+| `type` | enum | yes | `string`, `enum`, `number`, `boolean` |
+| `description` | string | no | Help text |
+| `values` | string[] | conditional | Required when `type: enum` |
+| `default` | any | no | Default value if not provided |
+| `required` | boolean | no | Whether the parameter must be supplied |
+
+### Composition Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `can_follow` | string[] | Patterns whose output this pattern accepts as input |
+| `can_precede` | string[] | Patterns that can consume this pattern's output |
+| `parallelizable_with` | string[] | Patterns safe to run in parallel alongside this one |
+
+### Tool-Pattern Fields (type: tool)
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `tool` | string | CLI executable name | `mmdc`, `render-image` |
+| `tool_args` | string[] | Argument template; `$INPUT` and `$OUTPUT` are replaced at runtime | `["-i", "$INPUT", "-o", "$OUTPUT"]` |
+| `input_format` | string | Expected input file extension | `mmd`, `txt` |
+| `output_format` | string[] | Possible output formats | `[svg, png, pdf]` |
+
+### MCP-Pattern Fields (type: mcp)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mcp_server` | string | Server name from `aios.config.json` MCP section |
+| `mcp_tool` | string | Original MCP tool name on that server |
+| `mcp_input_schema` | object | JSON Schema describing the tool's expected arguments |
+
+### RAG-Pattern Fields (type: rag)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rag_collection` | string | Target vector-store collection name |
+| `rag_operation` | enum | `search`, `index`, or `compare` |
+| `rag_overrides` | object | Optional `{ topK?: number, minRelevance?: number }` |
+
 ---
+
+## Pattern Types
+
+### LLM Pattern (text -> LLM -> text)
+
+The default type. Input text is sent to an LLM with the pattern's system prompt. The LLM response is the output. Most patterns are LLM patterns.
+
+```
+stdin/text --> [LLM Provider] --> stdout/text
+               system.md prompt
 ```
 
-### CLI-Nutzung
+### Tool Pattern (text -> CLI tool -> file)
+
+Invokes an external CLI tool instead of an LLM. The engine writes input to a temp file, runs the tool, and reads the output file. Tool patterns are typically chained after an LLM pattern (e.g. `generate_diagram` -> `render_diagram`).
+
+```
+temp-input.mmd --> [mmdc -i $INPUT -o $OUTPUT] --> output.svg
+```
+
+### MCP Pattern (JSON -> MCP server -> text)
+
+Calls a tool on a Model Context Protocol server. MCP patterns are auto-registered when an MCP server is configured in `aios.config.json`. The engine sends structured JSON arguments and receives the tool's response.
+
+```
+JSON args --> [MCP Server / Tool] --> text response
+```
+
+### RAG Pattern (query -> vector store -> text)
+
+Performs a semantic search or indexing operation against a vector store. The `rag_collection` is set by the Router at plan time. The engine delegates to the RAG subsystem.
+
+```
+natural-language query --> [Embedding + Vector Search] --> ranked results
+```
+
+---
+
+## Pattern Catalog
+
+### Analyze (4 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `extract_requirements` | Extract structured requirements from text | Free text, specs | Structured requirements |
+| `gap_analysis` | Identify gaps between current and target state | Document + reference | Gap report |
+| `identify_risks` | Identify and assess risks | Requirements, design | Risk register |
+| `threat_model` | Create a STRIDE threat model | Design docs | Threat model |
+
+### Generate (9 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `design_solution` | Technical design from requirements | Requirements | Design specification |
+| `generate_adr` | Architecture Decision Record | Decision context | ADR (Markdown) |
+| `generate_code` | Code from specification | Design doc, interface spec | Source code |
+| `generate_diagram` | Mermaid diagram code | Description, design doc | Mermaid code |
+| `generate_docs` | Technical documentation | Code, design | Technical docs |
+| `generate_image_prompt` | Optimize image description for generation | Image description | Detailed prompt |
+| `generate_tests` | Test cases and test code | Requirements, code | Test cases / test code |
+| `write_architecture_doc` | Architecture documentation from code | Source code, concept docs | Architecture document |
+| `write_user_doc` | User documentation with install and examples | Code, README | User documentation |
+
+### Review (5 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `architecture_review` | Evaluate architecture aspects | Design docs, code | Architecture assessment |
+| `code_review` | Systematic code review with categorized findings | Source code | Review comments |
+| `requirements_review` | Check requirements for quality and testability | Requirements | Review with improvements |
+| `security_review` | Security-focused review (OWASP, IEC 62443) | Code, config | Security findings |
+| `test_review` | Assess test coverage and test quality | Tests + requirements | Coverage analysis |
+
+### Transform (5 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `formalize` | Convert informal notes into formal documents | Notes, emails | Formal document |
+| `refactor` | Refactor code by clean-code principles | Code + goal | Refactored code |
+| `simplify_text` | Simplify complex technical text | Technical text | Simplified version |
+| `summarize` | Create a concise summary | Any text | Summary |
+| `translate_technical` | Technical translation preserving domain terms | Text + target language | Translated text |
+
+### Report (4 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `aggregate_reviews` | Consolidate multiple review results | Multiple reviews | Consolidated report |
+| `compliance_report` | Compliance report (IEC 62443 / CRA) | All artifacts | Compliance report |
+| `risk_report` | Management-ready risk report | Risk register | Management summary |
+| `test_report` | Formal test report from test results | Test results | Formal test report |
+
+### PDF (1 LLM pattern + MCP patterns)
+
+| Pattern | Type | Description | Input | Output |
+|---------|------|-------------|-------|--------|
+| `pdf_vision_ocr` | llm | Analyze PDF pages as images via Vision LLM | Page images | Extracted text |
+| `pdf/*` | mcp | MCP-based PDF tools (thumbnails, text extraction, etc.) | PDF files | Text / images |
+
+### RAG (2 patterns)
+
+| Pattern | Type | Description | Input | Output |
+|---------|------|-------------|-------|--------|
+| `rag_search` | rag | Semantic search across a RAG collection | Natural-language query | Ranked results |
+| `rag_index` | rag | Index documents into a RAG collection | JSON array of items | Index confirmation |
+
+### Tool (2 patterns)
+
+| Pattern | Type | Tool | Input | Output |
+|---------|------|------|-------|--------|
+| `render_diagram` | tool | `mmdc` | Mermaid code (.mmd) | SVG, PNG, PDF |
+| `render_image` | tool | `render-image` | Image prompt (.txt) | PNG, WebP |
+
+### Meta (3 patterns)
+
+| Pattern | Description | Input | Output |
+|---------|-------------|-------|--------|
+| `_router` | Meta-agent: analyze tasks and create execution plans | Task description | Execution plan (JSON) |
+| `evaluate_quality` | Evaluate quality of an agent's output (1-10) | Agent output | Quality score + feedback |
+| `extract_knowledge` | Extract reusable knowledge from agent outputs | Agent output | Knowledge items |
+
+---
+
+## Creating Patterns
+
+### Interactive
 
 ```bash
-# Einfacher Aufruf
-cat spec.md | aios run extract_requirements
-
-# Mit Parametern
-cat spec.md | aios run extract_requirements --standard=iec62443 --detail_level=high
-
-# In einer Pipe
-cat spec.md | aios run extract_requirements | aios run identify_risks
+aios patterns create my_pattern
+# Editor opens with a template
+# Pattern is validated
+# Pattern is registered
 ```
 
----
+### Manual
 
-## Pattern-Katalog
+Create `patterns/my_pattern/system.md` with the format shown above. The pattern will be picked up automatically on the next run.
 
-### Kategorie: Analyze
+### Composition via YAML
 
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `extract_requirements` | Requirements aus Text extrahieren | Freitext, Specs | Strukturierte Requirements |
-| `gap_analysis` | Lücken zwischen Ist- und Soll-Zustand identifizieren | Dokument + Referenz | Gap-Report |
-| `identify_risks` | Risiken identifizieren und bewerten | Anforderungen, Design | Risk Register |
-| `threat_model` | STRIDE Threat Model erstellen | Design Docs | Threat Model |
-
-### Kategorie: Generate
-
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `design_solution` | Technisches Design aus Requirements erstellen | Requirements | Design-Spezifikation |
-| `generate_adr` | Architecture Decision Record erstellen | Entscheidungskontext | ADR (Markdown) |
-| `generate_code` | Code basierend auf Spezifikation | Design Doc, Interface Spec | Source Code |
-| `generate_diagram` | Mermaid-Diagramm-Code erzeugen | Beschreibung, Design Doc | Mermaid-Code |
-| `generate_docs` | Technische Dokumentation erstellen | Code, Design | Technische Docs |
-| `generate_image_prompt` | Bildbeschreibung zu Image-Generation-Prompt optimieren | Bildbeschreibung | Detaillierter Prompt |
-| `generate_tests` | Testfälle und Testcode generieren | Requirements, Code | Test Cases / Test Code |
-| `write_architecture_doc` | Architektur-Dokumentation aus Code erstellen | Quellcode, Konzeptdocs | Architektur-Dokument |
-| `write_user_doc` | User-Dokumentation mit Installation und Beispielen | Code, README | User-Dokumentation |
-
-### Kategorie: Review
-
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `architecture_review` | Architektur-Aspekte bewerten | Design Docs, Code | Architecture Assessment |
-| `code_review` | Systematisches Code Review mit kategorisierten Findings | Source Code | Review Comments |
-| `requirements_review` | Requirements auf Qualität und Testbarkeit prüfen | Requirements | Review mit Verbesserungen |
-| `security_review` | Security-fokussiertes Review (OWASP, IEC 62443) | Code, Config | Security Findings |
-| `test_review` | Testabdeckung und Testqualität prüfen | Tests + Requirements | Coverage Analysis |
-
-### Kategorie: Transform
-
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `formalize` | Informelle Notizen in formelle Dokumente umwandeln | Notizen, E-Mails | Formelles Dokument |
-| `refactor` | Code nach Clean-Code-Prinzipien refactoren | Code + Ziel | Refactored Code |
-| `simplify_text` | Komplexe technische Texte vereinfachen | Technischer Text | Vereinfachte Version |
-| `summarize` | Prägnante Zusammenfassung erstellen | Beliebiger Text | Zusammenfassung |
-| `translate_technical` | Technische Übersetzung unter Beibehaltung von Fachbegriffen | Text + Zielsprache | Übersetzter Text |
-
-### Kategorie: Report
-
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `aggregate_reviews` | Mehrere Review-Ergebnisse konsolidieren | Multiple Reviews | Gesamtbericht |
-| `compliance_report` | Compliance-Bericht (IEC 62443 / CRA) | Alle Artefakte | Compliance Report |
-| `risk_report` | Management-tauglicher Risiko-Report | Risk Register | Management Summary |
-| `test_report` | Formalen Test-Report aus Testergebnissen erstellen | Test Results | Formaler Test-Report |
-
-### Kategorie: Meta
-
-| Pattern | Beschreibung | Input | Output |
-|---------|-------------|-------|--------|
-| `_router` | Meta-Agent: Aufgaben analysieren und Execution Plans erstellen | Task Description | Execution Plan (JSON) |
-| `evaluate_quality` | Qualität eines Agent-Outputs bewerten (1-10) | Agent Output | Quality Score + Feedback |
-| `extract_knowledge` | Wiederverwendbares Wissen aus Agent-Outputs extrahieren | Agent Output | Knowledge Items |
-
-### Kategorie: Tool
-
-Tool-Patterns rufen kein LLM auf, sondern führen externe CLI-Tools aus. Sie werden typischerweise als Folgeschritt nach einem LLM-Pattern eingesetzt.
-
-| Pattern | Beschreibung | Tool | Input | Output |
-|---------|-------------|------|-------|--------|
-| `render_diagram` | Mermaid-Code zu SVG/PNG rendern | `mmdc` | Mermaid-Code (.mmd) | SVG, PNG, PDF |
-| `render_image` | Bild aus Text-Prompt erzeugen | `render-image` | Image-Prompt (.txt) | PNG, WebP |
-
----
-
-## Pattern-Komposition
-
-### Einfache Pipe-Kette
-```bash
-cat feature_request.txt \
-  | aios run extract_requirements \
-  | aios run generate_tests
-```
-
-### Benannte Komposition
-```yaml
-# patterns/composed/req_to_test.yaml
-name: req_to_test
-type: composed
-description: "Von Anforderung bis Testfälle"
-steps:
-  - pattern: extract_requirements
-  - pattern: generate_tests
-    params:
-      coverage: full
-```
-
-```bash
-# Nutzung
-cat feature.txt | aios run req_to_test
-```
-
-### Parallele Komposition
 ```yaml
 # patterns/composed/full_review.yaml
 name: full_review
 type: scatter-gather
-description: "Paralleles Multi-Perspektiven-Review"
+description: "Parallel multi-perspective review"
 scatter:
   - pattern: code_review
   - pattern: security_review
   - pattern: architecture_review
 gather:
   pattern: aggregate_reviews
-  params:
-    format: consolidated_review
 ```
 
 ---
 
-## Pattern-Erstellung
+## Pattern Discovery
 
 ```bash
-# Interaktiv
-aios patterns create my_pattern
-# → Editor öffnet sich mit Template
-# → Pattern wird validiert
-# → Pattern wird registriert
-
-# Aus bestehendem Prompt
-aios patterns import --from-file my_prompt.md --name my_pattern
-
-# Von Fabric importieren
-aios patterns import --from-fabric extract_wisdom
-```
-
-## Pattern-Discovery
-
-```bash
-# Alle Patterns auflisten
+# List all patterns
 aios patterns list
 
-# Nach Kategorie filtern
+# Filter by category
 aios patterns list --category=review
 
-# Suchen
+# Search by keyword
 aios patterns search "security compliance"
 
-# Details anzeigen
-aios patterns info security_review
+# Show pattern details (frontmatter + prompt preview)
+aios patterns show security_review
+```
 
-# Pattern testen
-echo "test input" | aios patterns test security_review
+### CLI Usage
+
+```bash
+# Simple invocation
+cat spec.md | aios run extract_requirements
+
+# With parameters
+cat spec.md | aios run extract_requirements --standard=iec62443 --detail_level=high
+
+# Pipe chain
+cat spec.md | aios run extract_requirements | aios run identify_risks
 ```
