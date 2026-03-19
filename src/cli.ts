@@ -366,7 +366,7 @@ personaCmd
 personaCmd
   .command("validate [name]")
   .description("Persona gegen Base Trait Protocol validieren")
-  .action((name?: string) => {
+  .action(async (name?: string) => {
     const config = loadConfig();
     const personas = new PersonaRegistry(config.paths.personas);
     const { loadBaseTraits, validatePersona } = await import("./core/trait-validator.js");
@@ -376,7 +376,9 @@ personaCmd
       process.exit(1);
     }
 
-    const toValidate = name ? [personas.get(name)].filter(Boolean) : personas.all();
+    const toValidate = name
+      ? [personas.get(name)].filter((p): p is NonNullable<typeof p> => Boolean(p))
+      : personas.all();
     if (toValidate.length === 0) {
       console.error(chalk.red(name ? `Persona "${name}" nicht gefunden.` : "Keine Personas gefunden."));
       process.exit(1);
