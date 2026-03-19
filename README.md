@@ -32,11 +32,23 @@ The **Router** (an LLM call) recognized that two reviews can run in parallel. Th
 
 ## Installation
 
-**Prerequisites:** Node.js 20+, npm, an LLM provider (Anthropic API key or local [Ollama](https://ollama.com))
+### Quick Install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/trosinde/AIOS/main/install.sh | bash
+```
+
+The installer checks prerequisites, clones the repo, builds, and launches the interactive configuration wizard (`aios configure`).
+
+### Manual Install
+
+**Prerequisites:** Node.js 20+, npm, git, an LLM provider (Anthropic API key or local [Ollama](https://ollama.com))
 
 ```bash
 git clone https://github.com/trosinde/AIOS.git && cd AIOS
 npm install
+aios configure                         # interactive setup wizard
+# or manually:
 export ANTHROPIC_API_KEY=sk-ant-...    # or skip if using Ollama
 ```
 
@@ -46,7 +58,7 @@ For local LLMs (free): configure Ollama in `aios.yaml` and pass `--provider olla
 
 **Claude Code / Open Code users:** Clone as `.aios` inside your project -- slash commands (`/review`, `/security`, `/tests`, etc.) become available directly.
 
-> **Full guide:** [docs/getting-started.md](docs/getting-started.md) | [docs/configuration.md](docs/configuration.md)
+> **Full guide:** [docs/SETUP.md](docs/SETUP.md) | [docs/getting-started.md](docs/getting-started.md) | [docs/configuration.md](docs/configuration.md)
 
 ---
 
@@ -188,8 +200,10 @@ src/
 |   +-- rag-service.ts           # RAG service -- search, index, compare
 |   +-- vector-store.ts          # In-memory vector store
 |   +-- preprocessing.ts         # Chunking, cleaning, embedding
++-- commands/
+|   +-- configure.ts            # Interactive setup wizard (aios configure)
 +-- utils/
-    +-- config.ts                # YAML config loader
+    +-- config.ts                # YAML config loader + .env management
     +-- stdin.ts                 # stdin helper
 
 patterns/*/system.md             # 35 patterns (YAML frontmatter + prompt)

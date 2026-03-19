@@ -670,6 +670,16 @@ Du bist ein Experte für [Bereich]. [Beschreibung deiner Rolle und Expertise.]
     console.log(chalk.gray("Bearbeite die Datei um den Prompt anzupassen."));
   });
 
+// ─── aios configure ──────────────────────────────────────
+program
+  .command("configure")
+  .alias("config")
+  .description("Interaktiver Setup-Wizard für Provider und API Keys")
+  .action(async () => {
+    const { runConfigure } = await import("./commands/configure.js");
+    await runConfigure();
+  });
+
 // ─── aios mcp-server ─────────────────────────────────────
 program
   .command("mcp-server")
