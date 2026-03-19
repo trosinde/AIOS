@@ -32,11 +32,23 @@ The **Router** (an LLM call) recognized that two reviews can run in parallel. Th
 
 ## Installation
 
-**Prerequisites:** Node.js 20+, npm, an LLM provider (Anthropic API key or local [Ollama](https://ollama.com))
+### Quick Install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/trosinde/AIOS/main/install.sh | bash
+```
+
+The installer checks prerequisites, clones the repo, builds, and launches the interactive configuration wizard (`aios configure`).
+
+### Manual Install
+
+**Prerequisites:** Node.js 20+, npm, git, an LLM provider (Anthropic API key or local [Ollama](https://ollama.com))
 
 ```bash
 git clone https://github.com/trosinde/AIOS.git && cd AIOS
 npm install
+aios configure                         # interactive setup wizard
+# or manually:
 export ANTHROPIC_API_KEY=sk-ant-...    # or skip if using Ollama
 ```
 
@@ -46,7 +58,7 @@ For local LLMs (free): configure Ollama in `aios.yaml` and pass `--provider olla
 
 **Claude Code / Open Code users:** Clone as `.aios` inside your project -- slash commands (`/review`, `/security`, `/tests`, etc.) become available directly.
 
-> **Full guide:** [docs/getting-started.md](docs/getting-started.md) | [docs/configuration.md](docs/configuration.md)
+> **Full guide:** [docs/SETUP.md](docs/SETUP.md) | [docs/getting-started.md](docs/getting-started.md) | [docs/configuration.md](docs/configuration.md)
 
 ---
 
@@ -188,18 +200,10 @@ src/
 |   +-- rag-service.ts           # RAG service -- search, index, compare
 |   +-- vector-store.ts          # In-memory vector store
 |   +-- preprocessing.ts         # Chunking, cleaning, embedding
-+-- security/
-|   +-- input-guard.ts          # Layer 1: Input boundary protection
-|   +-- prompt-builder.ts       # Layer 2: Data/instruction separation
-|   +-- plan-enforcer.ts        # Layer 3: Plan immutability
-|   +-- taint-tracker.ts        # Layer 3b: Information flow control
-|   +-- policy-engine.ts        # Layer 3b: Deterministic policy enforcement
-|   +-- output-validator.ts     # Layer 4: Output validation
-|   +-- knowledge-guard.ts      # Layer 5: Knowledge base integrity
-|   +-- canary.ts               # Canary token system
-|   +-- audit-logger.ts         # Layer 6: Audit trail
++-- commands/
+|   +-- configure.ts            # Interactive setup wizard (aios configure)
 +-- utils/
-    +-- config.ts                # YAML config loader
+    +-- config.ts                # YAML config loader + .env management
     +-- stdin.ts                 # stdin helper
 
 security/injection-patterns.yaml # Known injection patterns (YAML catalog)

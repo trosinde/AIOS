@@ -163,6 +163,7 @@ aios patterns list                       # List all patterns
 aios patterns show <name>               # Show pattern details
 aios persona list                        # List all personas
 aios persona validate [name]             # Validate persona against Base Trait Protocol
+aios configure                           # Interaktiver Setup-Wizard
 aios context init <name> [--local]       # Create new context
 aios context switch <name>               # Switch active context
 aios context list                        # List all contexts
@@ -214,6 +215,12 @@ aios knowledge search <query>            # Full-text search
 - [x] `.aios/` in Projekt-Verzeichnis für Context-lokale Ressourcen
 - [x] `aios context init/switch/list/show` CLI-Befehle
 - [x] Pattern-Lookup-Reihenfolge (4 Ebenen)
+
+### Setup & Configure
+- [x] `install.sh` — Curl-barer Installer (Bash)
+- [x] `aios configure` — Interaktiver Setup-Wizard
+- [x] `.env` Management (loadEnv, saveEnv)
+- [x] `saveConfig()` für Config-Persistierung
 
 ### Noch offen (nach Phase 4)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
