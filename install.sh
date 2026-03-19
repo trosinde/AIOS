@@ -158,4 +158,4 @@ echo ""
 echo -e "${BOLD}Starte Setup-Wizard...${NC}"
 echo ""
 
-exec "$WRAPPER" configure
+"$WRAPPER" configure

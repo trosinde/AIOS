@@ -88,7 +88,7 @@ function updateShellRC(): void {
 // ─── Main Wizard ───────────────────────────────────────────
 
 export async function runConfigure(): Promise<void> {
-  const rl = createRL();
+  let rl = createRL();
   const aiosHome = getAiosHome();
 
   // Ensure ~/.aios exists
@@ -145,6 +145,7 @@ export async function runConfigure(): Promise<void> {
   if (setupOllama) {
     const endpoint = await ask(rl, "Endpoint", "http://localhost:11434");
 
+    rl.close();
     const spinner = ora({ text: "Teste Verbindung...", indent: 2 }).start();
     let models: OllamaModel[] = [];
     try {
@@ -155,6 +156,7 @@ export async function runConfigure(): Promise<void> {
       console.log(chalk.yellow("  ⚠ Ollama wird übersprungen"));
       console.log();
     }
+    rl = createRL();
 
     if (models.length > 0) {
       console.log("  Verfügbare Modelle:");
