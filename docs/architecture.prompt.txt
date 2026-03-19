@@ -1,3 +1,5 @@
+## Aufgabe
+
 Professional technical architecture diagram for an open source project README. Dark background (#0a0e17). Wide landscape format 1440x820 pixels.
 
 Three horizontal layers, separated by dashed white boundary lines:
@@ -9,41 +11,40 @@ Left: group "project-alpha/" (dashed border), containing boxes: code_analyzer, r
 
 Right: grid of context cards with folder icons: contracts/, compliance/, admin/, hiring/, strategy/. One faded dashed card: "your-next/" with "aios init".
 
-Boundary: "Kernel API · stable · versioned"
+Boundary line: "Kernel API · stable · versioned"
 
 ═══ MIDDLE — "Layer 1: AIOS Kernel" — deep teal (#0e6b52) ═══
 Subtitle: "Stable ABI · no domain knowledge · shared by ALL contexts"
 
-Three LARGE white-bordered cards as visual centerpiece:
-- Card with puzzle-piece icon: "61+ Patterns" — "Analysis · Review · Generation · Reporting · RAG · Vision"
-- Card with people icon: "14+ Personas" — "Architect · Developer · Security · Tech Writer · Product Owner"
-- Card with shield icon: "Security" — "Prompt Injection Defense · Taint Tracking · Audit Trail"
+ROW 1 — Three LARGE white-bordered cards, equal width, spanning the full layer width:
+- Puzzle-piece icon: "61+ Patterns" — subtitle "Analysis · Review · Generation · Reporting · RAG · Vision"
+- People icon: "14+ Personas" — subtitle "Architect · Developer · Security · Tech Writer · Product Owner"
+- Shield icon: "Security" — subtitle "Prompt Injection Defense · Taint Tracking · Audit Trail"
 
-One row of EXACTLY four smaller cards below (no duplicates!):
-- plug icon: "4 LLM Providers"
-- broadcast icon: "Knowledge Bus"
-- wrench icon: "6 MCP Servers"
-- lock icon: "Context Isolation"
+ROW 2 — Three cards SAME WIDTH as Row 1, aligned to the same columns, spanning the full layer width:
+- Plug icon: "LLM Providers" — subtitle "Anthropic · Ollama · Gemini · OpenAI"
+- Broadcast icon: "MCP Servers" — subtitle "Azure DevOps · PDF Tools · Outlook · Intranet · Presentation · Transcript"
+- Lock icon: "Context Isolation" — subtitle "Knowledge Bus · CWD Discovery · Per-project .aios/"
 
-One row of six small hexagons: azure_devops, pdftools, outlook, intranet, presentation, transcript
+NO hexagon row. NO extra boxes. Just these two rows of three cards each.
 
-Italic: "Mechanism, not policy"
-Boundary: "Execution Boundary"
+Boundary line: "Execution Boundary"
 
 ═══ BOTTOM — "Layer 0: Execution Foundation" — dark slate (#1a2535) ═══
 Subtitle: "AIOS orchestrates these — does not replace them"
 
-EXACTLY four cards, each appearing ONCE:
-1. Claude Code — with the Anthropic orange asterisk/sparkle logo
-2. OpenCode — with a terminal/command-line icon
-3. GitHub Copilot — with the GitHub Copilot dual-pilot icon, dashed border (planned)
-4. Direct API / CLI — with a code bracket icon
+Four cards in a row:
+1. Claude Code — Anthropic sparkle logo
+2. OpenCode — terminal icon
+3. GitHub Copilot — dashed border (planned)
+4. Direct API / CLI — code bracket icon
 
 Note: "aios.yaml defines execution target per context"
 
 ═══ RULES ═══
 - NO arrows anywhere
-- NO duplicate boxes — each item appears exactly once
-- Subtle monochrome line-art icons, matching the layer color
+- NO duplicate elements
+- Row 2 in the kernel layer MUST be the same width and column alignment as Row 1
+- Subtle monochrome line-art icons matching layer color
 - Flat, no gradients, no 3D
 - Monospace for code labels, bold sans-serif for titles
