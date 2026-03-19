@@ -1,0 +1,49 @@
+Professional technical architecture diagram for an open source project README. Dark background (#0a0e17). Wide landscape format 1440x820 pixels.
+
+Three horizontal layers, separated by dashed white boundary lines:
+
+═══ TOP — "Layer 2: Your Contexts" — coral red (#b83c22) ═══
+Subtitle: "Each folder = isolated .aios/ context · own personas · patterns · knowledge"
+
+Left: group "project-alpha/" (dashed border), containing boxes: code_analyzer, requirements, backlog, approval, infra_backlog. Below: pill badges "SubProject A", "SubProject B".
+
+Right: grid of context cards with folder icons: contracts/, compliance/, admin/, hiring/, strategy/. One faded dashed card: "your-next/" with "aios init".
+
+Boundary: "Kernel API · stable · versioned"
+
+═══ MIDDLE — "Layer 1: AIOS Kernel" — deep teal (#0e6b52) ═══
+Subtitle: "Stable ABI · no domain knowledge · shared by ALL contexts"
+
+Three LARGE white-bordered cards as visual centerpiece:
+- Card with puzzle-piece icon: "61+ Patterns" — "Analysis · Review · Generation · Reporting · RAG · Vision"
+- Card with people icon: "14+ Personas" — "Architect · Developer · Security · Tech Writer · Product Owner"
+- Card with shield icon: "Security" — "Prompt Injection Defense · Taint Tracking · Audit Trail"
+
+One row of EXACTLY four smaller cards below (no duplicates!):
+- plug icon: "4 LLM Providers"
+- broadcast icon: "Knowledge Bus"
+- wrench icon: "6 MCP Servers"
+- lock icon: "Context Isolation"
+
+One row of six small hexagons: azure_devops, pdftools, outlook, intranet, presentation, transcript
+
+Italic: "Mechanism, not policy"
+Boundary: "Execution Boundary"
+
+═══ BOTTOM — "Layer 0: Execution Foundation" — dark slate (#1a2535) ═══
+Subtitle: "AIOS orchestrates these — does not replace them"
+
+EXACTLY four cards, each appearing ONCE:
+1. Claude Code — with the Anthropic orange asterisk/sparkle logo
+2. OpenCode — with a terminal/command-line icon
+3. GitHub Copilot — with the GitHub Copilot dual-pilot icon, dashed border (planned)
+4. Direct API / CLI — with a code bracket icon
+
+Note: "aios.yaml defines execution target per context"
+
+═══ RULES ═══
+- NO arrows anywhere
+- NO duplicate boxes — each item appears exactly once
+- Subtle monochrome line-art icons, matching the layer color
+- Flat, no gradients, no 3D
+- Monospace for code labels, bold sans-serif for titles
