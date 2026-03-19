@@ -189,7 +189,7 @@ export class Engine {
         status.set(target, "pending");
         status.set(step.id, "failed");
       } else {
-        console.error(chalk.red(`  ❌ ${step.id} gescheitert`));
+        console.error(chalk.red(`  ❌ ${step.id} gescheitert: ${errMsg}`));
         status.set(step.id, "failed");
       }
     }
@@ -475,7 +475,17 @@ export class Engine {
       }
     }
 
-    // 4. Default provider
+    // If a specific capability was required but no provider supports it → fail clearly
+    if (capability) {
+      const hint = capability === "image_generation"
+        ? `Add a provider with 'capabilities: [image_generation]' to aios.yaml. Example:\n  gemini-image:\n    type: gemini\n    model: gemini-2.0-flash-exp-image-generation\n    apiKey: \${GOOGLE_API_KEY}\n    capabilities: [image_generation]`
+        : `Add a provider with 'capabilities: [${capability}]' to aios.yaml.`;
+      throw new Error(
+        `No provider with capability "${capability}" configured for pattern "${pattern.meta.name}".\n${hint}`
+      );
+    }
+
+    // 4. Default provider (only for patterns without special capability requirements)
     return this.provider;
   }
 

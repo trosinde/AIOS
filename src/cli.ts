@@ -207,6 +207,25 @@ program
         }
         process.stdout.write(out.output);
       }
+    } else if (pattern.meta.type === "image_generation") {
+      // Image-Generation-Pattern: Über Engine ausführen (speichert Bilder in output/)
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const imgPlan = {
+        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
+        plan: {
+          type: "pipe" as const,
+          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+        },
+        reasoning: "Direct image generation",
+      };
+      const result = await engine.execute(imgPlan, input);
+      const out = result.results.get("run");
+      if (out) {
+        if (out.outputType === "file" && out.filePath) {
+          console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
+        }
+        process.stdout.write(out.output);
+      }
     } else {
       // LLM-Pattern: Persona + Pattern kombinieren
       const personaId = pattern.meta.persona;
