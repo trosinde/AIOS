@@ -1,0 +1,260 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 820">
+  <defs>
+    <marker id="arrow-teal" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#0e6b52"/>
+    </marker>
+    <marker id="arrow-white" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#fff"/>
+    </marker>
+    <symbol id="team-icon" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="hex" viewBox="0 0 100 87">
+      <polygon points="25,0 75,0 100,43.5 75,87 25,87 0,43.5" fill="none" stroke="currentColor" stroke-width="3"/>
+    </symbol>
+  </defs>
+  <style>
+    .layer-label { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+    .layer-sub { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 10.5px; opacity: 0.75; }
+    .box-label { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; font-size: 10.5px; }
+    .box-label-sm { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; font-size: 9.5px; }
+    .group-title { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px; font-weight: 600; }
+    .info-text { font-family: 'SF Mono', monospace; font-size: 8.5px; opacity: 0.6; }
+    .boundary-label { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+    .legend-title { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .legend-text { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 9.5px; }
+    .note-text { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 9.5px; font-style: italic; opacity: 0.7; }
+  </style>
+
+  <!-- ============================================================ -->
+  <!-- Layer 2: User Space / Contexts (top 50%) -->
+  <!-- ============================================================ -->
+  <g id="layer2">
+    <rect x="0" y="0" width="1440" height="410" fill="#b83c22" rx="0"/>
+    <text x="30" y="30" class="layer-label" fill="#fff">Layer 2 — Your Contexts</text>
+    <text x="30" y="46" class="layer-sub" fill="#fff">Each folder = isolated .aios/ · own personas · own patterns · own RAG knowledge · auto-discovered via CWD walk-up</text>
+
+    <!-- project-alpha group (dashed border) -->
+    <rect x="30" y="62" width="590" height="310" rx="8" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.5"/>
+    <text x="46" y="82" class="group-title" fill="#fff">project-alpha/</text>
+    <use href="#team-icon" x="178" y="68" width="18" height="18" color="#fff" opacity="0.6"/>
+
+    <!-- Agents in project-alpha -->
+    <rect x="50" y="96" width="120" height="36" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="110" y="118" class="box-label" fill="#fff" text-anchor="middle">code_analyzer</text>
+
+    <rect x="180" y="96" width="120" height="36" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="240" y="118" class="box-label" fill="#fff" text-anchor="middle">requirements</text>
+
+    <rect x="310" y="96" width="120" height="36" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="370" y="118" class="box-label" fill="#fff" text-anchor="middle">backlog</text>
+
+    <rect x="440" y="96" width="120" height="36" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="500" y="118" class="box-label" fill="#fff" text-anchor="middle">approval</text>
+
+    <rect x="50" y="142" width="120" height="36" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1" stroke-dasharray="4,2"/>
+    <text x="110" y="164" class="box-label" fill="#fff" text-anchor="middle">infra_backlog</text>
+
+    <!-- SubProjects -->
+    <rect x="50" y="196" width="140" height="28" rx="14" fill="#c94a36" stroke="#fff" stroke-width="1"/>
+    <text x="120" y="214" class="box-label-sm" fill="#fff" text-anchor="middle">SubProject A</text>
+
+    <rect x="200" y="196" width="140" height="28" rx="14" fill="#c94a36" stroke="#fff" stroke-width="1"/>
+    <text x="270" y="214" class="box-label-sm" fill="#fff" text-anchor="middle">SubProject B</text>
+
+    <!-- dashed arrow from infra_backlog to subprojects -->
+    <line x1="110" y1="178" x2="120" y2="196" stroke="#fff" stroke-width="1" stroke-dasharray="3,2" opacity="0.5"/>
+    <line x1="110" y1="178" x2="270" y2="196" stroke="#fff" stroke-width="1" stroke-dasharray="3,2" opacity="0.5"/>
+
+    <!-- project-alpha info footer -->
+    <text x="50" y="256" class="info-text" fill="#fff">.aios/context.yaml · .aios/knowledge/ · .aios/personas/ · .aios/patterns/</text>
+
+    <!-- Standalone contexts (right side, 2x3 grid) -->
+    <rect x="660" y="62" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="736" y="92" class="box-label" fill="#fff" text-anchor="middle">contracts/</text>
+    <text x="736" y="124" class="info-text" fill="#fff" text-anchor="middle">.aios/</text>
+
+    <rect x="826" y="62" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="902" y="92" class="box-label" fill="#fff" text-anchor="middle">compliance/</text>
+    <text x="902" y="124" class="info-text" fill="#fff" text-anchor="middle">.aios/</text>
+
+    <rect x="992" y="62" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="1068" y="92" class="box-label" fill="#fff" text-anchor="middle">admin/</text>
+    <text x="1068" y="124" class="info-text" fill="#fff" text-anchor="middle">.aios/</text>
+
+    <rect x="660" y="150" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="736" y="180" class="box-label" fill="#fff" text-anchor="middle">hiring/</text>
+    <text x="736" y="212" class="info-text" fill="#fff" text-anchor="middle">.aios/</text>
+
+    <rect x="826" y="150" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1"/>
+    <text x="902" y="180" class="box-label" fill="#fff" text-anchor="middle">strategy/</text>
+    <text x="902" y="212" class="info-text" fill="#fff" text-anchor="middle">.aios/</text>
+
+    <rect x="992" y="150" width="152" height="74" rx="6" fill="#d4553f" stroke="#fff" stroke-width="1" stroke-dasharray="4,2" opacity="0.6"/>
+    <text x="1068" y="180" class="box-label" fill="#fff" text-anchor="middle" opacity="0.6">your-next/</text>
+    <text x="1068" y="212" class="info-text" fill="#fff" text-anchor="middle" opacity="0.6">aios init</text>
+
+    <!-- Standalone contexts info -->
+    <text x="660" y="256" class="info-text" fill="#fff">Each context: independent personas, patterns, knowledge — zero leakage between projects</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Kernel API Boundary -->
+  <!-- ============================================================ -->
+  <line x1="0" y1="410" x2="1440" y2="410" stroke="#fff" stroke-width="2" stroke-dasharray="8,4"/>
+  <rect x="520" y="398" width="400" height="24" rx="4" fill="#0e6b52"/>
+  <text x="720" y="414" class="boundary-label" fill="#fff" text-anchor="middle" letter-spacing="2">Kernel API · stable · versioned · breaking = major bump</text>
+
+  <!-- ============================================================ -->
+  <!-- Layer 1: AIOS Kernel (middle 32%) -->
+  <!-- ============================================================ -->
+  <g id="layer1">
+    <rect x="0" y="422" width="1440" height="262" fill="#0e6b52" rx="0"/>
+    <text x="30" y="448" class="layer-label" fill="#fff">Layer 1 — AIOS Kernel</text>
+    <text x="30" y="464" class="layer-sub" fill="#fff">Stable ABI · no domain knowledge · shared by ALL contexts · ~/.aios/kernel/</text>
+
+    <!-- Row 1: Scheduling primitives -->
+    <rect x="30" y="478" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="100" y="501" class="box-label" fill="#fff" text-anchor="middle">DAG Engine</text>
+
+    <rect x="184" y="478" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="254" y="501" class="box-label" fill="#fff" text-anchor="middle">Pattern ABI</text>
+
+    <rect x="338" y="478" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="408" y="501" class="box-label" fill="#fff" text-anchor="middle">Knowledge Bus</text>
+
+    <rect x="492" y="478" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="562" y="501" class="box-label" fill="#fff" text-anchor="middle">Provider API</text>
+
+    <rect x="646" y="478" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="716" y="501" class="box-label" fill="#fff" text-anchor="middle">CWD Resolver</text>
+
+    <!-- Row 2: Protocol layer -->
+    <rect x="30" y="526" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="100" y="549" class="box-label" fill="#fff" text-anchor="middle">Base Traits</text>
+
+    <rect x="184" y="526" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="254" y="549" class="box-label" fill="#fff" text-anchor="middle">Exec Context</text>
+
+    <rect x="338" y="526" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="408" y="549" class="box-label" fill="#fff" text-anchor="middle">Router</text>
+
+    <rect x="492" y="526" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="562" y="549" class="box-label" fill="#fff" text-anchor="middle">Tool Drivers</text>
+
+    <rect x="646" y="526" width="140" height="38" rx="6" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="716" y="549" class="box-label-sm" fill="#fff" text-anchor="middle">~/.aios/kernel/</text>
+
+    <!-- MCP separator -->
+    <line x1="30" y1="580" x2="786" y2="580" stroke="#4db89a" stroke-width="1" opacity="0.4"/>
+    <text x="30" y="596" class="layer-sub" fill="#fff" opacity="0.6">MCP Servers (auto-registered as patterns)</text>
+
+    <!-- MCP hexagons -->
+    <g transform="translate(30,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle">azure_devops</text>
+    </g>
+    <g transform="translate(154,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle">pdftools</text>
+    </g>
+    <g transform="translate(278,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a" stroke-width="5"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle">outlook</text>
+    </g>
+    <g transform="translate(402,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle">intranet</text>
+    </g>
+    <g transform="translate(526,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a" opacity="0.5"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.5">presentation</text>
+    </g>
+    <g transform="translate(650,608)">
+      <use href="#hex" x="0" y="0" width="110" height="48" color="#4db89a"/>
+      <text x="55" y="30" class="box-label-sm" fill="#fff" text-anchor="middle">transcript</text>
+    </g>
+
+    <!-- Stats box -->
+    <rect x="830" y="478" width="290" height="86" rx="8" fill="#0a5943" stroke="#4db89a" stroke-width="1"/>
+    <text x="975" y="502" class="box-label" fill="#4db89a" text-anchor="middle">61+ Patterns · 14+ Personas</text>
+    <text x="975" y="520" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.7">4 Providers · RAG · Vision · Image Gen</text>
+    <text x="975" y="540" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.7">Prompt Injection Defense (OWASP LLM01)</text>
+    <text x="975" y="556" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.5">Saga · Retry · Rollback · Quality Gates</text>
+
+    <!-- Principle box -->
+    <rect x="830" y="580" width="290" height="76" rx="8" fill="none" stroke="#4db89a" stroke-width="1" stroke-dasharray="4,2"/>
+    <text x="975" y="602" class="box-label" fill="#4db89a" text-anchor="middle">Mechanism, not policy</text>
+    <text x="975" y="620" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.6">"Would a Perl dev, a Java dev, AND a</text>
+    <text x="975" y="636" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.6">compliance officer all need this?"</text>
+    <text x="975" y="650" class="box-label-sm" fill="#fff" text-anchor="middle" opacity="0.4">Yes → Kernel. No → User Space.</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Execution Boundary -->
+  <!-- ============================================================ -->
+  <line x1="0" y1="684" x2="1440" y2="684" stroke="#fff" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <rect x="570" y="672" width="300" height="24" rx="4" fill="#1a2535"/>
+  <text x="720" y="688" class="boundary-label" fill="#fff" text-anchor="middle" opacity="0.7" letter-spacing="1.5">Execution Boundary</text>
+
+  <!-- ============================================================ -->
+  <!-- Layer 0: Execution Foundation (bottom 18%) -->
+  <!-- ============================================================ -->
+  <g id="layer0">
+    <rect x="0" y="696" width="1440" height="124" fill="#1a2535" rx="0"/>
+    <text x="30" y="722" class="layer-label" fill="#fff" opacity="0.8">Layer 0 — Execution Foundation</text>
+    <text x="30" y="738" class="layer-sub" fill="#fff">AIOS orchestrates these — does not replace them</text>
+
+    <rect x="30" y="752" width="200" height="44" rx="6" fill="#fff" stroke="#4db89a" stroke-width="1.5"/>
+    <text x="130" y="778" class="box-label" fill="#1a2535" text-anchor="middle">Claude Code</text>
+
+    <rect x="250" y="752" width="200" height="44" rx="6" fill="#fff" stroke="#4db89a" stroke-width="1.5"/>
+    <text x="350" y="778" class="box-label" fill="#1a2535" text-anchor="middle">OpenCode</text>
+
+    <rect x="470" y="752" width="200" height="44" rx="6" fill="#fff" stroke="#4db89a" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.6"/>
+    <text x="570" y="778" class="box-label" fill="#1a2535" text-anchor="middle" opacity="0.6">GitHub Copilot</text>
+
+    <rect x="690" y="752" width="200" height="44" rx="6" fill="#fff" stroke="#4db89a" stroke-width="1.5"/>
+    <text x="790" y="778" class="box-label" fill="#1a2535" text-anchor="middle">Direct API / CLI</text>
+
+    <text x="930" y="778" class="note-text" fill="#fff">aios.yaml → providers: defines which execution target per context</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Arrows -->
+  <!-- ============================================================ -->
+  <g id="arrows">
+    <!-- Broad arrow: Kernel → User Space -->
+    <polygon points="700,422 720,395 740,422" fill="#fff" opacity="0.6"/>
+    <polygon points="660,422 680,395 700,422" fill="#fff" opacity="0.3"/>
+    <polygon points="740,422 760,395 780,422" fill="#fff" opacity="0.3"/>
+
+    <!-- Execution → Provider API -->
+    <line x1="562" y1="696" x2="562" y2="520" stroke="#4db89a" stroke-width="1.5" marker-end="url(#arrow-teal)"/>
+
+    <!-- MCP → Tool drivers -->
+    <line x1="562" y1="608" x2="562" y2="568" stroke="#4db89a" stroke-width="1" marker-end="url(#arrow-teal)" opacity="0.6"/>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- Legend (bottom-right) -->
+  <!-- ============================================================ -->
+  <g id="legend">
+    <rect x="1160" y="710" width="260" height="96" rx="6" fill="#0f1a28" stroke="#4db89a" stroke-width="1" opacity="0.9"/>
+    <text x="1178" y="730" class="legend-title" fill="#4db89a">Legend</text>
+
+    <rect x="1178" y="740" width="24" height="12" rx="3" fill="#d4553f" stroke="#fff" stroke-width="0.5"/>
+    <text x="1210" y="750" class="legend-text" fill="#fff">User Space context</text>
+
+    <rect x="1178" y="758" width="24" height="12" rx="3" fill="#0a5943" stroke="#4db89a" stroke-width="0.5"/>
+    <text x="1210" y="768" class="legend-text" fill="#fff">Kernel component</text>
+
+    <line x1="1178" y1="782" x2="1202" y2="782" stroke="#fff" stroke-width="1" stroke-dasharray="4,2"/>
+    <text x="1210" y="786" class="legend-text" fill="#fff">Planned / optional</text>
+
+    <rect x="1178" y="794" width="24" height="4" rx="1" fill="#b83c22"/>
+    <rect x="1190" y="794" width="12" height="4" rx="1" fill="#0e6b52"/>
+    <text x="1210" y="800" class="legend-text" fill="#fff" opacity="0.6">Color = layer ownership</text>
+  </g>
+</svg>
