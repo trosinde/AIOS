@@ -346,14 +346,26 @@ export class Engine {
         arg.replace("$INPUT", tmpInput).replace("$OUTPUT", outputFile)
       );
 
-      await this.execFileAsync(tool, args);
+      const stdout = await this.execFileAsync(tool, args);
+
+      // Parse tool stdout for multi-file output (JSON with "images" array)
+      let filePaths: string[] | undefined;
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        if (Array.isArray(parsed.images) && parsed.images.length > 0) {
+          filePaths = parsed.images;
+        }
+      } catch { /* not JSON, use default single file */ }
 
       return {
         stepId: step.id,
         pattern: step.pattern,
-        output: `Datei erzeugt: ${outputFile}`,
+        output: filePaths
+          ? `Dateien extrahiert: ${filePaths.join(", ")}`
+          : `Datei erzeugt: ${outputFile}`,
         outputType: "file",
-        filePath: outputFile,
+        filePath: filePaths?.[0] ?? outputFile,
+        filePaths,
         durationMs: Date.now() - t0,
       };
     } finally {
