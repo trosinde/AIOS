@@ -23,6 +23,12 @@ Set your Anthropic API key (or skip this if using Ollama):
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
+Or store it encrypted (KeePass-compatible):
+
+```bash
+aios secret set ANTHROPIC_API_KEY
+```
+
 ## Verify Installation
 
 ```bash

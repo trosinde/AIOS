@@ -239,4 +239,5 @@ export interface AiosConfig {
   tools: ToolsConfig;
   mcp?: McpConfig;
   rag?: import("./rag/types.js").RagConfig;
+  secrets?: import("./secrets/secret-provider.js").SecretStoreConfig;
 }

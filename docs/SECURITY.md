@@ -57,6 +57,10 @@ AIOS combines multiple properties that individually increase attack surface:
 ├──────────────────────────────────────────────────────────┤
 │  Layer 6: Audit Trail (src/security/audit-logger.ts)              │
 │  JSONL logging, compliance-grade event trail                      │
+├──────────────────────────────────────────────────────────┤
+│  Layer 7: Secret Storage (src/secrets/)                           │
+│  KeePass AES-256 + Argon2d encryption, per-context isolation,    │
+│  audit-logged access, in-memory master password only              │
 └──────────────────────────────────────────────────────────┘
 ```
 

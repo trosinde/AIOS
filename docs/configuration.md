@@ -153,9 +153,37 @@ GEMINI_API_KEY=AIza...
 OPENAI_API_KEY=sk-...
 ```
 
+## Secret Storage
+
+AIOS supports encrypted secret storage via KeePass-compatible `.kdbx` files. Add to your `aios.yaml` or `~/.aios/config.yaml`:
+
+```yaml
+secrets:
+  backend: keepassxc           # "keepassxc" or "env" (default)
+  keepassxc:
+    database: ~/.aios/secrets.kdbx
+    group: AIOS                # KeePass group prefix (default: "AIOS")
+```
+
+Secrets can also be configured per-context in `context.yaml`, overriding the global setting.
+
+CLI commands:
+
+```bash
+aios secret set <key>          # Store encrypted (interactive hidden input)
+aios secret get <key>          # Retrieve to stdout
+aios secret list               # List key names (never values)
+aios secret delete <key>       # Remove
+aios secret import             # Migrate .env → KeePass
+aios secret backend            # Show active backend
+```
+
+See [secrets.md](secrets.md) for full documentation including context isolation and KeePassXC interop.
+
 ## Security
 
 - Never store API keys or tokens directly in `aios.yaml` if the file is tracked in version control.
-- Use `${ENV_VAR}` references in `aios.yaml` and keep actual secrets in `.env` or an external secret manager.
+- Use `${ENV_VAR}` references in `aios.yaml` and keep actual secrets in `.env` or the encrypted secret store.
 - Add `.env` to `.gitignore`.
 - The `tools.allowed` list restricts which CLI tools can be invoked by tool patterns. Only allow tools you trust.
+- For production and team environments, use `secrets.backend: keepassxc` for AES-256 encrypted storage.

@@ -494,6 +494,188 @@ knowledgeCmd
     bus.close();
   });
 
+// ─── aios secret ───────────────────────────────────────
+const secretCmd = program.command("secret").description("Secret-Verwaltung (verschlüsselte Credentials)");
+
+secretCmd
+  .command("set <key>")
+  .description("Secret speichern (interaktive Eingabe)")
+  .option("--global", "Global statt context-scoped speichern")
+  .action(async (key: string, opts) => {
+    const { ContextManager } = await import("./core/context.js");
+    const { createSecretResolver } = await import("./secrets/factory.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+    const contextId = opts.global ? undefined : active.name;
+
+    const resolver = await createSecretResolver(config, active.config.secrets);
+
+    // Read value from TTY (hidden input)
+    const { createInterface } = await import("readline");
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+
+    const value = await new Promise<string>((resolve) => {
+      process.stderr.write(`Wert für "${key}": `);
+      let input = "";
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.on("data", (chunk) => {
+          const char = chunk.toString();
+          if (char === "\n" || char === "\r") {
+            process.stdin.setRawMode(false);
+            process.stderr.write("\n");
+            rl.close();
+            resolve(input);
+          } else if (char === "\u0003") {
+            process.exit(0);
+          } else if (char === "\u007f" || char === "\b") {
+            input = input.slice(0, -1);
+          } else {
+            input += char;
+          }
+        });
+      } else {
+        rl.question("", (answer) => {
+          rl.close();
+          resolve(answer);
+        });
+      }
+    });
+
+    if (!value) {
+      console.error(chalk.red("Kein Wert eingegeben."));
+      process.exit(1);
+    }
+
+    await resolver.set(key, value, contextId);
+    const scope = contextId ? `Context "${contextId}"` : "global";
+    console.log(chalk.green(`Secret "${key}" gespeichert (${scope})`));
+  });
+
+secretCmd
+  .command("get <key>")
+  .description("Secret abrufen")
+  .action(async (key: string) => {
+    const { ContextManager } = await import("./core/context.js");
+    const { createSecretResolver } = await import("./secrets/factory.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    const resolver = await createSecretResolver(config, active.config.secrets);
+    const value = await resolver.resolve(key, active.name);
+
+    if (value === undefined) {
+      console.error(chalk.red(`Secret "${key}" nicht gefunden.`));
+      process.exit(1);
+    }
+    process.stdout.write(value);
+  });
+
+secretCmd
+  .command("list")
+  .description("Alle Secret-Keys auflisten (keine Werte)")
+  .action(async () => {
+    const { ContextManager } = await import("./core/context.js");
+    const { createSecretResolver } = await import("./secrets/factory.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    const resolver = await createSecretResolver(config, active.config.secrets);
+    const keys = await resolver.list(active.name);
+
+    if (keys.length === 0) {
+      console.error(chalk.gray("Keine Secrets gespeichert."));
+      console.error(chalk.gray("Speichere mit: aios secret set <key>"));
+      return;
+    }
+
+    for (const k of keys) {
+      console.log(`  ${chalk.cyan(k)}`);
+    }
+  });
+
+secretCmd
+  .command("delete <key>")
+  .description("Secret löschen")
+  .action(async (key: string) => {
+    const { ContextManager } = await import("./core/context.js");
+    const { createSecretResolver } = await import("./secrets/factory.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    const resolver = await createSecretResolver(config, active.config.secrets);
+    await resolver.delete(key, active.name);
+    console.log(chalk.green(`Secret "${key}" gelöscht.`));
+  });
+
+secretCmd
+  .command("import")
+  .description("Bestehende .env-Secrets in den Secret Store importieren")
+  .action(async () => {
+    const { ContextManager } = await import("./core/context.js");
+    const { createSecretResolver } = await import("./secrets/factory.js");
+    const { EnvSecretProvider } = await import("./secrets/env-provider.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    if (!config.secrets || config.secrets.backend === "env") {
+      console.error(chalk.yellow("Secret-Backend ist bereits 'env'. Import nicht nötig."));
+      console.error(chalk.gray("Konfiguriere zuerst ein anderes Backend in aios.yaml:"));
+      console.error(chalk.gray("  secrets:"));
+      console.error(chalk.gray("    backend: keepassxc"));
+      console.error(chalk.gray("    keepassxc:"));
+      console.error(chalk.gray("      database: ~/.aios/secrets.kdbx"));
+      return;
+    }
+
+    const envProvider = new EnvSecretProvider();
+    const keys = await envProvider.list(active.name);
+
+    if (keys.length === 0) {
+      console.error(chalk.yellow("Keine Secrets in .env gefunden."));
+      return;
+    }
+
+    const resolver = await createSecretResolver(config, active.config.secrets);
+    let imported = 0;
+    for (const key of keys) {
+      const value = await envProvider.get({ key, context_id: active.name });
+      if (value) {
+        await resolver.set(key, value, active.name);
+        imported++;
+        console.log(chalk.green(`  ✓ ${key}`));
+      }
+    }
+    console.log(chalk.green(`\n${imported} Secrets importiert.`));
+  });
+
+secretCmd
+  .command("backend")
+  .description("Aktives Secret-Backend anzeigen")
+  .action(async () => {
+    const { ContextManager } = await import("./core/context.js");
+    const config = loadConfig();
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    const contextSecrets = active.config.secrets;
+    const globalSecrets = config.secrets;
+    const backend = contextSecrets?.backend ?? globalSecrets?.backend ?? "env";
+
+    console.log(chalk.bold(`Secret Backend: ${backend}`));
+    if (backend === "keepassxc") {
+      const kc = contextSecrets?.keepassxc ?? globalSecrets?.keepassxc;
+      if (kc?.database) console.log(chalk.gray(`Datenbank: ${kc.database}`));
+    }
+    console.log(chalk.gray(`Context: ${active.name} (${active.source})`));
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 

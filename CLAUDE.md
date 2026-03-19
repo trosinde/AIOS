@@ -164,6 +164,12 @@ aios patterns show <name>               # Show pattern details
 aios persona list                        # List all personas
 aios persona validate [name]             # Validate persona against Base Trait Protocol
 aios configure                           # Interaktiver Setup-Wizard
+aios secret set <key>                    # Secret verschlüsselt speichern
+aios secret get <key>                    # Secret abrufen
+aios secret list                         # Key-Namen auflisten
+aios secret delete <key>                 # Secret löschen
+aios secret import                       # .env → Secret Store migrieren
+aios secret backend                      # Aktives Backend anzeigen
 aios context init <name> [--local]       # Create new context
 aios context switch <name>               # Switch active context
 aios context list                        # List all contexts

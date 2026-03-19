@@ -29,7 +29,9 @@ export type AuditEventType =
   | "kb_write_blocked"
   | "policy_violation"
   | "policy_passed"
-  | "taint_propagation";
+  | "taint_propagation"
+  | "secret_access"
+  | "secret_write";
 
 export type AuditLogLevel = "debug" | "info" | "warn" | "error";
 

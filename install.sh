@@ -159,3 +159,10 @@ echo -e "${BOLD}Starte Setup-Wizard...${NC}"
 echo ""
 
 "$WRAPPER" configure
+
+# ─── Hint: Secret Store ───────────────────────────────────
+echo ""
+echo -e "${CYAN}${BOLD}▸ Tipp: Verschlüsselte Secret-Speicherung${NC}"
+echo -e "  Für KeePass-kompatible Verschlüsselung statt .env:"
+echo -e "  ${BOLD}aios secret set ANTHROPIC_API_KEY${NC}"
+echo -e "  Siehe: ${CYAN}aios secret --help${NC}"

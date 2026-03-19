@@ -128,6 +128,7 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
       ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...partial.mcp.servers } }
       : DEFAULT_CONFIG.mcp,
     rag: partial.rag,
+    secrets: partial.secrets,
   };
 }
 

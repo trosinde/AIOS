@@ -43,6 +43,7 @@ Führt durch:
 | ~/.aios/.env | API Keys (chmod 600) |
 | ~/.aios/patterns/ | Pattern-Bibliothek |
 | ~/.aios/personas/ | Persona-Definitionen |
+| ~/.aios/secrets.kdbx | Verschlüsselte Secrets (optional) |
 | ~/.aios/repo/ | Geklontes Repository |
 
 ### Config-Hierarchie
@@ -54,12 +55,37 @@ AIOS sucht Konfiguration in dieser Reihenfolge:
 
 ### API Keys
 
-API Keys werden in `~/.aios/.env` gespeichert (nicht in der config.yaml). Unterstützte Variablen:
+API Keys werden standardmäßig in `~/.aios/.env` gespeichert (nicht in der config.yaml). Unterstützte Variablen:
 - `ANTHROPIC_API_KEY` — Anthropic API Key
+- `GEMINI_API_KEY` — Google Gemini API Key
+- `OPENAI_API_KEY` — OpenAI API Key
 
 Die .env wird automatisch beim Start geladen. Alternativ kann der Key
 auch als Umgebungsvariable gesetzt werden — eine bereits gesetzte
 Umgebungsvariable hat Vorrang vor dem Wert in .env.
+
+### Sichere Secret-Speicherung (empfohlen)
+
+Für verschlüsselte Speicherung mit KeePass-kompatiblen `.kdbx`-Dateien:
+
+```bash
+# 1. Backend in config.yaml aktivieren
+cat >> ~/.aios/config.yaml << 'EOF'
+secrets:
+  backend: keepassxc
+  keepassxc:
+    database: ~/.aios/secrets.kdbx
+EOF
+
+# 2. Bestehende .env-Secrets importieren
+aios secret import
+
+# 3. Oder einzeln setzen
+aios secret set ANTHROPIC_API_KEY
+```
+
+Secrets werden per Context isoliert und mit AES-256 + Argon2 verschlüsselt.
+Siehe [docs/secrets.md](secrets.md) für Details.
 
 ### Manuell konfigurieren
 

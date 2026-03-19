@@ -36,6 +36,7 @@ Three layers, clear separation:
 - **MCP server integration** — PDF, Azure DevOps, Outlook, and more auto-registered as patterns
 - **RAG with local embeddings** — semantic search over your project's knowledge
 - **Prompt injection defense** — OWASP LLM01 defense-in-depth with taint tracking
+- **Secure secret storage** — KeePass-compatible `.kdbx` encryption, per-context isolation, audit trail
 - **Context isolation per project** — each `.aios/` is a boundary, zero leakage between projects
 
 ## What You Don't Get (and Why)
@@ -105,6 +106,7 @@ AIOS plans the workflow automatically — parallel where possible, sequential wh
 | [Providers](docs/providers.md) | 4 LLM providers, cost-based selection, vision support |
 | [MCP Servers](docs/MCP.md) | MCP server integration, PAT setup |
 | [RAG](docs/rag.md) | Semantic search, vector store, collections, embeddings |
+| [Secret Management](docs/secrets.md) | KeePass integration, per-context secrets, migration |
 | [Security](docs/SECURITY.md) | Threat model, defense-in-depth, taint tracking |
 | [Roadmap](docs/roadmap.md) | Phases — what's done, what's next |
 

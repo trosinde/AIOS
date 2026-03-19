@@ -25,6 +25,14 @@ export interface ContextConfig {
     allow_tool_execution?: boolean;
     allowed_tools?: string[];
   };
+  secrets?: {
+    backend: "env" | "keepassxc";
+    keepassxc?: {
+      database: string;
+      keyfile?: string;
+      group?: string;
+    };
+  };
 }
 
 export interface ContextInfo {
