@@ -670,6 +670,108 @@ Du bist ein Experte für [Bereich]. [Beschreibung deiner Rolle und Expertise.]
     console.log(chalk.gray("Bearbeite die Datei um den Prompt anzupassen."));
   });
 
+// ─── aios init ──────────────────────────────────────────
+program
+  .command("init")
+  .description("Initialize .aios/ project context (interactive wizard)")
+  .option("--quick", "Auto-detect everything, no questions")
+  .option("--yes", "Show plan and auto-confirm")
+  .option("--refresh", "Regenerate agent-instructions.md from existing context.yaml")
+  .option("--aios-path <path>", "Pre-set AIOS installation path")
+  .action(async (opts) => {
+    const cwd = process.cwd();
+    const { existsSync: exists } = await import("fs");
+    const { join: pJoin } = await import("path");
+
+    // ─── Refresh mode: regenerate from existing context.yaml ───
+    if (opts.refresh) {
+      const { generate } = await import("./init/generator.js");
+      try {
+        const result = generate({} as never, { refresh: true, cwd });
+        console.error(chalk.green("  ✓ Regenerated:"));
+        for (const f of result.modified) console.error(chalk.gray(`    ${f}`));
+        process.exit(0);
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+    }
+
+    // ─── Re-init detection ──────────────────────────────────
+    if (exists(pJoin(cwd, ".aios", "context.yaml"))) {
+      if (opts.quick) {
+        // Quick mode: just refresh
+        const { generate } = await import("./init/generator.js");
+        const result = generate({} as never, { refresh: true, cwd });
+        console.error(chalk.green("  ✓ Refreshed from existing context.yaml"));
+        for (const f of result.modified) console.error(chalk.gray(`    ${f}`));
+        process.exit(0);
+      }
+
+      console.error(chalk.yellow("  ⚠ .aios/ already exists in this directory."));
+      console.error(chalk.gray("    1) Refresh — regenerate agent-instructions.md from existing context.yaml"));
+      console.error(chalk.gray("    2) Reconfigure — re-run wizard (keeps pattern overrides)"));
+      console.error(chalk.gray("    3) Abort"));
+
+      const { createInterface } = await import("readline");
+      const rl = createInterface({ input: process.stdin, output: process.stderr });
+      const answer = await new Promise<string>((resolve) => {
+        rl.question("  Choice [1]: ", (a) => { resolve(a.trim() || "1"); rl.close(); });
+      });
+
+      if (answer === "1") {
+        const { generate } = await import("./init/generator.js");
+        const result = generate({} as never, { refresh: true, cwd });
+        console.error(chalk.green("  ✓ Refreshed:"));
+        for (const f of result.modified) console.error(chalk.gray(`    ${f}`));
+        process.exit(0);
+      } else if (answer === "3") {
+        console.error(chalk.yellow("  Aborted."));
+        process.exit(2);
+      }
+      // answer === "2": fall through to full wizard
+    }
+
+    // ─── Full wizard flow ───────────────────────────────────
+    const { scanProject } = await import("./init/scanner.js");
+    const { runWizard } = await import("./init/wizard.js");
+    const { generate } = await import("./init/generator.js");
+
+    const scan = scanProject(cwd);
+    const context = await runWizard(scan, cwd, {
+      quick: opts.quick,
+      yes: opts.yes,
+      aiosPath: opts.aiosPath,
+    });
+
+    if (!context) {
+      process.exit(2); // user cancelled
+    }
+
+    const result = generate(context, {
+      cwd,
+      skipClaudeMdPrompt: false,
+      patchClaudeMd: true,
+    });
+
+    // ─── Summary ────────────────────────────────────────────
+    console.error();
+    console.error(chalk.green("  ✓ Project initialized!"));
+    if (result.created.length > 0) {
+      console.error(chalk.cyan("  Created:"));
+      for (const f of result.created) console.error(chalk.gray(`    ${f}`));
+    }
+    if (result.modified.length > 0) {
+      console.error(chalk.cyan("  Modified:"));
+      for (const f of result.modified) console.error(chalk.gray(`    ${f}`));
+    }
+    console.error();
+    console.error(chalk.gray("  Next steps:"));
+    console.error(chalk.gray('    aios "describe your task"    # start working'));
+    console.error(chalk.gray("    aios init --refresh          # regenerate after editing context.yaml"));
+    console.error();
+  });
+
 // ─── aios configure ──────────────────────────────────────
 program
   .command("configure")
