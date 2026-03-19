@@ -186,7 +186,8 @@ function renderAgentInstructions(ctx: AiosContext): string {
   lines.push(`Traceability required: ${ctx.compliance.requireTraceability}`);
   lines.push("");
 
-  lines.push("## Active Personas");
+  lines.push("## Available Personas");
+  lines.push("Team wird dynamisch pro Task zusammengestellt.");
   for (const persona of ctx.personas.active) {
     lines.push(`- ${persona}`);
   }
