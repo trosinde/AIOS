@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: architecture_review
 description: "Bewertet Architektur-Aspekte von Code und Design"
 category: review

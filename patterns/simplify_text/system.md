@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: simplify_text
 version: "1.0"
 description: Vereinfacht komplexe technische Texte für eine breitere Zielgruppe

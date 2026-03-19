@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: render_diagram
 version: "1.0"
 description: Rendert Mermaid-Code zu SVG/PNG Datei via mermaid-cli (mmdc)

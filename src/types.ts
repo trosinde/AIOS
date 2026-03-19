@@ -1,3 +1,11 @@
+// ─── Execution Context (kernel-stable) ───────────────────
+
+export interface ExecutionContext {
+  trace_id: string;      // UUID v4, vom Kernel vergeben
+  context_id: string;    // Aktiver User-Space-Kontext
+  started_at: number;    // Unix timestamp ms
+}
+
 // ─── Pattern ─────────────────────────────────────────────
 
 export interface PatternParameter {
@@ -25,6 +33,7 @@ export interface PatternMeta {
   persona?: string;
   preferred_provider?: string;
   internal?: boolean;
+  kernel_abi?: number;
 
   // Tool-Pattern Felder
   type?: "llm" | "tool" | "mcp" | "rag" | "image_generation";  // Default: "llm"
@@ -126,6 +135,32 @@ export interface KnowledgeItem {
   tags: string[];
   created_at: string;       // ISO timestamp
   project?: string;
+}
+
+// ─── Knowledge Bus (kernel-stable) ──────────────────────
+
+export interface KernelMessage {
+  id: string;
+  trace_id: string;
+  source_context: string;
+  target_context: string;     // "*" = broadcast
+  created_at: number;         // Unix timestamp ms
+  type: KnowledgeType;
+  tags: string[];
+  source_pattern: string;
+  source_step?: string;
+  content: string;
+  format: "text" | "json" | "markdown";
+  metadata?: Record<string, unknown>;
+}
+
+export interface KnowledgeQuery {
+  type?: KnowledgeType;
+  tags?: string[];
+  source_pattern?: string;
+  since?: number;             // Unix timestamp
+  limit?: number;             // Default: 50
+  include_cross_context?: boolean;
 }
 
 // ─── Provider ────────────────────────────────────────────

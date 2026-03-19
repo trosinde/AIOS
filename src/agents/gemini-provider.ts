@@ -1,5 +1,5 @@
 import type { LLMProvider } from "./provider.js";
-import type { LLMResponse } from "../types.js";
+import type { ExecutionContext, LLMResponse } from "../types.js";
 
 /**
  * Google Gemini REST API provider with vision support.
@@ -20,7 +20,7 @@ export class GeminiProvider implements LLMProvider {
     return /image/i.test(this.model);
   }
 
-  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const parts: Array<Record<string, unknown>> = [];
 
     if (images?.length) {
@@ -80,7 +80,7 @@ export class GeminiProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const contents = messages.map((msg, i) => {
       const parts: Array<Record<string, unknown>> = [];
       if (i === 0 && msg.role === "user" && images?.length) {

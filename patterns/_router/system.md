@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: _router
 description: "Meta-Agent der Aufgaben analysiert und Execution Plans erstellt"
 category: meta

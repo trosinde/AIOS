@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: identify_risks
 version: "1.0"
 description: Identifiziert und bewertet Risiken in Anforderungen oder Design

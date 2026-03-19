@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: pdf_vision_ocr
 version: "1.0"
 description: "PDF-Seiten als Bilder via Vision-LLM analysieren (OCR-Alternative)"

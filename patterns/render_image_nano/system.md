@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: render_image_nano
 version: "1.0"
 description: Generates an image from a text prompt using Google Gemini Nano Banana

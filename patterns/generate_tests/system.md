@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_tests
 description: "Erstellt Testfälle und Testcode basierend auf Requirements und Code"
 category: generate

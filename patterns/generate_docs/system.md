@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_docs
 version: "1.0"
 description: Erstellt technische Dokumentation aus Code oder Design

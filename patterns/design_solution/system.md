@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: design_solution
 description: "Erstellt ein technisches Design basierend auf Requirements"
 category: generate

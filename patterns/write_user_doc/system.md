@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: write_user_doc
 version: "1.0"
 description: Erstellt praxisorientierte User-Dokumentation mit Installation und Beispielen

@@ -269,6 +269,229 @@ program
     await mcpManager?.shutdown();
   });
 
+// ─── aios context ───────────────────────────────────────
+const contextCmd = program.command("context").description("Context-Verwaltung");
+
+contextCmd
+  .command("init <name>")
+  .description("Neuen Context erstellen")
+  .option("--local", "Context im aktuellen Verzeichnis (.aios/) erstellen")
+  .action(async (name: string, opts) => {
+    const { ContextManager } = await import("./core/context.js");
+    const cm = new ContextManager();
+    try {
+      const path = cm.init(name, opts.local);
+      console.log(chalk.green(`Context "${name}" erstellt: ${path}`));
+    } catch (err) {
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+  });
+
+contextCmd
+  .command("switch <name>")
+  .description("Aktiven Context wechseln")
+  .action(async (name: string) => {
+    const { ContextManager } = await import("./core/context.js");
+    const cm = new ContextManager();
+    try {
+      cm.switch(name);
+      console.log(chalk.green(`Aktiver Context: ${name}`));
+    } catch (err) {
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+  });
+
+contextCmd
+  .command("list")
+  .description("Alle Contexts auflisten")
+  .action(async () => {
+    const { ContextManager } = await import("./core/context.js");
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+    const contexts = cm.list();
+
+    if (contexts.length === 0) {
+      console.log(chalk.gray("  Keine Contexts. Standard: default"));
+      console.log(chalk.gray("  Erstelle mit: aios context init <name>"));
+      return;
+    }
+
+    for (const ctx of contexts) {
+      const isActive = ctx.name === active.name ? chalk.green(" (aktiv)") : "";
+      const source = ctx.source === "project" ? chalk.blue(" [lokal]") : chalk.gray(" [global]");
+      console.log(`  ${chalk.cyan(ctx.name.padEnd(25))}${source}${isActive}`);
+      if (ctx.config.description) console.log(`    ${chalk.gray(ctx.config.description)}`);
+    }
+  });
+
+contextCmd
+  .command("show")
+  .description("Aktiven Context anzeigen")
+  .action(async () => {
+    const { ContextManager } = await import("./core/context.js");
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    console.log(chalk.bold(`Context: ${active.name}`));
+    console.log(chalk.gray(`Quelle: ${active.source === "project" ? "Projekt-lokal (.aios/)" : "Global (~/.aios/contexts/)"}`));
+    console.log(chalk.gray(`Pfad: ${active.path}`));
+    if (active.config.description) console.log(chalk.gray(`Beschreibung: ${active.config.description}`));
+    if (active.config.domain) console.log(chalk.gray(`Domain: ${active.config.domain}`));
+    if (active.config.required_traits?.length) {
+      console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
+    }
+  });
+
+// ─── aios persona ───────────────────────────────────────
+const personaCmd = program.command("persona").description("Persona-Verwaltung");
+
+personaCmd
+  .command("list")
+  .description("Alle Personas auflisten")
+  .action(() => {
+    const config = loadConfig();
+    const personas = new PersonaRegistry(config.paths.personas);
+    const all = personas.all();
+    if (all.length === 0) {
+      console.error(chalk.yellow("Keine Personas gefunden."));
+      return;
+    }
+    for (const p of all) {
+      console.log(`  ${chalk.cyan(p.id.padEnd(20))} ${p.role} – ${chalk.gray(p.expertise.slice(0, 3).join(", "))}`);
+    }
+  });
+
+personaCmd
+  .command("validate [name]")
+  .description("Persona gegen Base Trait Protocol validieren")
+  .action((name?: string) => {
+    const config = loadConfig();
+    const personas = new PersonaRegistry(config.paths.personas);
+    const { loadBaseTraits, validatePersona } = await import("./core/trait-validator.js");
+    const traits = loadBaseTraits(config.paths.personas);
+    if (!traits) {
+      console.error(chalk.red("Base Traits nicht gefunden: personas/kernel/base_traits.yaml"));
+      process.exit(1);
+    }
+
+    const toValidate = name ? [personas.get(name)].filter(Boolean) : personas.all();
+    if (toValidate.length === 0) {
+      console.error(chalk.red(name ? `Persona "${name}" nicht gefunden.` : "Keine Personas gefunden."));
+      process.exit(1);
+    }
+
+    let allPassed = true;
+    for (const persona of toValidate) {
+      const report = validatePersona(persona.id, persona.system_prompt, traits);
+      console.log(chalk.bold(`\n  ${persona.id} (${persona.role})`));
+      for (const r of report.results) {
+        const icon = r.found ? chalk.green("✓") : r.required ? chalk.red("✗") : chalk.yellow("~");
+        console.log(`    ${icon} ${r.message}`);
+      }
+      if (!report.passed) allPassed = false;
+    }
+    console.log();
+    if (!allPassed) {
+      console.error(chalk.yellow("Tipp: Füge Handoff/Trace-Instruktionen zum system_prompt hinzu."));
+    }
+  });
+
+// ─── aios knowledge ─────────────────────────────────────
+const knowledgeCmd = program.command("knowledge").description("Knowledge Bus Verwaltung");
+
+knowledgeCmd
+  .command("publish")
+  .description("Knowledge-Item über stdin veröffentlichen")
+  .requiredOption("--type <type>", "Typ: decision, fact, requirement, artifact")
+  .option("--tags <tags>", "Komma-getrennte Tags", "")
+  .option("--pattern <name>", "Quell-Pattern", "manual")
+  .option("--context <id>", "Context-ID", "default")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+    const content = await readStdin();
+    if (!content) { console.error(chalk.red("Kein Input via stdin.")); process.exit(1); }
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const id = bus.publish({
+      type: opts.type,
+      tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : [],
+      source_pattern: opts.pattern,
+      content,
+      format: "text",
+      target_context: opts.context,
+    }, ctx);
+
+    console.log(chalk.green(`Knowledge published: ${id}`));
+    bus.close();
+  });
+
+knowledgeCmd
+  .command("query")
+  .description("Knowledge abfragen")
+  .option("--type <type>", "Typ filtern")
+  .option("--tags <tags>", "Tags filtern (komma-getrennt)")
+  .option("--pattern <name>", "Quell-Pattern filtern")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--cross-context", "Cross-Context-Items einschließen")
+  .option("--limit <n>", "Max Ergebnisse", "20")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const results = bus.query({
+      type: opts.type,
+      tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined,
+      source_pattern: opts.pattern,
+      limit: parseInt(opts.limit),
+      include_cross_context: opts.crossContext,
+    }, ctx);
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine Ergebnisse."));
+    } else {
+      for (const msg of results) {
+        const date = new Date(msg.created_at).toISOString().slice(0, 19);
+        console.log(chalk.gray(`[${date}]`) + ` ${chalk.cyan(msg.type)} ` + chalk.gray(`(${msg.source_pattern})`));
+        console.log(`  ${msg.content.slice(0, 200)}${msg.content.length > 200 ? "..." : ""}`);
+        if (msg.tags.length > 0) console.log(chalk.gray(`  Tags: ${msg.tags.join(", ")}`));
+        console.log();
+      }
+    }
+    bus.close();
+  });
+
+knowledgeCmd
+  .command("search <query...>")
+  .description("Volltextsuche im Knowledge Bus")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--limit <n>", "Max Ergebnisse", "20")
+  .action(async (queryParts: string[], opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const results = bus.search(queryParts.join(" "), ctx, parseInt(opts.limit));
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine Treffer."));
+    } else {
+      for (const msg of results) {
+        const date = new Date(msg.created_at).toISOString().slice(0, 19);
+        console.log(chalk.gray(`[${date}]`) + ` ${chalk.cyan(msg.type)} ` + chalk.gray(`(${msg.source_pattern})`));
+        console.log(`  ${msg.content.slice(0, 200)}${msg.content.length > 200 ? "..." : ""}`);
+        console.log();
+      }
+    }
+    bus.close();
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 

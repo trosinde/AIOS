@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { LLMResponse, ProviderConfig } from "../types.js";
+import type { ExecutionContext, LLMResponse, ProviderConfig } from "../types.js";
 
 export interface LLMProvider {
-  complete(system: string, user: string, images?: string[]): Promise<LLMResponse>;
-  chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse>;
+  complete(system: string, user: string, images?: string[], ctx?: ExecutionContext): Promise<LLMResponse>;
+  chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[], ctx?: ExecutionContext): Promise<LLMResponse>;
 }
 
 // ─── Claude (Anthropic API) ──────────────────────────────
@@ -17,7 +17,7 @@ class ClaudeProvider implements LLMProvider {
     this.model = model;
   }
 
-  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const userContent: Anthropic.ContentBlockParam[] = [];
     if (images?.length) {
       for (const img of images) {
@@ -48,7 +48,7 @@ class ClaudeProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const apiMessages: Anthropic.MessageParam[] = messages.map((msg, i) => {
       if (i === 0 && msg.role === "user" && images?.length) {
         const content: Anthropic.MessageParam["content"] = [];
@@ -97,7 +97,7 @@ class OllamaProvider implements LLMProvider {
     this.apiKey = apiKey;
   }
 
-  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const userMsg: Record<string, unknown> = { role: "user", content: user };
     if (images?.length) userMsg.images = images;
 
@@ -145,7 +145,7 @@ class OllamaProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const ollamaMessages: Record<string, unknown>[] = [
       { role: "system", content: system },
       ...messages.map((msg, i) => {

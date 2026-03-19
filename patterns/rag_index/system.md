@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: rag_index
 version: "1.0"
 description: "Dokumente in eine RAG-Collection indexieren"

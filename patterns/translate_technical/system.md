@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: translate_technical
 version: "1.0"
 description: Technische Übersetzung unter Beibehaltung von Fachbegriffen

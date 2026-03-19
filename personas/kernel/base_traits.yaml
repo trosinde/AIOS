@@ -1,0 +1,35 @@
+# AIOS Kernel Base Traits
+# Diese Traits MÜSSEN von jeder Persona implementiert werden.
+# Definiert das Minimum für Agent-Interoperabilität.
+
+kernel_abi: 1
+
+traits:
+  handoff:
+    required: true
+    description: "Zusammenfassung für den nächsten Agenten"
+    format: |
+      ## Handoff
+      **Next agent needs:** <was der nächste Agent wissen muss>
+    position: end
+    validation:
+      header_pattern: "## Handoff"
+      content_pattern: "\\*\\*Next agent needs:\\*\\*"
+
+  confidence:
+    required: false
+    description: "Warnung bei niedriger Konfidenz"
+    format: |
+      ⚠️ LOW_CONFIDENCE: <Erklärung>
+    position: before_handoff
+    validation:
+      content_pattern: "⚠️ LOW_CONFIDENCE:"
+
+  trace:
+    required: true
+    description: "Trace-Marker für Rückverfolgbarkeit"
+    format: |
+      <!-- trace: <trace_id> -->
+    position: last
+    validation:
+      content_pattern: "<!-- trace: .+ -->"

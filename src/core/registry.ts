@@ -4,6 +4,8 @@ import { join } from "path";
 import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
 
+const CURRENT_KERNEL_ABI = 1;
+
 /**
  * Pattern Registry – lädt alle system.md Dateien,
  * trennt YAML-Frontmatter (für Router) vom Prompt (für Ausführung).
@@ -42,12 +44,20 @@ export class PatternRegistry {
       persona: data.persona,
       preferred_provider: data.preferred_provider,
       internal: data.internal ?? false,
+      kernel_abi: data.kernel_abi,
       type: data.type ?? "llm",
       tool: data.tool,
       tool_args: data.tool_args,
       input_format: data.input_format,
       output_format: data.output_format,
     };
+
+    if (!meta.kernel_abi) {
+      console.error(`⚠️  Pattern "${meta.name}" hat kein kernel_abi Feld`);
+    } else if (meta.kernel_abi > CURRENT_KERNEL_ABI) {
+      console.error(`❌ Pattern "${meta.name}" benötigt kernel_abi ${meta.kernel_abi}, Kernel unterstützt ${CURRENT_KERNEL_ABI}`);
+      return null;
+    }
 
     return { meta, systemPrompt: content.trim(), filePath };
   }

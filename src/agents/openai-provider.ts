@@ -1,5 +1,5 @@
 import type { LLMProvider } from "./provider.js";
-import type { LLMResponse } from "../types.js";
+import type { ExecutionContext, LLMResponse } from "../types.js";
 
 /**
  * OpenAI-compatible REST API provider with vision support.
@@ -16,7 +16,7 @@ export class OpenAIProvider implements LLMProvider {
     this.baseUrl = baseUrl ?? "https://api.openai.com/v1";
   }
 
-  async complete(system: string, user: string, images?: string[]): Promise<LLMResponse> {
+  async complete(system: string, user: string, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const userContent: Array<Record<string, unknown>> = [];
     if (images?.length) {
       for (const img of images) {
@@ -67,7 +67,7 @@ export class OpenAIProvider implements LLMProvider {
     };
   }
 
-  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[]): Promise<LLMResponse> {
+  async chat(system: string, messages: Array<{ role: "user" | "assistant"; content: string }>, images?: string[], _ctx?: ExecutionContext): Promise<LLMResponse> {
     const apiMessages: Array<Record<string, unknown>> = [
       { role: "system", content: system },
     ];

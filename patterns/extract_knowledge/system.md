@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: extract_knowledge
 version: "1.0"
 description: Extrahiert wiederverwendbares Wissen aus Agent-Outputs

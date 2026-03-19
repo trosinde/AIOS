@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: write_architecture_doc
 version: "1.0"
 description: Erstellt Architektur-Dokumentation aus Quellcode und Konzeptdocs
