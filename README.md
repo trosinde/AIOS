@@ -206,6 +206,7 @@ src/
     +-- config.ts                # YAML config loader + .env management
     +-- stdin.ts                 # stdin helper
 
+security/injection-patterns.yaml # Known injection patterns (YAML catalog)
 patterns/*/system.md             # 35 patterns (YAML frontmatter + prompt)
 personas/*.yaml                  # 8 personas (RE, Architect, Developer, Tester, ...)
 ```
@@ -259,6 +260,22 @@ All detailed documentation is in [`docs/`](docs/), written in English:
 | [Vision & Principles](docs/vision.md) | All | Project vision, solved problems, 7 principles |
 | [Roadmap](docs/roadmap.md) | All | 6 phases -- what's done, what's open |
 | [Compliance](docs/compliance.md) | Architects | Traceability, audit trail, quality gates (Phase 6 vision) |
+
+---
+
+## Security
+
+AIOS implements Defense-in-Depth against Prompt Injection (OWASP LLM01):
+
+- **Input Boundary Guard** – Unicode normalization, pattern detection, encoding detection, fuzzy matching
+- **Data/Instruction Separation** – User input tagged as `<user_data>`, never mixed with system prompts
+- **Plan-then-Execute** – Router plans without seeing raw user input; plan is frozen and immutable
+- **Taint Tracking** – Every data value carries integrity/confidentiality labels (trusted/derived/untrusted)
+- **Deterministic Policy Engine** – Blocks untrusted data from tool execution, KB writes, compliance artifacts
+- **Knowledge Base Integrity** – Review queue for auto-extracted entries, provenance tracking
+- **Audit Trail** – JSONL security event log for compliance (IEC 62443, EU CRA)
+
+See [`docs/SECURITY.md`](docs/SECURITY.md) for the full threat model and architecture.
 
 ---
 
