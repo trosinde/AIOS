@@ -150,6 +150,15 @@ aios plan "Aufgabe"                      # Plan only, don't execute
 aios chat [--provider <name>]            # Interactive REPL with slash commands
 aios patterns list                       # List all patterns
 aios patterns show <name>               # Show pattern details
+aios persona list                        # List all personas
+aios persona validate [name]             # Validate persona against Base Trait Protocol
+aios context init <name> [--local]       # Create new context
+aios context switch <name>               # Switch active context
+aios context list                        # List all contexts
+aios context show                        # Show active context
+aios knowledge publish --type <type>     # Publish knowledge item (stdin)
+aios knowledge query [--type] [--tags]   # Query knowledge bus
+aios knowledge search <query>            # Full-text search
 ```
 
 ## Aktueller Fokus: Kernel-OS-Evolution
@@ -163,36 +172,37 @@ aios patterns show <name>               # Show pattern details
 - [x] Saga Engine (Retry/Rollback)
 - [x] Tests (vitest, 35 Tests)
 
-### Phase 0 – Kernel ABI Spec (nächster Schritt, kein Code)
-Vier Dokumente schreiben bevor weitere Features implementiert werden:
-- [ ] `docs/KERNEL_ABI.md` – Welche Felder/Interfaces sind kernel-stable?
-- [ ] `docs/PERSONA_TRAITS.md` – Base Trait Protocol (was jede Persona liefern muss)
-- [ ] `docs/CONTEXT_MODEL.md` – Was ist ein Kontext? Isolation-Garantien?
-- [ ] `docs/IPC_PROTOCOL.md` – Message-Format für Agent-zu-Agent-Kommunikation
+### Phase 0 – Kernel ABI Spec ✅
+- [x] `docs/KERNEL_ABI.md` – Kernel-stable Interfaces und Stabilitätsvertrag
+- [x] `docs/PERSONA_TRAITS.md` – Base Trait Protocol
+- [x] `docs/CONTEXT_MODEL.md` – Context-Isolation-Modell
+- [x] `docs/IPC_PROTOCOL.md` – Agent-zu-Agent-Kommunikation
 
-### Phase 1 – Kernel-Primitives stabilisieren (Codeänderungen)
-- [ ] `kernel_abi: 1` zu allen 13 bestehenden Patterns hinzufügen
-- [ ] `ExecutionContext`-Typ in `src/types.ts` einführen (trace_id, context_id, started_at)
-- [ ] `LLMProvider.complete()` um `ExecutionContext`-Parameter erweitern
-- [ ] Loader-Warning wenn Pattern `kernel_abi` fehlt
+### Phase 1 – Kernel-Primitives ✅
+- [x] `kernel_abi: 1` zu allen 36 Patterns hinzugefügt
+- [x] `ExecutionContext`-Typ in `src/types.ts` (trace_id, context_id, started_at)
+- [x] `LLMProvider.complete()` + `chat()` mit `ExecutionContext`-Parameter
+- [x] Loader-Warning wenn Pattern `kernel_abi` fehlt, Error wenn inkompatibel
+- [x] ExecutionContext durch Engine, Router, alle 4 Provider implementiert
 
-### Phase 2 – Trait-System
-- [ ] `personas/kernel/base_traits.yaml` – Kernel-Trait-Definitionen
-- [ ] Composition Engine: YAML-Layer mergen (kernel → context → instance)
-- [ ] Validator: required traits prüfen vor jedem Persona-Aufruf
-- [ ] `aios persona validate <name>` CLI-Befehl
+### Phase 2 – Trait-System ✅
+- [x] `personas/kernel/base_traits.yaml` – Kernel-Trait-Definitionen (handoff, confidence, trace)
+- [x] `src/core/trait-validator.ts` – Validator + Output-Patching (graceful degradation)
+- [x] `aios persona validate [name]` CLI-Befehl
+- [x] `aios persona list` CLI-Befehl
 
-### Phase 3 – Knowledge Bus
-- [ ] `KernelKnowledgeBus` Interface (kernel-stable API)
-- [ ] SQLite-Backend mit `context_id` als Isolation-Grenze
-- [ ] ChromaDB für semantische Suche (context-isoliert)
-- [ ] `aios knowledge publish/query` CLI-Befehle
+### Phase 3 – Knowledge Bus ✅
+- [x] `KnowledgeBus` mit `KernelMessage`-Format (kernel-stable)
+- [x] SQLite-Backend mit `context_id` als Isolation-Grenze
+- [x] Cross-Context IPC (Broadcast + gezielte Nachrichten)
+- [x] `aios knowledge publish/query/search` CLI-Befehle
 
-### Phase 4 – Context-Isolation-Modell
-- [ ] `context.yaml` Format definieren und implementieren
-- [ ] `~/.aios/kernel/` für globale Kernel-Ressourcen
-- [ ] `.aios/` in Projekt-Verzeichnis für Context-lokale Ressourcen
-- [ ] `aios context init/switch/list` CLI-Befehle
+### Phase 4 – Context-Isolation-Modell ✅
+- [x] `context.yaml` Format mit ContextConfig
+- [x] `~/.aios/kernel/` für globale Kernel-Ressourcen
+- [x] `.aios/` in Projekt-Verzeichnis für Context-lokale Ressourcen
+- [x] `aios context init/switch/list/show` CLI-Befehle
+- [x] Pattern-Lookup-Reihenfolge (4 Ebenen)
 
 ### Noch offen (nach Phase 4)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
