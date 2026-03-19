@@ -20,6 +20,12 @@ providers:
     apiKey: ${GEMINI_API_KEY}
     capabilities: [vision, text]
     cost_per_mtok: 0.075
+  gemini-image:
+    type: gemini
+    model: gemini-2.5-flash-image
+    apiKey: ${GEMINI_API_KEY}
+    capabilities: [image_generation]
+    cost_per_mtok: 0
   openai-mini:
     type: openai
     model: gpt-4o-mini

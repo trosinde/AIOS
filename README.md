@@ -24,7 +24,7 @@ Three layers, clear separation:
 - **Layer 1 — AIOS Kernel:** The operating system. Patterns, routing, DAG execution, knowledge bus. Shared by all projects. Stable ABI — upgrades don't break your contexts.
 - **Layer 2 — Your Contexts:** Each project directory gets `.aios/` with its own personas, patterns, and knowledge. Isolated from each other. Auto-discovered via CWD.
 
-![AIOS Architecture](docs/architecture.svg)
+![AIOS Architecture](docs/architecture.png)
 
 ---
 

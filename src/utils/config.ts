@@ -118,16 +118,35 @@ export function loadConfig(): AiosConfig {
   return DEFAULT_CONFIG;
 }
 
+/** Recursively replace ${VAR} placeholders with process.env values */
+function expandEnvVars(obj: unknown): unknown {
+  if (typeof obj === "string") {
+    return obj.replace(/\$\{([^}]+)\}/g, (_, key) => process.env[key] ?? "");
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(expandEnvVars);
+  }
+  if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = expandEnvVars(v);
+    }
+    return result;
+  }
+  return obj;
+}
+
 function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
+  const expanded = expandEnvVars(partial) as Partial<AiosConfig>;
   return {
-    providers: { ...DEFAULT_CONFIG.providers, ...partial.providers },
-    defaults: { ...DEFAULT_CONFIG.defaults, ...partial.defaults },
-    paths: { ...DEFAULT_CONFIG.paths, ...partial.paths },
-    tools: { ...DEFAULT_CONFIG.tools, ...partial.tools },
-    mcp: partial.mcp
-      ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...partial.mcp.servers } }
+    providers: { ...DEFAULT_CONFIG.providers, ...expanded.providers },
+    defaults: { ...DEFAULT_CONFIG.defaults, ...expanded.defaults },
+    paths: { ...DEFAULT_CONFIG.paths, ...expanded.paths },
+    tools: { ...DEFAULT_CONFIG.tools, ...expanded.tools },
+    mcp: expanded.mcp
+      ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...expanded.mcp.servers } }
       : DEFAULT_CONFIG.mcp,
-    rag: partial.rag,
+    rag: expanded.rag,
   };
 }
 

@@ -47,7 +47,10 @@ export class GeminiProvider implements LLMProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text();
+      let detail = "";
+      try { detail = ": " + (JSON.parse(errorBody) as { error?: { message?: string } }).error?.message; } catch { detail = errorBody ? ": " + errorBody.slice(0, 300) : ""; }
+      throw new Error(`Gemini API error: ${response.status} ${response.statusText}${detail}`);
     }
 
     const data = await response.json() as {
@@ -112,7 +115,10 @@ export class GeminiProvider implements LLMProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text();
+      let detail = "";
+      try { detail = ": " + (JSON.parse(errorBody) as { error?: { message?: string } }).error?.message; } catch { detail = errorBody ? ": " + errorBody.slice(0, 300) : ""; }
+      throw new Error(`Gemini API error: ${response.status} ${response.statusText}${detail}`);
     }
 
     const data = await response.json() as {

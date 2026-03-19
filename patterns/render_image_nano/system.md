@@ -38,7 +38,7 @@ To use this pattern, add a `gemini-image` provider to your `aios.yaml`:
 providers:
   gemini-image:
     type: gemini
-    model: gemini-2.0-flash-exp-image-generation
+    model: gemini-2.5-flash-image
     apiKey: ${GOOGLE_API_KEY}
     capabilities: [image_generation]
     cost_per_mtok: 0

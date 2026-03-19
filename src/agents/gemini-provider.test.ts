@@ -43,7 +43,7 @@ describe("GeminiProvider", () => {
   });
 
   it("throws on API error", async () => {
-    fetchSpy.mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized" });
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized", text: () => Promise.resolve("") });
     const provider = new GeminiProvider("gemini-2.0-flash", "bad-key");
     await expect(provider.complete("sys", "user")).rejects.toThrow("Gemini API error: 401");
   });
