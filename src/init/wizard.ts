@@ -1,8 +1,9 @@
 import { createInterface, type Interface } from "readline";
 import chalk from "chalk";
-import { existsSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import { homedir } from "os";
+import { parse as parseYaml } from "yaml";
 import type { ScanResult } from "./scanner.js";
 import type { AiosContext, ComplianceStandard } from "./schema.js";
 import { createDefaultContext } from "./schema.js";
@@ -102,23 +103,44 @@ function suggestDomain(scan: ScanResult): string {
   return "general";
 }
 
-// ─── Persona Suggestions ────────────────────────────────
+// ─── Dynamic Persona Discovery ──────────────────────────
 
-function suggestPersonas(domain: string, compliance: string[]): string[] {
-  const personas = ["developer"];
-  if (compliance.length > 0) {
-    personas.push("security_expert");
+/**
+ * Discover all persona IDs from the personas directory.
+ * Reads YAML files and subdirectory system.md files.
+ * Returns sorted, deduplicated list of persona IDs.
+ */
+function discoverAllPersonas(aiosPath: string): string[] {
+  const personasDir = join(aiosPath, "personas");
+  if (!existsSync(personasDir)) return [];
+
+  const ids = new Set<string>();
+
+  for (const entry of readdirSync(personasDir, { withFileTypes: true })) {
+    if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
+      try {
+        const raw = readFileSync(join(personasDir, entry.name), "utf-8");
+        const data = parseYaml(raw) as { id?: string };
+        if (data?.id) ids.add(data.id);
+      } catch { /* skip invalid */ }
+    } else if (entry.isDirectory()) {
+      const systemMd = join(personasDir, entry.name, "system.md");
+      if (existsSync(systemMd)) {
+        try {
+          const raw = readFileSync(systemMd, "utf-8");
+          // Extract id from YAML frontmatter
+          const match = raw.match(/^---\s*\n([\s\S]*?)\n---/);
+          if (match) {
+            const frontmatter = parseYaml(match[1]) as { id?: string };
+            if (frontmatter?.id) ids.add(frontmatter.id);
+          }
+        } catch { /* skip invalid */ }
+      }
+    }
   }
-  if (domain === "web-frontend" || domain === "web-backend") {
-    personas.push("reviewer");
-  }
-  return personas;
+
+  return [...ids].sort();
 }
-
-const ALL_PERSONAS = [
-  "developer", "architect", "reviewer", "security_expert",
-  "tester", "quality_manager", "re", "tech_writer",
-];
 
 const DOMAIN_OPTIONS = [
   "web-frontend", "web-backend", "fullstack", "systems",
@@ -207,16 +229,16 @@ export async function runWizard(
     }
 
     // ─── 5. AIOS location ────────────────────────────
-    let aiosPath = options.aiosPath ?? detectAiosPath(cwd);
-    if (aiosPath) {
-      console.error(chalk.cyan(`  Detected AIOS at: ${aiosPath}`));
+    let aiosPathCandidate: string | null = options.aiosPath ?? detectAiosPath(cwd);
+    if (aiosPathCandidate) {
+      console.error(chalk.cyan(`  Detected AIOS at: ${aiosPathCandidate}`));
       const confirm = await askYN(rl, "Use this path?", true);
-      if (!confirm) aiosPath = null;
+      if (!confirm) aiosPathCandidate = null;
     }
-    if (!aiosPath) {
-      aiosPath = await ask(rl, "Path to AIOS installation", detectAiosPath(cwd) ?? "../AIOS");
+    if (!aiosPathCandidate) {
+      aiosPathCandidate = await ask(rl, "Path to AIOS installation", detectAiosPath(cwd) ?? "../AIOS");
     }
-    aiosPath = resolve(cwd, aiosPath);
+    const aiosPath = resolve(cwd, aiosPathCandidate);
 
     // ─── 6. Provider routing ─────────────────────────
     const routing: Record<string, string> = {};
@@ -229,14 +251,14 @@ export async function runWizard(
       routing["quick"] = providers[quickIdx];
     }
 
-    // ─── 7. Active personas ──────────────────────────
-    const suggested = suggestPersonas(domain, complianceStandards.map((s) => s.id));
-    const defaultPersonaIdxs = suggested
-      .map((p) => ALL_PERSONAS.indexOf(p))
-      .filter((i) => i >= 0);
-    const personaSelection = await askMultiChoice(rl, "Active personas:", ALL_PERSONAS, defaultPersonaIdxs);
-    const activePersonas = personaSelection.map((i) => ALL_PERSONAS[i]);
-    const inactivePersonas = ALL_PERSONAS.filter((p) => !activePersonas.includes(p));
+    // ─── 7. Discover available personas ─────────────
+    const allPersonas = discoverAllPersonas(aiosPath);
+    if (allPersonas.length > 0) {
+      console.error(chalk.cyan(`  Verfügbare Personas: ${allPersonas.length}`));
+      console.error(chalk.gray(`    ${allPersonas.join(", ")}`));
+      console.error(chalk.gray("    (Team wird dynamisch pro Task zusammengestellt)"));
+      console.error();
+    }
 
     // ─── 8. Read-only warning ────────────────────────
     console.error();
@@ -257,7 +279,7 @@ export async function runWizard(
     console.error(chalk.gray(`    Language:    ${scan.language}`));
     console.error(chalk.gray(`    AIOS path:   ${aiosPath}`));
     console.error(chalk.gray(`    Read-only:   ${readOnly ? "Yes" : "No"}`));
-    console.error(chalk.gray(`    Personas:    ${activePersonas.join(", ")}`));
+    console.error(chalk.gray(`    Personas:    ${allPersonas.length} verfügbar (dynamische Zuweisung)`));
     if (complianceStandards.length > 0) {
       console.error(chalk.gray(`    Compliance:  ${complianceStandards.map((s) => s.id).join(", ")}`));
     }
@@ -295,8 +317,8 @@ export async function runWizard(
         minimumCoverage: scan.hasTests ? 80 : undefined,
       },
       personas: {
-        active: activePersonas,
-        inactive: inactivePersonas,
+        active: allPersonas,
+        inactive: [],
       },
       providers: { routing },
       knowledge: {
@@ -327,8 +349,7 @@ function buildQuickContext(
   const compliance: ComplianceStandard[] = scan.complianceHints.map((h) => ({
     id: h.toLowerCase().replace(/\s+/g, "-"),
   }));
-  const activePersonas = suggestPersonas(domain, scan.complianceHints);
-  const inactivePersonas = ALL_PERSONAS.filter((p) => !activePersonas.includes(p));
+  const allPersonas = discoverAllPersonas(aiosPath);
 
   return createDefaultContext({
     project: {
@@ -349,8 +370,8 @@ function buildQuickContext(
       minimumCoverage: scan.hasTests ? 80 : undefined,
     },
     personas: {
-      active: activePersonas,
-      inactive: inactivePersonas,
+      active: allPersonas,
+      inactive: [],
     },
     providers: { routing: {} },
     knowledge: {

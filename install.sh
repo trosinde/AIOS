@@ -105,11 +105,11 @@ else
   ok "Patterns bereits vorhanden"
 fi
 
-if [ ! -d "$AIOS_HOME/personas" ] && [ -d "$AIOS_REPO/personas" ]; then
-  cp -r "$AIOS_REPO/personas" "$AIOS_HOME/personas"
-  ok "Personas kopiert nach $AIOS_HOME/personas"
-else
-  ok "Personas bereits vorhanden"
+mkdir -p "$AIOS_HOME/personas"
+if [ -d "$AIOS_REPO/personas" ]; then
+  # Sync: neue Personas kopieren, existierende nicht überschreiben
+  cp -rn "$AIOS_REPO/personas/"* "$AIOS_HOME/personas/" 2>/dev/null || true
+  ok "Personas synchronisiert nach $AIOS_HOME/personas"
 fi
 
 # ─── CLI Wrapper ──────────────────────────────────────────
