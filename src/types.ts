@@ -6,6 +6,10 @@ export interface ExecutionContext {
   started_at: number;    // Unix timestamp ms
 }
 
+// ─── Selection Strategy ─────────────────────────────────
+
+export type SelectionStrategy = "cheapest" | "best";
+
 // ─── Pattern ─────────────────────────────────────────────
 
 export interface PatternParameter {
@@ -32,6 +36,7 @@ export interface PatternMeta {
   parallelizable_with?: string[];
   persona?: string;
   preferred_provider?: string;
+  selection_strategy?: SelectionStrategy;
   internal?: boolean;
   kernel_abi?: number;
 
@@ -179,6 +184,7 @@ export interface ProviderConfig {
   apiKey?: string;       // Bearer token for authenticated Ollama endpoints
   capabilities?: string[];     // e.g. ["vision", "code"]
   cost_per_mtok?: number;      // $/million input tokens (0 = free/local)
+  quality?: Record<string, number>;  // capability → quality score 0-10
 }
 
 // ─── Chat / REPL ────────────────────────────────────────

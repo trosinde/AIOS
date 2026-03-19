@@ -43,6 +43,7 @@ export class PatternRegistry {
       parallelizable_with: data.parallelizable_with,
       persona: data.persona,
       preferred_provider: data.preferred_provider,
+      selection_strategy: data.selection_strategy,
       internal: data.internal ?? false,
       kernel_abi: data.kernel_abi,
       type: data.type ?? "llm",

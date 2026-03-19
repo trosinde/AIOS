@@ -7,7 +7,7 @@ import type { ProviderSelector } from "../agents/provider-selector.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
-import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, SelectionStrategy, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 
@@ -141,15 +141,8 @@ export class Engine {
 
         // Vision: collect images from upstream steps
         const images = this.collectImages(step, results);
-        let providerToUse = this.provider;
-
-        if (images.length > 0 && this.providerSelector) {
-          const vision = this.providerSelector.select("vision");
-          if (vision) {
-            console.error(chalk.gray(`    👁️ Vision: ${vision.name}`));
-            providerToUse = vision.provider;
-          }
-        }
+        const capability = images.length > 0 ? "vision" : undefined;
+        const providerToUse = this.resolveProvider(pattern, step, capability);
 
         const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
 
@@ -390,15 +383,8 @@ export class Engine {
     t0: number,
     ctx: ExecutionContext
   ): Promise<StepResult> {
-    // Select image_generation provider (falls back to default)
-    let providerToUse = this.provider;
-    if (this.providerSelector) {
-      const imageProvider = this.providerSelector.select("image_generation");
-      if (imageProvider) {
-        console.error(chalk.gray(`    🎨 Provider: ${imageProvider.name}`));
-        providerToUse = imageProvider.provider;
-      }
-    }
+    // Select image_generation provider via priority chain
+    const providerToUse = this.resolveProvider(pattern, step, "image_generation");
 
     const response = await providerToUse.complete(pattern.systemPrompt, input, undefined, ctx);
 
@@ -431,6 +417,54 @@ export class Engine {
       filePaths,
       durationMs: Date.now() - t0,
     };
+  }
+
+  // ─── Provider Resolution ────────────────────────────────────────
+
+  /**
+   * Priority chain for provider selection:
+   * 1. Pattern preferred_provider (static, explicit)
+   * 2. Persona preferred_provider (static, from persona config)
+   * 3. Capability-based selection with strategy (cheapest or best)
+   * 4. Default provider (fallback)
+   */
+  private resolveProvider(pattern: Pattern, step: ExecutionStep, capability?: string): LLMProvider {
+    if (this.providerSelector) {
+      // 1. Pattern preferred_provider
+      if (pattern.meta.preferred_provider) {
+        const explicit = this.providerSelector.getByName(pattern.meta.preferred_provider);
+        if (explicit) {
+          console.error(chalk.gray(`    🎯 Provider (pattern): ${explicit.name}`));
+          return explicit.provider;
+        }
+      }
+
+      // 2. Persona preferred_provider
+      const personaId = step.persona ?? pattern.meta.persona;
+      if (personaId) {
+        const persona = this.personaRegistry?.get(personaId);
+        if (persona?.preferred_provider) {
+          const explicit = this.providerSelector.getByName(persona.preferred_provider);
+          if (explicit) {
+            console.error(chalk.gray(`    🎯 Provider (persona): ${explicit.name}`));
+            return explicit.provider;
+          }
+        }
+      }
+
+      // 3. Capability-based selection with strategy
+      if (capability) {
+        const strategy: SelectionStrategy = pattern.meta.selection_strategy ?? "cheapest";
+        const selected = this.providerSelector.select(capability, strategy);
+        if (selected) {
+          console.error(chalk.gray(`    🎯 Provider (${strategy}): ${selected.name}`));
+          return selected.provider;
+        }
+      }
+    }
+
+    // 4. Default provider
+    return this.provider;
   }
 
   // ─── Saga Rollback ────────────────────────────────────────────
