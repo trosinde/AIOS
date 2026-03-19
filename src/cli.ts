@@ -269,6 +269,60 @@ program
     await mcpManager?.shutdown();
   });
 
+// ─── aios persona ───────────────────────────────────────
+const personaCmd = program.command("persona").description("Persona-Verwaltung");
+
+personaCmd
+  .command("list")
+  .description("Alle Personas auflisten")
+  .action(() => {
+    const config = loadConfig();
+    const personas = new PersonaRegistry(config.paths.personas);
+    const all = personas.all();
+    if (all.length === 0) {
+      console.error(chalk.yellow("Keine Personas gefunden."));
+      return;
+    }
+    for (const p of all) {
+      console.log(`  ${chalk.cyan(p.id.padEnd(20))} ${p.role} – ${chalk.gray(p.expertise.slice(0, 3).join(", "))}`);
+    }
+  });
+
+personaCmd
+  .command("validate [name]")
+  .description("Persona gegen Base Trait Protocol validieren")
+  .action((name?: string) => {
+    const config = loadConfig();
+    const personas = new PersonaRegistry(config.paths.personas);
+    const { loadBaseTraits, validatePersona } = await import("./core/trait-validator.js");
+    const traits = loadBaseTraits(config.paths.personas);
+    if (!traits) {
+      console.error(chalk.red("Base Traits nicht gefunden: personas/kernel/base_traits.yaml"));
+      process.exit(1);
+    }
+
+    const toValidate = name ? [personas.get(name)].filter(Boolean) : personas.all();
+    if (toValidate.length === 0) {
+      console.error(chalk.red(name ? `Persona "${name}" nicht gefunden.` : "Keine Personas gefunden."));
+      process.exit(1);
+    }
+
+    let allPassed = true;
+    for (const persona of toValidate) {
+      const report = validatePersona(persona.id, persona.system_prompt, traits);
+      console.log(chalk.bold(`\n  ${persona.id} (${persona.role})`));
+      for (const r of report.results) {
+        const icon = r.found ? chalk.green("✓") : r.required ? chalk.red("✗") : chalk.yellow("~");
+        console.log(`    ${icon} ${r.message}`);
+      }
+      if (!report.passed) allPassed = false;
+    }
+    console.log();
+    if (!allPassed) {
+      console.error(chalk.yellow("Tipp: Füge Handoff/Trace-Instruktionen zum system_prompt hinzu."));
+    }
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 
