@@ -56,9 +56,58 @@ Verify: `aios patterns list` should show 35+ patterns.
 
 For local LLMs (free): configure Ollama in `aios.yaml` and pass `--provider ollama`.
 
-**Claude Code / Open Code users:** Clone as `.aios` inside your project -- slash commands (`/review`, `/security`, `/tests`, etc.) become available directly.
+**Claude Code / OpenCode users:** Run `aios init` inside your project to generate `.aios/` with agent instructions, then your AI agent automatically knows how to use AIOS.
 
 > **Full guide:** [docs/SETUP.md](docs/SETUP.md) | [docs/getting-started.md](docs/getting-started.md) | [docs/configuration.md](docs/configuration.md)
+
+---
+
+## Project Init (`aios init`)
+
+Bootstrap any project for AIOS-assisted development. The wizard scans your project, asks a few questions, and generates a `.aios/` context folder that tells AI agents how to work with your project.
+
+```bash
+cd my-project
+aios init                              # interactive wizard
+aios init --quick                      # auto-detect everything, zero interaction
+aios init --refresh                    # regenerate instructions from existing config
+aios init --aios-path ~/tools/AIOS     # pre-set AIOS location
+```
+
+**What it creates:**
+
+```
+my-project/
+├── CLAUDE.md                          ← patched with AIOS pointer (or created)
+├── .aios/
+│   ├── agent-instructions.md          ← generated instructions for AI agents
+│   ├── context.yaml                   ← project configuration (commit this)
+│   ├── .gitignore                     ← tracks config, ignores knowledge/
+│   ├── patterns/                      ← project-local pattern overrides
+│   └── knowledge/                     ← extracted knowledge (gitignored)
+│       ├── decisions/
+│       ├── requirements/
+│       └── facts/
+```
+
+**Three zones, three owners:**
+
+| Zone | Who writes | Who reads |
+|------|-----------|-----------|
+| `CLAUDE.md` | User | AI Agent |
+| `.aios/*` | `aios init` | AI Agent + AIOS CLI |
+| `~/tools/AIOS/*` | Only when working ON AIOS | AI Agent (read-only) |
+
+**The wizard detects:**
+- Language & frameworks (TypeScript, Python, Rust, Go, React, NestJS, Express, ...)
+- Test framework (vitest, jest, pytest, cargo test, go test)
+- CI/CD (GitHub Actions, GitLab CI, Jenkins)
+- Compliance hints (IEC 62443, OWASP, CRA, GDPR, ...)
+- Git remote, module system, source file count
+
+**Read-only protection:** By default, the generated instructions tell AI agents that the AIOS directory is read-only — agents override patterns in `.aios/patterns/` instead of modifying AIOS itself.
+
+**Re-init:** Running `aios init` again in a project with existing `.aios/` offers three choices: refresh (regenerate from config), reconfigure (re-run wizard), or abort.
 
 ---
 
@@ -113,6 +162,11 @@ aios "task" --provider ollama          # Different provider
 
 echo "text" | aios run <pattern>       # Single pattern
 echo "text" | aios run <p> --key=val   # With parameters
+
+aios init                              # Project context wizard
+aios init --quick                      # Auto-detect, no questions
+aios init --refresh                    # Regenerate from context.yaml
+aios configure                         # Provider/API key setup
 
 aios chat                              # Interactive REPL
 aios plan "task"                       # Plan as JSON
@@ -200,6 +254,11 @@ src/
 |   +-- rag-service.ts           # RAG service -- search, index, compare
 |   +-- vector-store.ts          # In-memory vector store
 |   +-- preprocessing.ts         # Chunking, cleaning, embedding
++-- init/
+|   +-- scanner.ts              # Project scanner (language, frameworks, CI, compliance)
+|   +-- schema.ts               # AiosContext Zod schema + parse/serialize
+|   +-- wizard.ts               # Interactive wizard (--quick, --yes modes)
+|   +-- generator.ts            # .aios/ directory tree generator
 +-- commands/
 |   +-- configure.ts            # Interactive setup wizard (aios configure)
 +-- utils/
@@ -235,7 +294,7 @@ personas/*.yaml                  # 8 personas (RE, Architect, Developer, Tester,
 | Patterns | gray-matter (YAML frontmatter from Markdown) |
 | Config | yaml + dotenv |
 | Knowledge Base | better-sqlite3 |
-| Tests | vitest (153 tests) |
+| Tests | vitest (371 tests) |
 
 > **Full guide:** [docs/architecture.md](docs/architecture.md) | [docs/workflows.md](docs/workflows.md) | [docs/patterns.md](docs/patterns.md) | [docs/personas.md](docs/personas.md)
 
