@@ -366,7 +366,7 @@ personaCmd
 personaCmd
   .command("validate [name]")
   .description("Persona gegen Base Trait Protocol validieren")
-  .action((name?: string) => {
+  .action(async (name?: string) => {
     const config = loadConfig();
     const personas = new PersonaRegistry(config.paths.personas);
     const { loadBaseTraits, validatePersona } = await import("./core/trait-validator.js");
