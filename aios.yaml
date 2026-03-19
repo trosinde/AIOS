@@ -16,7 +16,7 @@ providers:
     cost_per_mtok: 0
   gemini-flash:
     type: gemini
-    model: gemini-2.0-flash
+    model: gemini-2.5-flash
     apiKey: ${GEMINI_API_KEY}
     capabilities: [vision, text]
     cost_per_mtok: 0.075

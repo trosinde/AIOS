@@ -226,6 +226,30 @@ program
         }
         process.stdout.write(out.output);
       }
+    } else if (pattern.meta.input_type === "image") {
+      // Vision-Pattern: Dateipfade aus stdin lesen, als Base64 an Vision-Provider
+      const filePaths = input.trim().split(/\n/).map(l => l.trim()).filter(Boolean);
+      const images: string[] = [];
+      for (const fp of filePaths) {
+        try {
+          const { readFileSync: rfs } = await import("fs");
+          images.push(rfs(fp).toString("base64"));
+        } catch {
+          console.error(chalk.yellow(`  ⚠️  Bild nicht lesbar: ${fp}`));
+        }
+      }
+      if (images.length === 0) {
+        console.error(chalk.red(`Keine lesbaren Bilder. Nutze: echo "pfad/bild.png" | aios run ${patternName}`));
+        process.exit(1);
+      }
+      const personaId = pattern.meta.persona;
+      const persona = personaId ? personas.get(personaId) : undefined;
+      const fullPrompt = persona
+        ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
+        : systemPrompt;
+      const visionProvider = selector?.select("vision")?.provider ?? provider;
+      const response = await visionProvider.complete(fullPrompt, `Review this image. File paths: ${filePaths.join(", ")}`, images);
+      process.stdout.write(response.content);
     } else {
       // LLM-Pattern: Persona + Pattern kombinieren
       const personaId = pattern.meta.persona;

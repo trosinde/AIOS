@@ -395,34 +395,92 @@ export class Engine {
     t0: number,
     ctx: ExecutionContext
   ): Promise<StepResult> {
-    // Select image_generation provider via priority chain
-    const providerToUse = this.resolveProvider(pattern, step, "image_generation");
-
-    const response = await providerToUse.complete(pattern.systemPrompt, input, undefined, ctx);
-
-    if (!response.images?.length) {
-      throw new Error(`Image generation returned no images for "${step.pattern}"`);
-    }
-
-    // Save images to output directory
+    const maxIterations = step.retry?.max ?? 3;
+    const maxCostCents = 50; // Hard cap: 50 cents per image generation cycle
+    let currentPrompt = input;
+    let filePaths: string[] = [];
+    let totalCostCents = 0;
     const outputDir = this.config?.tools?.output_dir ?? "./output";
     mkdirSync(outputDir, { recursive: true });
-    const timestamp = Date.now();
-    const filePaths: string[] = [];
 
-    // Save prompt alongside images for reproducibility
-    const promptPath = join(outputDir, `${step.id}-${timestamp}.prompt.txt`);
-    writeFileSync(promptPath, input, "utf-8");
-    console.error(chalk.gray(`    📝 ${promptPath}`));
+    for (let iteration = 1; iteration <= maxIterations; iteration++) {
+      // ── Cost guard ──
+      if (totalCostCents >= maxCostCents) {
+        console.error(chalk.yellow(`    💰 Cost limit reached (${totalCostCents}¢ / ${maxCostCents}¢) — stopping refinement`));
+        break;
+      }
 
-    for (let i = 0; i < response.images.length; i++) {
-      const img = response.images[i];
-      const ext = img.mimeType.includes("png") ? "png" : "jpg";
-      const suffix = response.images.length > 1 ? `-${i + 1}` : "";
-      const filePath = join(outputDir, `${step.id}-${timestamp}${suffix}.${ext}`);
-      writeFileSync(filePath, Buffer.from(img.data, "base64"));
-      filePaths.push(filePath);
-      console.error(chalk.gray(`    📁 ${filePath}`));
+      // ── Generate image ──
+      const providerToUse = this.resolveProvider(pattern, step, "image_generation");
+      const response = await providerToUse.complete(pattern.systemPrompt, currentPrompt, undefined, ctx);
+      totalCostCents += this.estimateCostCents(response.tokensUsed, pattern.meta.preferred_provider);
+
+      if (!response.images?.length) {
+        throw new Error(`Image generation returned no images for "${step.pattern}"`);
+      }
+
+      // Save prompt + images
+      const timestamp = Date.now();
+      const promptPath = join(outputDir, `${step.id}-${timestamp}.prompt.txt`);
+      writeFileSync(promptPath, currentPrompt, "utf-8");
+      console.error(chalk.gray(`    📝 ${promptPath}`));
+
+      filePaths = [];
+      for (let i = 0; i < response.images.length; i++) {
+        const img = response.images[i];
+        const ext = img.mimeType.includes("png") ? "png" : "jpg";
+        const suffix = response.images.length > 1 ? `-${i + 1}` : "";
+        const filePath = join(outputDir, `${step.id}-${timestamp}${suffix}.${ext}`);
+        writeFileSync(filePath, Buffer.from(img.data, "base64"));
+        filePaths.push(filePath);
+        console.error(chalk.gray(`    📁 ${filePath}`));
+      }
+
+      // ── Auto-review via vision provider (if review_visual pattern exists) ──
+      const reviewPattern = this.registry.get("review_visual");
+      if (!reviewPattern || iteration === maxIterations) break;
+
+      let visionProvider: import("../agents/provider.js").LLMProvider | undefined;
+      try {
+        visionProvider = this.resolveProvider(reviewPattern, step, "vision");
+      } catch {
+        // No vision provider configured — skip review
+        break;
+      }
+
+      console.error(chalk.gray(`    🔍 Auto-Review (Iteration ${iteration}/${maxIterations})...`));
+      const imageBase64 = readFileSync(filePaths[0]).toString("base64");
+      const reviewResponse = await visionProvider.complete(
+        reviewPattern.systemPrompt,
+        `Review this generated image. Original prompt:\n\n${currentPrompt}`,
+        [imageBase64],
+        ctx,
+      );
+      totalCostCents += this.estimateCostCents(reviewResponse.tokensUsed, reviewPattern.meta.preferred_provider);
+
+      const review = reviewResponse.content;
+      const hasHighIssues = /\|\s*\d+\s*\|\s*HIGH/i.test(review);
+
+      if (!hasHighIssues) {
+        console.error(chalk.green(`    ✅ Review passed — no HIGH issues`));
+        break;
+      }
+
+      // Extract suggested prompt changes and refine
+      console.error(chalk.yellow(`    ⚠️  HIGH issues found — refining prompt...`));
+      console.error(chalk.gray(review.split("\n").filter(l => /HIGH/i.test(l)).map(l => `      ${l.trim()}`).join("\n")));
+
+      // Use the review feedback to improve the prompt
+      const refineProvider = this.resolveProvider(pattern, step);
+      const refineResponse = await refineProvider.complete(
+        `You are a prompt engineer. You receive an image generation prompt and a design review with issues. Output ONLY the improved prompt — no explanation, no markdown fences, just the prompt text.`,
+        `## Original Prompt\n\n${currentPrompt}\n\n## Design Review\n\n${review}\n\nFix all HIGH severity issues. Keep everything else unchanged.`,
+        undefined,
+        ctx,
+      );
+      totalCostCents += this.estimateCostCents(refineResponse.tokensUsed);
+      currentPrompt = refineResponse.content.trim();
+      console.error(chalk.gray(`    🔄 Prompt refined, regenerating... (${totalCostCents}¢ / ${maxCostCents}¢)`));
     }
 
     return {
@@ -492,6 +550,18 @@ export class Engine {
 
     // 4. Default provider (only for patterns without special capability requirements)
     return this.provider;
+  }
+
+  // ─── Cost Estimation ─────────────────────────────────────────
+
+  /** Rough cost estimate in cents based on token usage and provider config */
+  private estimateCostCents(tokens?: { input: number; output: number }, providerName?: string): number {
+    if (!tokens) return 0;
+    const totalTokens = tokens.input + tokens.output;
+    const costPerMtok = providerName && this.config?.providers?.[providerName]?.cost_per_mtok
+      ? this.config.providers[providerName].cost_per_mtok!
+      : 0.1; // Conservative default: $0.10/Mtok
+    return (totalTokens / 1_000_000) * costPerMtok * 100; // Convert $ to cents
   }
 
   // ─── Saga Rollback ────────────────────────────────────────────
