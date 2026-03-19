@@ -1,0 +1,85 @@
+# AIOS Prompt Injection Pattern Catalog
+#
+# Machine-readable catalog of known injection patterns.
+# Used by the InputGuard at runtime for pattern detection.
+#
+# Reference: OWASP LLM Prompt Injection Prevention Cheat Sheet
+# https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html
+
+patterns:
+  # ─── Direct Injection ─────────────────────────────────────
+  - name: ignore_previous
+    pattern: "ignore\\s+(all\\s+)?(previous|prior|above)\\s+(instructions|prompts)"
+    severity: 0.9
+    flag: pattern_match
+    description: "Classic 'ignore all previous instructions' attack"
+
+  - name: new_persona
+    pattern: "(you\\s+are|act\\s+as|pretend\\s+to\\s+be)\\s+a\\s+(hacker|malicious|evil)"
+    severity: 0.95
+    flag: role_override
+    description: "Attempts to assign malicious persona"
+
+  - name: sudo_mode
+    pattern: "\\b(sudo|admin|root|superuser)\\s+(mode|access|privilege)"
+    severity: 0.85
+    flag: pattern_match
+    description: "Attempts to gain elevated privileges"
+
+  - name: output_system_prompt
+    pattern: "(output|print|show|display)\\s+(the\\s+)?(entire\\s+)?(system\\s+prompt|instructions)"
+    severity: 0.8
+    flag: pattern_match
+    description: "Prompt exfiltration attempt"
+
+  # ─── Indirect / Encoded Injection ─────────────────────────
+  - name: base64_instruction
+    pattern: "(decode|interpret)\\s+(the\\s+)?base64"
+    severity: 0.7
+    flag: encoding_detected
+    description: "Attempts to use Base64 encoding to bypass filters"
+
+  - name: unicode_direction_override
+    pattern: "[\\u202A-\\u202E\\u2066-\\u2069]"
+    severity: 0.8
+    flag: encoding_detected
+    description: "Unicode bidirectional override characters"
+
+  # ─── Multi-Turn / Persistent ──────────────────────────────
+  - name: remember_instruction
+    pattern: "(remember|store|save)\\s+(this|that|the\\s+following)\\s+(instruction|rule|directive)"
+    severity: 0.7
+    flag: pattern_match
+    description: "Attempts to persist instructions across turns"
+
+  - name: context_window_manipulation
+    pattern: "(fill|flood|pad)\\s+(the\\s+)?(context|window|buffer)"
+    severity: 0.6
+    flag: pattern_match
+    description: "Context window flooding attack"
+
+  # ─── Agent-Specific ──────────────────────────────────────
+  - name: tool_manipulation
+    pattern: "(call|execute|run|invoke)\\s+(the\\s+)?(tool|function|command)\\s+.{0,30}(rm|delete|drop|kill)"
+    severity: 0.9
+    flag: pattern_match
+    description: "Attempts to manipulate tool execution for destructive actions"
+
+  - name: workflow_hijack
+    pattern: "(skip|bypass|ignore)\\s+(the\\s+)?(next|following|remaining)\\s+(step|pattern|workflow)"
+    severity: 0.8
+    flag: pattern_match
+    description: "Attempts to hijack workflow execution"
+
+  # ─── AIOS-Specific ──────────────────────────────────────
+  - name: pattern_override
+    pattern: "(change|switch|replace)\\s+(the\\s+)?(pattern|workflow)\\s+to"
+    severity: 0.7
+    flag: pattern_match
+    description: "Attempts to change the selected pattern at runtime"
+
+  - name: knowledge_injection
+    pattern: "(add|insert|write)\\s+(this\\s+)?(to|into)\\s+(the\\s+)?(knowledge|kb|database)"
+    severity: 0.6
+    flag: pattern_match
+    description: "Attempts to directly inject into knowledge base"

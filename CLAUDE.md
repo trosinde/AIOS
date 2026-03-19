@@ -141,6 +141,17 @@ Jede Persona MUSS diese Traits im Output liefern:
 - Logging on stderr, results on stdout (Unix convention)
 - Tests colocated with source: `src/core/engine.test.ts` next to `src/core/engine.ts`
 
+## Security Guidelines
+
+- Every LLM call MUST use the PromptBuilder for Data/Instruction Separation
+- User input is NEVER directly concatenated into system prompts
+- All data flows carry Taint Labels (`TaintLabel` interface from `src/security/`)
+- Tool patterns validate all arguments before CLI execution (no shell injection)
+- Knowledge Base writes go through the KnowledgeGuard
+- Security-relevant decisions are logged via the AuditLogger
+- New patterns should declare `trust_boundary` in YAML frontmatter
+- See `docs/SECURITY.md` for the full Threat Model and Defense-in-Depth architecture
+
 ## CLI Commands
 
 ```bash
@@ -222,3 +233,7 @@ Kernel-OS-Evolution:
 - `docs/PERSONA_TRAITS.md` – Base Trait Protocol für alle Personas (TODO Phase 0)
 - `docs/CONTEXT_MODEL.md` – Context-Isolation-Modell und Verzeichnisstruktur (TODO Phase 0)
 - `docs/IPC_PROTOCOL.md` – Agent-zu-Agent-Kommunikations-Protokoll (TODO Phase 0)
+
+Security:
+- `docs/SECURITY.md` – Threat Model, Defense-in-Depth, Taint Tracking
+- `docs/THREAT_MODEL.md` – STRIDE-Analyse aller Komponenten
