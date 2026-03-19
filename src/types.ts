@@ -1,3 +1,11 @@
+// ─── Execution Context (kernel-stable) ───────────────────
+
+export interface ExecutionContext {
+  trace_id: string;      // UUID v4, vom Kernel vergeben
+  context_id: string;    // Aktiver User-Space-Kontext
+  started_at: number;    // Unix timestamp ms
+}
+
 // ─── Pattern ─────────────────────────────────────────────
 
 export interface PatternParameter {
@@ -25,6 +33,7 @@ export interface PatternMeta {
   persona?: string;
   preferred_provider?: string;
   internal?: boolean;
+  kernel_abi?: number;
 
   // Tool-Pattern Felder
   type?: "llm" | "tool" | "mcp" | "rag" | "image_generation";  // Default: "llm"

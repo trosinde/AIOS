@@ -1,6 +1,6 @@
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
-import type { ExecutionPlan } from "../types.js";
+import type { ExecutionContext, ExecutionPlan } from "../types.js";
 
 /**
  * Router – der Meta-Agent.
@@ -12,7 +12,7 @@ export class Router {
     private provider: LLMProvider
   ) {}
 
-  async planWorkflow(task: string, projectContext?: string): Promise<ExecutionPlan> {
+  async planWorkflow(task: string, projectContext?: string, ctx?: ExecutionContext): Promise<ExecutionPlan> {
     // Router-Pattern laden (falls vorhanden), sonst Default-Prompt
     const routerPattern = this.registry.get("_router");
     const systemPrompt = routerPattern?.systemPrompt ?? DEFAULT_ROUTER_PROMPT;
@@ -22,7 +22,7 @@ export class Router {
     const parts = [`## AUFGABE\n\n${task}`, `## VERFÜGBARE PATTERNS\n\n${catalog}`];
     if (projectContext) parts.push(`## PROJEKTKONTEXT\n\n${projectContext}`);
 
-    const response = await this.provider.complete(systemPrompt, parts.join("\n\n"));
+    const response = await this.provider.complete(systemPrompt, parts.join("\n\n"), undefined, ctx);
 
     // JSON aus Antwort extrahieren (LLM könnte es in ```json``` wrappen)
     let jsonStr: string;

@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: risk_report
 version: "1.0"
 description: Erstellt Management-tauglichen Risiko-Report

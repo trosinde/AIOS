@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: requirements_review
 version: "1.0"
 description: Prüft Requirements auf Qualität, Vollständigkeit und Testbarkeit

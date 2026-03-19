@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: aggregate_reviews
 description: "Konsolidiert mehrere Review-Ergebnisse zu einem Gesamtbericht"
 category: report

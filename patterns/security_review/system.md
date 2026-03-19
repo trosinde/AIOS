@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: security_review
 description: "Security-fokussiertes Code Review (OWASP, IEC 62443)"
 category: review

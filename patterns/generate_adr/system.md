@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_adr
 version: "1.0"
 description: Erstellt Architecture Decision Records (ADR)

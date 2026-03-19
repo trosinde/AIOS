@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: formalize
 version: "1.0"
 description: Wandelt informelle Notizen in formelle Dokumente um

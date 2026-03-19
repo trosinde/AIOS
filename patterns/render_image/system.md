@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: render_image
 version: "1.0"
 description: Erzeugt ein Bild aus einem Text-Prompt via Bildgenerierungs-API

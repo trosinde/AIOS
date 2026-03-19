@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: test_report
 version: "1.0"
 description: Erstellt formalen Test-Report aus Testergebnissen

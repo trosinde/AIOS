@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: extract_requirements
 description: "Extrahiert strukturierte Requirements aus natürlichsprachlichem Input"
 category: analyze

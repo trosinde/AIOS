@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: evaluate_quality
 description: "Bewertet die Qualität eines Agent-Outputs (1-10)"
 category: meta

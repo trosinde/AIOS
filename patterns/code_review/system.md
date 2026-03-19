@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: code_review
 description: "Systematisches Code Review mit kategorisierten Findings"
 category: review

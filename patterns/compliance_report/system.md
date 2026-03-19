@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: compliance_report
 description: "Erstellt Compliance-Bericht (IEC 62443 / CRA)"
 category: report

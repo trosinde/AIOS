@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: gap_analysis
 version: "1.0"
 description: Identifiziert Lücken zwischen Ist-Zustand und Soll-Zustand in Dokumenten

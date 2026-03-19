@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_diagram
 version: "1.0"
 description: Erzeugt Mermaid-Diagramm-Code aus einer Beschreibung oder einem Design-Dokument

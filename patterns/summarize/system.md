@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: summarize
 description: "Erstellt prägnante Zusammenfassungen von beliebigen Texten"
 category: transform

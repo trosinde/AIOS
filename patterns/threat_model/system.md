@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: threat_model
 description: "Erstellt STRIDE Threat Model basierend auf Design"
 category: analyze

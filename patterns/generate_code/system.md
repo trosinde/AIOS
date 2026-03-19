@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_code
 description: "Generiert Code basierend auf Design-Spezifikation"
 category: generate

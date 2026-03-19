@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: generate_image_prompt
 version: "1.0"
 description: Optimiert eine Bildbeschreibung zu einem detaillierten Image-Generation-Prompt

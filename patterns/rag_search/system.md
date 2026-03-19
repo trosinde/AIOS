@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: rag_search
 version: "1.0"
 description: "Semantische Suche in einer RAG-Collection"

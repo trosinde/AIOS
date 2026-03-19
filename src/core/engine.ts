@@ -7,7 +7,8 @@ import type { ProviderSelector } from "../agents/provider-selector.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
-import type { AiosConfig, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 
 /**
@@ -49,6 +50,12 @@ export class Engine {
     const feedback = new Map<string, string>();
     const start = Date.now();
 
+    const ctx: ExecutionContext = {
+      trace_id: randomUUID(),
+      context_id: "default",
+      started_at: start,
+    };
+
     plan.plan.steps.forEach((s) => { status.set(s.id, "pending"); retries.set(s.id, 0); });
 
     // ── Event Loop: startbare Steps finden und parallel ausführen ──
@@ -67,7 +74,7 @@ export class Engine {
       ready.forEach((s) => status.set(s.id, "running"));
 
       await Promise.all(ready.map((step) =>
-        this.executeStep(step, userInput, results, status, retries, feedback, plan)
+        this.executeStep(step, userInput, results, status, retries, feedback, plan, ctx)
       ));
     }
 
@@ -87,7 +94,8 @@ export class Engine {
     status: Map<string, StepStatus>,
     retries: Map<string, number>,
     feedback: Map<string, string>,
-    plan: ExecutionPlan
+    plan: ExecutionPlan,
+    ctx: ExecutionContext
   ): Promise<void> {
     const t0 = Date.now();
     try {
@@ -120,7 +128,7 @@ export class Engine {
       } else if (pattern.meta.type === "image_generation") {
         // ── Image-Generation-Pattern: Gemini Nano Banana ──
         console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE]`));
-        stepResult = await this.executeImageGeneration(step, pattern, input, t0);
+        stepResult = await this.executeImageGeneration(step, pattern, input, t0, ctx);
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
@@ -143,11 +151,11 @@ export class Engine {
           }
         }
 
-        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined);
+        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
 
         // Optional: Quality Gate
         if (step.quality_gate) {
-          const score = await this.checkQualityGate(step, response.content);
+          const score = await this.checkQualityGate(step, response.content, ctx);
           if (score < step.quality_gate.min_score) {
             throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
           }
@@ -180,7 +188,7 @@ export class Engine {
         console.error(chalk.red(`  ⏪ ${step.id} → Saga Rollback`));
         status.set(step.id, "failed");
         // Execute compensating actions for completed steps (reverse order)
-        await this.rollback(plan, results, status);
+        await this.rollback(plan, results, status, ctx);
       } else if (step.retry?.on_failure === "escalate" && step.retry.escalate_to) {
         const target = step.retry.escalate_to;
         console.error(chalk.yellow(`  ⬆️  ${step.id} → eskaliert zu ${target}`));
@@ -379,7 +387,8 @@ export class Engine {
     step: ExecutionStep,
     pattern: Pattern,
     input: string,
-    t0: number
+    t0: number,
+    ctx: ExecutionContext
   ): Promise<StepResult> {
     // Select image_generation provider (falls back to default)
     let providerToUse = this.provider;
@@ -391,7 +400,7 @@ export class Engine {
       }
     }
 
-    const response = await providerToUse.complete(pattern.systemPrompt, input);
+    const response = await providerToUse.complete(pattern.systemPrompt, input, undefined, ctx);
 
     if (!response.images?.length) {
       throw new Error(`Image generation returned no images for "${step.pattern}"`);
@@ -433,7 +442,8 @@ export class Engine {
   private async rollback(
     plan: ExecutionPlan,
     results: Map<string, StepResult>,
-    status: Map<string, StepStatus>
+    status: Map<string, StepStatus>,
+    ctx: ExecutionContext
   ): Promise<void> {
     // Finde abgeschlossene Steps mit compensate-Aktion (umgekehrte Reihenfolge)
     const completedSteps = plan.plan.steps
@@ -454,7 +464,7 @@ export class Engine {
         const compensateInput = `## Zu kompensierender Output\n\n${originalOutput}\n\n## Kontext\n\nDieser Step wird zurückgerollt weil ein nachfolgender Step fehlgeschlagen ist.`;
 
         console.error(chalk.yellow(`  ⏪ Kompensiere ${step.id} → ${step.compensate.pattern}`));
-        await this.provider.complete(compensatePattern.systemPrompt, compensateInput);
+        await this.provider.complete(compensatePattern.systemPrompt, compensateInput, undefined, ctx);
         status.set(step.id, "failed"); // Mark as rolled back
         console.error(chalk.yellow(`  ↩️  ${step.id} kompensiert`));
       } catch (compError) {
@@ -522,14 +532,14 @@ export class Engine {
       .join("\n\n---\n\n");
   }
 
-  private async checkQualityGate(step: ExecutionStep, content: string): Promise<number> {
+  private async checkQualityGate(step: ExecutionStep, content: string, ctx: ExecutionContext): Promise<number> {
     if (!step.quality_gate) return 10;
     const gatePattern = this.registry.get(step.quality_gate.pattern);
     if (!gatePattern) {
       console.error(chalk.yellow(`  ⚠️  Quality Gate Pattern "${step.quality_gate.pattern}" nicht gefunden, übersprungen`));
       return 10;
     }
-    const resp = await this.provider.complete(gatePattern.systemPrompt, content);
+    const resp = await this.provider.complete(gatePattern.systemPrompt, content, undefined, ctx);
     const match = resp.content.match(/(\d+)\s*\/?\s*10/);
     return match ? parseInt(match[1]) : 5;
   }

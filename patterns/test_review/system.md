@@ -1,4 +1,5 @@
 ---
+kernel_abi: 1
 name: test_review
 version: "1.0"
 description: Prüft Testabdeckung und Testqualität gegen Requirements
