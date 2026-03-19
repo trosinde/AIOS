@@ -32,8 +32,13 @@ preferred_patterns:
   - select_narrative_framework
   - build_story_spine
   - generate_slide_outline
+  - generate_presentation_visuals
   - presentation_critique
+  - review_story
   - generate_diagram
+  - generate_image_prompt
+  - render_diagram
+  - render_image
 
 anti_patterns_description: |
   Diese Persona produziert KEINE:
