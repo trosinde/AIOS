@@ -670,6 +670,15 @@ Du bist ein Experte für [Bereich]. [Beschreibung deiner Rolle und Expertise.]
     console.log(chalk.gray("Bearbeite die Datei um den Prompt anzupassen."));
   });
 
+// ─── aios mcp-server ─────────────────────────────────────
+program
+  .command("mcp-server")
+  .description("AIOS als MCP-Server starten (stdio transport)")
+  .action(async () => {
+    const { startMCPServer } = await import("./mcp/server.js");
+    await startMCPServer();
+  });
+
 // ─── Helper ─────────────────────────────────────────────
 
 /** Parsed --key=value und --key value aus CLI-Args */

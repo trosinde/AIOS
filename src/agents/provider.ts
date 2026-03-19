@@ -202,6 +202,7 @@ class OllamaProvider implements LLMProvider {
 
 import { GeminiProvider } from "./gemini-provider.js";
 import { OpenAIProvider } from "./openai-provider.js";
+import { OpenCodeProvider } from "./opencode-provider.js";
 
 export function createProvider(config: ProviderConfig): LLMProvider {
   switch (config.type) {
@@ -213,6 +214,8 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       return new GeminiProvider(config.model, config.apiKey!);
     case "openai":
       return new OpenAIProvider(config.model, config.apiKey!, config.endpoint);
+    case "opencode":
+      return new OpenCodeProvider(config.model, config.endpoint);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }

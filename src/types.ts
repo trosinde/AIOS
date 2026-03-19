@@ -173,7 +173,7 @@ export interface LLMResponse {
 }
 
 export interface ProviderConfig {
-  type: "anthropic" | "ollama" | "gemini" | "openai";
+  type: "anthropic" | "ollama" | "gemini" | "openai" | "opencode";
   model: string;
   endpoint?: string;
   apiKey?: string;       // Bearer token for authenticated Ollama endpoints
