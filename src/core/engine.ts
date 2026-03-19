@@ -410,6 +410,11 @@ export class Engine {
     const timestamp = Date.now();
     const filePaths: string[] = [];
 
+    // Save prompt alongside images for reproducibility
+    const promptPath = join(outputDir, `${step.id}-${timestamp}.prompt.txt`);
+    writeFileSync(promptPath, input, "utf-8");
+    console.error(chalk.gray(`    📝 ${promptPath}`));
+
     for (let i = 0; i < response.images.length; i++) {
       const img = response.images[i];
       const ext = img.mimeType.includes("png") ? "png" : "jpg";
