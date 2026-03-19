@@ -137,6 +137,32 @@ export interface KnowledgeItem {
   project?: string;
 }
 
+// ─── Knowledge Bus (kernel-stable) ──────────────────────
+
+export interface KernelMessage {
+  id: string;
+  trace_id: string;
+  source_context: string;
+  target_context: string;     // "*" = broadcast
+  created_at: number;         // Unix timestamp ms
+  type: KnowledgeType;
+  tags: string[];
+  source_pattern: string;
+  source_step?: string;
+  content: string;
+  format: "text" | "json" | "markdown";
+  metadata?: Record<string, unknown>;
+}
+
+export interface KnowledgeQuery {
+  type?: KnowledgeType;
+  tags?: string[];
+  source_pattern?: string;
+  since?: number;             // Unix timestamp
+  limit?: number;             // Default: 50
+  include_cross_context?: boolean;
+}
+
 // ─── Provider ────────────────────────────────────────────
 
 export interface LLMResponse {

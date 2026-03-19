@@ -323,6 +323,100 @@ personaCmd
     }
   });
 
+// ─── aios knowledge ─────────────────────────────────────
+const knowledgeCmd = program.command("knowledge").description("Knowledge Bus Verwaltung");
+
+knowledgeCmd
+  .command("publish")
+  .description("Knowledge-Item über stdin veröffentlichen")
+  .requiredOption("--type <type>", "Typ: decision, fact, requirement, artifact")
+  .option("--tags <tags>", "Komma-getrennte Tags", "")
+  .option("--pattern <name>", "Quell-Pattern", "manual")
+  .option("--context <id>", "Context-ID", "default")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+    const content = await readStdin();
+    if (!content) { console.error(chalk.red("Kein Input via stdin.")); process.exit(1); }
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const id = bus.publish({
+      type: opts.type,
+      tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : [],
+      source_pattern: opts.pattern,
+      content,
+      format: "text",
+      target_context: opts.context,
+    }, ctx);
+
+    console.log(chalk.green(`Knowledge published: ${id}`));
+    bus.close();
+  });
+
+knowledgeCmd
+  .command("query")
+  .description("Knowledge abfragen")
+  .option("--type <type>", "Typ filtern")
+  .option("--tags <tags>", "Tags filtern (komma-getrennt)")
+  .option("--pattern <name>", "Quell-Pattern filtern")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--cross-context", "Cross-Context-Items einschließen")
+  .option("--limit <n>", "Max Ergebnisse", "20")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const results = bus.query({
+      type: opts.type,
+      tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined,
+      source_pattern: opts.pattern,
+      limit: parseInt(opts.limit),
+      include_cross_context: opts.crossContext,
+    }, ctx);
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine Ergebnisse."));
+    } else {
+      for (const msg of results) {
+        const date = new Date(msg.created_at).toISOString().slice(0, 19);
+        console.log(chalk.gray(`[${date}]`) + ` ${chalk.cyan(msg.type)} ` + chalk.gray(`(${msg.source_pattern})`));
+        console.log(`  ${msg.content.slice(0, 200)}${msg.content.length > 200 ? "..." : ""}`);
+        if (msg.tags.length > 0) console.log(chalk.gray(`  Tags: ${msg.tags.join(", ")}`));
+        console.log();
+      }
+    }
+    bus.close();
+  });
+
+knowledgeCmd
+  .command("search <query...>")
+  .description("Volltextsuche im Knowledge Bus")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--limit <n>", "Max Ergebnisse", "20")
+  .action(async (queryParts: string[], opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const results = bus.search(queryParts.join(" "), ctx, parseInt(opts.limit));
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine Treffer."));
+    } else {
+      for (const msg of results) {
+        const date = new Date(msg.created_at).toISOString().slice(0, 19);
+        console.log(chalk.gray(`[${date}]`) + ` ${chalk.cyan(msg.type)} ` + chalk.gray(`(${msg.source_pattern})`));
+        console.log(`  ${msg.content.slice(0, 200)}${msg.content.length > 200 ? "..." : ""}`);
+        console.log();
+      }
+    }
+    bus.close();
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 
