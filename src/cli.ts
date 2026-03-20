@@ -74,7 +74,8 @@ program
     // ─── Cross-Context Modus ────────────────────────────
     if (opts.cross) {
       const { buildContextCatalog, readRegistry } = await import("./context/registry.js");
-      const { CrossContextEngine } = await import("./context/cross-engine.js");
+      const { CrossContextEngine, validateCrossContextPlan } = await import("./context/cross-engine.js");
+      const { randomUUID } = await import("node:crypto");
       const config = loadConfig();
       const providerName = opts.provider || config.defaults.provider;
       const providerCfg = config.providers[providerName];
@@ -103,14 +104,26 @@ program
       const systemPrompt = crossRouter.systemPrompt.replace("{CONTEXT_CATALOG}", catalog);
       console.error(chalk.blue("🌐 Cross-Context Routing..."));
 
-      const response = await provider.complete(systemPrompt, fullInput);
-      let plan;
+      // ExecutionContext für den Cross-Context-Lauf
+      const crossCtx = { trace_id: randomUUID(), context_id: "cross-context", started_at: Date.now() };
+      const response = await provider.complete(systemPrompt, fullInput, undefined, crossCtx);
+
+      let rawPlan: unknown;
       try {
         const jsonMatch = response.content.match(/```json\s*([\s\S]*?)```/) || [null, response.content];
-        plan = JSON.parse(jsonMatch[1]!.trim());
+        rawPlan = JSON.parse((jsonMatch[1] ?? response.content).trim());
       } catch {
         console.error(chalk.red("Cross-Context Router hat kein valides JSON geliefert."));
         console.error(response.content);
+        process.exit(1);
+      }
+
+      // Schema-Validierung des LLM-generierten Plans
+      let plan: import("./types.js").CrossContextPlan;
+      try {
+        plan = validateCrossContextPlan(rawPlan);
+      } catch (err) {
+        console.error(chalk.red(`Ungültiger Cross-Context Plan: ${err instanceof Error ? err.message : err}`));
         process.exit(1);
       }
 
@@ -120,7 +133,7 @@ program
       }
 
       const crossEngine = new CrossContextEngine();
-      const result = await crossEngine.execute(plan, fullInput);
+      const result = await crossEngine.execute(plan, fullInput, crossCtx);
 
       // Output last step result
       const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
@@ -136,7 +149,7 @@ program
     // ─── Single-Context Modus ───────────────────────────
     if (opts.context) {
       const { readRegistry } = await import("./context/registry.js");
-      const { readManifest } = await import("./context/manifest.js");
+      const { readManifest, assertPathWithinBase } = await import("./context/manifest.js");
       const { resolve: resolvePath } = await import("node:path");
 
       const registry = readRegistry();
@@ -156,9 +169,15 @@ program
       }
 
       const provider = createProvider(providerCfg);
+
+      // Path Traversal Schutz
       const patternsDir = resolvePath(entry.path, ".aios", manifest.config.patterns_dir);
+      assertPathWithinBase(patternsDir, entry.path);
+      const personasDir = resolvePath(entry.path, ".aios", manifest.config.personas_dir);
+      assertPathWithinBase(personasDir, entry.path);
+
       const pRegistry = new PatternRegistry(patternsDir);
-      const personas = new PersonaRegistry(resolvePath(entry.path, ".aios", manifest.config.personas_dir));
+      const personas = new PersonaRegistry(personasDir);
       const router = new Router(pRegistry, provider);
       const engine = new Engine(pRegistry, provider, config, personas);
 
@@ -545,6 +564,12 @@ contextCmd
   .description("Verknüpfung zu anderem Kontext herstellen")
   .option("--relationship <rel>", "Beziehungstyp: audits | consults | feeds | depends_on", "consults")
   .action(async (target: string, opts) => {
+    const validRelationships = ["audits", "consults", "feeds", "depends_on"];
+    if (!validRelationships.includes(opts.relationship)) {
+      console.error(chalk.red(`Ungültiger Beziehungstyp: "${opts.relationship}". Erlaubt: ${validRelationships.join(", ")}`));
+      process.exit(1);
+    }
+
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
     const { readRegistry } = await import("./context/registry.js");
     const { resolve } = await import("node:path");

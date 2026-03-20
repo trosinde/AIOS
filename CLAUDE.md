@@ -141,6 +141,41 @@ Jede Persona MUSS diese Traits im Output liefern:
 - Logging on stderr, results on stdout (Unix convention)
 - Tests colocated with source: `src/core/engine.test.ts` next to `src/core/engine.ts`
 
+## Pflicht-Review-Prozess (vor jedem Commit)
+
+Jede Implementierung MUSS vor dem Commit diese drei Reviews durchlaufen. Führe sie parallel als Subagenten aus:
+
+### 1. Design/Konzept-Review
+- Kernel/User-Space-Trennung (goldene Regel anwenden)
+- Architektur-Konsistenz mit bestehenden Modulen
+- Schnittstellenverträglichkeit (keine Doppelungen, keine Schema-Konflikte)
+- Prüfung ob neue Interfaces kernel-stable sein sollten
+
+### 2. Code Review
+- TypeScript Strict Mode Compliance (keine unsafe Casts, keine `!` ohne Grund)
+- Security: Path Traversal, Injection, Trust Boundaries, OWASP Top 10
+- Error Handling: Alle Fehlerpfade behandelt, keine unvalidierten LLM-Outputs
+- ExecutionContext wird an alle Provider-Calls durchgereicht
+- ESM Module Compliance (.js Extensions)
+- CLAUDE.md Konventionen (stderr/stdout, async/await)
+- Severity-Level pro Finding: CRITICAL > HIGH > MEDIUM > LOW
+
+### 3. Test-Coverage-Analyse
+- Alle neuen Funktionen haben Tests
+- Edge Cases: null/undefined, leere Arrays, korrupte Dateien
+- Error Paths: Fehlerbehandlung getestet
+- Integration: Zusammenspiel zwischen Modulen
+- Keine Datei mit 0% Coverage bei neuem Code
+
+### Ablauf
+```
+1. Implementierung abschließen
+2. Drei Reviews parallel laufen (Design, Code, Tests)
+3. CRITICAL und HIGH Findings fixen
+4. Tests + Typecheck erneut laufen lassen
+5. Erst dann committen
+```
+
 ## Security Guidelines
 
 - Every LLM call MUST use the PromptBuilder for Data/Instruction Separation

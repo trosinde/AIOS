@@ -48,10 +48,39 @@ export function writeManifest(dir: string, manifest: ContextManifest): void {
 
 /** Validiert ein Manifest gegen das Schema */
 export function validateManifest(manifest: ContextManifest): void {
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error("context.yaml: Kein gültiges Manifest (kein Objekt)");
+  }
   if (!manifest.name) throw new Error("context.yaml: 'name' ist erforderlich");
   if (!manifest.description) throw new Error("context.yaml: 'description' ist erforderlich");
   if (!["project", "team", "library"].includes(manifest.type)) {
     throw new Error(`context.yaml: 'type' muss project|team|library sein, ist: ${manifest.type}`);
+  }
+  // Ensure array fields are present (graceful defaults for partial manifests)
+  if (!Array.isArray(manifest.capabilities)) manifest.capabilities = [];
+  if (!Array.isArray(manifest.exports)) manifest.exports = [];
+  if (!Array.isArray(manifest.accepts)) manifest.accepts = [];
+  if (!Array.isArray(manifest.links)) manifest.links = [];
+  if (!manifest.config || typeof manifest.config !== "object") {
+    manifest.config = {
+      default_provider: "claude",
+      patterns_dir: "./patterns",
+      personas_dir: "./personas",
+      knowledge_dir: "./knowledge",
+    };
+  }
+}
+
+/**
+ * Prüft ob ein aufgelöster Pfad innerhalb einer Basis liegt.
+ * Verhindert Path-Traversal-Angriffe über patterns_dir/personas_dir.
+ */
+export function assertPathWithinBase(resolvedPath: string, basePath: string): void {
+  const { resolve } = require("node:path") as typeof import("node:path");
+  const normalizedBase = resolve(basePath);
+  const normalizedTarget = resolve(resolvedPath);
+  if (!normalizedTarget.startsWith(normalizedBase)) {
+    throw new Error(`Path Traversal blockiert: "${resolvedPath}" liegt außerhalb von "${basePath}"`);
   }
 }
 

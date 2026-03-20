@@ -11,6 +11,7 @@ import {
   validateManifest,
   createDefaultManifest,
   mergeWithDefaults,
+  assertPathWithinBase,
 } from "./manifest.js";
 import type { ContextManifest } from "../types.js";
 
@@ -108,6 +109,26 @@ describe("manifest", () => {
       .toThrow("type");
   });
 
+  it("wirft bei null/undefined Manifest", () => {
+    expect(() => validateManifest(null as unknown as ContextManifest)).toThrow("kein Objekt");
+    expect(() => validateManifest(undefined as unknown as ContextManifest)).toThrow("kein Objekt");
+  });
+
+  it("ergänzt fehlende Array-Felder bei Validierung", () => {
+    const partial = { name: "test", description: "d", type: "project" } as ContextManifest;
+    validateManifest(partial);
+    expect(Array.isArray(partial.capabilities)).toBe(true);
+    expect(Array.isArray(partial.exports)).toBe(true);
+    expect(Array.isArray(partial.links)).toBe(true);
+  });
+
+  it("ergänzt fehlende config bei Validierung", () => {
+    const partial = { name: "test", description: "d", type: "project" } as ContextManifest;
+    validateManifest(partial);
+    expect(partial.config).toBeDefined();
+    expect(partial.config.default_provider).toBe("claude");
+  });
+
   it("akzeptiert valides Manifest", () => {
     const m = createDefaultManifest("valid", "project");
     m.description = "Valid";
@@ -166,5 +187,21 @@ describe("manifest", () => {
     expect(merged.config.default_provider).toBe("ollama");
     expect(merged.config.patterns_dir).toBe("./my-patterns");
     expect(merged.config.standards).toEqual(["IEC 62443"]);
+  });
+
+  // ─── assertPathWithinBase ───────────────────────────────
+
+  it("akzeptiert Pfad innerhalb der Basis", () => {
+    expect(() => assertPathWithinBase("/home/user/project/.aios/patterns", "/home/user/project")).not.toThrow();
+  });
+
+  it("blockiert Path Traversal", () => {
+    expect(() => assertPathWithinBase("/home/user/project/.aios/../../etc", "/home/user/project"))
+      .toThrow("Path Traversal");
+  });
+
+  it("blockiert absoluten Pfad außerhalb der Basis", () => {
+    expect(() => assertPathWithinBase("/etc/passwd", "/home/user/project"))
+      .toThrow("Path Traversal");
   });
 });

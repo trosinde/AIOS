@@ -6,9 +6,10 @@
  * lokaler Router/Engine für die Teilaufgabe genutzt.
  */
 
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import chalk from "chalk";
-import { readManifest, hasContext } from "./manifest.js";
+import { randomUUID } from "node:crypto";
+import { readManifest, hasContext, assertPathWithinBase } from "./manifest.js";
 import { readRegistry } from "./registry.js";
 import { PatternRegistry } from "../core/registry.js";
 import { Router } from "../core/router.js";
@@ -20,11 +21,12 @@ import type {
   CrossContextPlan,
   CrossContextResult,
   CrossContextStepResult,
+  ExecutionContext,
   StepStatus,
 } from "../types.js";
 
 /** Topologische Sortierung der Steps nach depends_on */
-function topoSort(steps: CrossContextPlan["plan"]["steps"]): CrossContextPlan["plan"]["steps"] {
+export function topoSort(steps: CrossContextPlan["plan"]["steps"]): CrossContextPlan["plan"]["steps"] {
   const sorted: typeof steps = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -50,9 +52,54 @@ function topoSort(steps: CrossContextPlan["plan"]["steps"]): CrossContextPlan["p
   return sorted;
 }
 
-/** Löst einen Kontext-Namen zum Pfad auf */
-function resolveContextPath(contextName: string): string {
-  const registry = readRegistry();
+/**
+ * Validiert einen Cross-Context Plan gegen das erwartete Schema.
+ * Verhindert, dass fehlerhafter LLM-Output als Plan ausgeführt wird.
+ */
+export function validateCrossContextPlan(plan: unknown): CrossContextPlan {
+  if (!plan || typeof plan !== "object") {
+    throw new Error("Cross-Context Plan ist kein gültiges Objekt");
+  }
+  const p = plan as Record<string, unknown>;
+
+  if (!p.analysis || typeof p.analysis !== "object") {
+    throw new Error("Cross-Context Plan: 'analysis' fehlt oder ist kein Objekt");
+  }
+  if (!p.plan || typeof p.plan !== "object") {
+    throw new Error("Cross-Context Plan: 'plan' fehlt oder ist kein Objekt");
+  }
+
+  const planObj = p.plan as Record<string, unknown>;
+  if (!["pipe", "scatter_gather", "dag"].includes(planObj.type as string)) {
+    throw new Error(`Cross-Context Plan: 'plan.type' ungültig: ${planObj.type}`);
+  }
+  if (!Array.isArray(planObj.steps) || planObj.steps.length === 0) {
+    throw new Error("Cross-Context Plan: 'plan.steps' fehlt oder ist leer");
+  }
+
+  for (const step of planObj.steps) {
+    if (!step || typeof step !== "object") {
+      throw new Error("Cross-Context Plan: Step ist kein Objekt");
+    }
+    if (!step.id || typeof step.id !== "string") {
+      throw new Error("Cross-Context Plan: Step ohne 'id'");
+    }
+    if (!step.context || typeof step.context !== "string") {
+      throw new Error(`Cross-Context Plan: Step "${step.id}" ohne 'context'`);
+    }
+    if (!step.task || typeof step.task !== "string") {
+      throw new Error(`Cross-Context Plan: Step "${step.id}" ohne 'task'`);
+    }
+    if (!Array.isArray(step.depends_on)) step.depends_on = [];
+    if (!Array.isArray(step.input_from)) step.input_from = ["$USER_INPUT"];
+  }
+
+  return plan as CrossContextPlan;
+}
+
+/** Löst einen Kontext-Namen zum Pfad auf (mit optionalem Registry-Cache) */
+function resolveContextPath(contextName: string, registryCache?: ReturnType<typeof readRegistry>): string {
+  const registry = registryCache ?? readRegistry();
   const entry = registry.contexts.find((c) => c.name === contextName);
   if (!entry) {
     throw new Error(`Kontext "${contextName}" nicht in der Registry gefunden. Führe 'aios context list' aus.`);
@@ -61,10 +108,16 @@ function resolveContextPath(contextName: string): string {
 }
 
 export class CrossContextEngine {
-  async execute(plan: CrossContextPlan, userInput: string): Promise<CrossContextResult> {
+  async execute(plan: CrossContextPlan, userInput: string, parentCtx?: ExecutionContext): Promise<CrossContextResult> {
     const startTime = Date.now();
     const results = new Map<string, CrossContextStepResult>();
     const status = new Map<string, StepStatus>();
+
+    // Übergeordneter ExecutionContext für den gesamten Cross-Context-Lauf
+    const traceId = parentCtx?.trace_id ?? randomUUID();
+
+    // Registry einmal lesen und cachen
+    const registryCache = readRegistry();
 
     // Initialize all steps as pending
     for (const step of plan.plan.steps) {
@@ -74,6 +127,20 @@ export class CrossContextEngine {
     const sortedSteps = topoSort(plan.plan.steps);
 
     for (const step of sortedSteps) {
+      // Skip step if any dependency failed
+      const failedDep = step.depends_on.find((dep) => status.get(dep) === "failed");
+      if (failedDep) {
+        status.set(step.id, "failed");
+        results.set(step.id, {
+          stepId: step.id,
+          context: step.context,
+          output: `ÜBERSPRUNGEN: Abhängigkeit "${failedDep}" fehlgeschlagen`,
+          durationMs: 0,
+        });
+        console.error(chalk.yellow(`   ⏭️  Step ${step.id} übersprungen (Abhängigkeit "${failedDep}" fehlgeschlagen)`));
+        continue;
+      }
+
       status.set(step.id, "running");
       const stepStart = Date.now();
 
@@ -94,8 +161,8 @@ export class CrossContextEngine {
           }
         }
 
-        // Resolve context path
-        const contextPath = resolveContextPath(step.context);
+        // Resolve context path (cached registry)
+        const contextPath = resolveContextPath(step.context, registryCache);
 
         if (!hasContext(contextPath)) {
           throw new Error(`Kein AIOS-Kontext in ${contextPath}`);
@@ -104,8 +171,9 @@ export class CrossContextEngine {
         const manifest = readManifest(contextPath);
         const config = loadConfig();
 
-        // Build pattern registry for this context
+        // Build pattern registry for this context (with path traversal protection)
         const patternsDir = resolve(contextPath, ".aios", manifest.config.patterns_dir);
+        assertPathWithinBase(patternsDir, contextPath);
         const registry = new PatternRegistry(patternsDir);
 
         // Use context's provider or fall back to global default
@@ -115,17 +183,30 @@ export class CrossContextEngine {
           throw new Error(`Provider "${providerName}" für Kontext "${step.context}" nicht konfiguriert`);
         }
         const provider = createProvider(providerCfg);
-        const personas = new PersonaRegistry(
-          resolve(contextPath, ".aios", manifest.config.personas_dir)
-        );
+
+        const personasDir = resolve(contextPath, ".aios", manifest.config.personas_dir);
+        assertPathWithinBase(personasDir, contextPath);
+        const personas = new PersonaRegistry(personasDir);
+
+        // ExecutionContext für diesen Step
+        const stepCtx: ExecutionContext = {
+          trace_id: traceId,
+          context_id: step.context,
+          started_at: Date.now(),
+        };
 
         // Create local router + engine for this context
         const router = new Router(registry, provider);
         const engine = new Engine(registry, provider, config, personas);
 
         // Plan locally within this context
-        const localPlan = await router.planWorkflow(step.task + "\n\n" + stepInput);
+        const localPlan = await router.planWorkflow(step.task + "\n\n" + stepInput, undefined, stepCtx);
         console.error(chalk.gray(`   Lokaler Plan: ${localPlan.plan.type} (${localPlan.plan.steps.length} Schritte)`));
+
+        // Guard against empty plan
+        if (localPlan.plan.steps.length === 0) {
+          throw new Error(`Kontext "${step.context}" hat einen leeren Plan erzeugt`);
+        }
 
         // Execute locally
         const localResult = await engine.execute(localPlan, stepInput);
