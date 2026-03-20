@@ -150,6 +150,39 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
   };
 }
 
+/** Read a single key's value from ~/.aios/.env (or process.env fallback) */
+export function readEnvKey(key: string): string | undefined {
+  const envPath = join(AIOS_HOME, ".env");
+  if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex === -1) continue;
+      if (trimmed.slice(0, eqIndex).trim() === key) {
+        return trimmed.slice(eqIndex + 1).trim();
+      }
+    }
+  }
+  return process.env[key] || undefined;
+}
+
+/** Remove a key from ~/.aios/.env */
+export function removeEnvKey(key: string): void {
+  const envPath = join(AIOS_HOME, ".env");
+  if (!existsSync(envPath)) return;
+  const lines = readFileSync(envPath, "utf-8").split("\n");
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return true;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) return true;
+    return trimmed.slice(0, eqIndex).trim() !== key;
+  });
+  writeFileSync(envPath, filtered.join("\n") + "\n", "utf-8");
+  chmodSync(envPath, 0o600);
+}
+
 export function getAiosHome(): string {
   return AIOS_HOME;
 }
