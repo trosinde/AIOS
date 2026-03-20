@@ -123,6 +123,66 @@ EOF
 chmod +x "$WRAPPER"
 ok "CLI erstellt: $WRAPPER"
 
+# ─── Claude Code MCP Integration ─────────────────────────
+step "Claude Code MCP-Server registrieren"
+
+CLAUDE_DIR="$HOME/.claude"
+MCP_JSON="$CLAUDE_DIR/mcp.json"
+
+if [ -d "$CLAUDE_DIR" ]; then
+  # Parse MCP servers from aios.yaml and register in ~/.claude/mcp.json
+  # Uses node + js-yaml (already an AIOS dependency)
+  AIOS_REPO_ABS="$AIOS_REPO" MCP_JSON_PATH="$MCP_JSON" node -e '
+    const fs = require("fs");
+    const yaml = require(process.env.AIOS_REPO_ABS + "/node_modules/js-yaml/index.js");
+    const path = require("path");
+
+    const repoDir = process.env.AIOS_REPO_ABS;
+    const mcpPath = process.env.MCP_JSON_PATH;
+    const aiosYaml = path.join(repoDir, "aios.yaml");
+
+    if (!fs.existsSync(aiosYaml)) process.exit(0);
+    const config = yaml.load(fs.readFileSync(aiosYaml, "utf8"));
+    if (!config.mcp?.servers) process.exit(0);
+
+    // Preserve existing non-AIOS servers
+    let existing = { mcpServers: {} };
+    if (fs.existsSync(mcpPath)) {
+      try { existing = JSON.parse(fs.readFileSync(mcpPath, "utf8")); } catch {}
+      if (!existing.mcpServers) existing.mcpServers = {};
+    }
+
+    for (const [name, srv] of Object.entries(config.mcp.servers)) {
+      const env = {};
+      if (srv.env) {
+        for (const [k, v] of Object.entries(srv.env)) {
+          env[k] = String(v).startsWith("./") ? path.resolve(repoDir, v) : v;
+        }
+      }
+      existing.mcpServers[name] = {
+        command: srv.command,
+        args: srv.args || [],
+        ...(Object.keys(env).length > 0 ? { env } : {})
+      };
+    }
+
+    fs.writeFileSync(mcpPath, JSON.stringify(existing, null, 2) + "\n");
+    process.stdout.write(String(Object.keys(existing.mcpServers).length));
+  '
+
+  if [ $? -eq 0 ] && [ -f "$MCP_JSON" ]; then
+    SERVER_COUNT=$(tail -c 10 <<< "$(AIOS_REPO_ABS="$AIOS_REPO" MCP_JSON_PATH="$MCP_JSON" node -e '
+      const j = JSON.parse(require("fs").readFileSync(process.env.MCP_JSON_PATH, "utf8"));
+      process.stdout.write(String(Object.keys(j.mcpServers).length));
+    ')" || echo "0")
+    ok "$SERVER_COUNT MCP-Server in $MCP_JSON registriert"
+  else
+    warn "MCP-Server-Registrierung fehlgeschlagen"
+  fi
+else
+  warn "Claude Code nicht installiert (~/.claude/ fehlt), MCP-Registrierung übersprungen"
+fi
+
 # ─── PATH sicherstellen ──────────────────────────────────
 step "PATH prüfen"
 
