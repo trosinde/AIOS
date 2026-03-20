@@ -127,7 +127,7 @@ ok "CLI erstellt: $WRAPPER"
 step "Claude Code MCP-Server registrieren"
 
 CLAUDE_DIR="$HOME/.claude"
-MCP_JSON="$CLAUDE_DIR/mcp.json"
+MCP_JSON="$CLAUDE_DIR/.mcp.json"
 
 if [ -d "$CLAUDE_DIR" ]; then
   # Parse MCP servers from aios.yaml and register in ~/.claude/mcp.json
