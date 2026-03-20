@@ -80,6 +80,12 @@ mcp:
       category: office
       prefix: outlook
       description: "Outlook – Calendar & Mail via COM"
+    intranet:
+      command: /mnt/c/Users/rosin-1/repos/mcp_intranet_scrapping/src/bin/Release/net48/McpIntranetScraper.exe
+      args: ["--mcp"]
+      category: web
+      prefix: intranet
+      description: "Intranet Scraper – Authenticated web scraping via Edge (NTLM/Kerberos)"
 
 rag:
   defaultProvider: local
