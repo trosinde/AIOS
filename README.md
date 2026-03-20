@@ -114,6 +114,8 @@ AIOS plans the workflow automatically — parallel where possible, sequential wh
 
 AIOS implements defense-in-depth against prompt injection (OWASP LLM01) with input boundary guards, data/instruction separation, taint tracking, and a deterministic policy engine. All security events are logged for audit compliance.
 
+![AIOS Security Architecture](docs/security-architecture.png)
+
 See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model and architecture.
 
 ---

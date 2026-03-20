@@ -31,34 +31,17 @@ AIOS combines multiple properties that individually increase attack surface:
 
 ## Defense-in-Depth Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Layer 1: Input Boundary Guard (src/security/input-guard.ts)      │
-│  Unicode normalization, regex patterns, encoding detection,       │
-│  fuzzy keyword matching (typoglycemia-resistant)                  │
-├──────────────────────────────────────────────────────────┤
-│  Layer 2: Prompt Architecture (src/security/prompt-builder.ts)    │
-│  Instruction hierarchy, data tagging (<user_data>),               │
-│  canary tokens, delimiter diversity                               │
-├──────────────────────────────────────────────────────────┤
-│  Layer 3: Execution Control (src/security/plan-enforcer.ts)       │
-│  Plan immutability (hash + freeze), Router input sanitization,    │
-│  allowed-patterns-set enforcement                                 │
-├──────────────────────────────────────────────────────────┤
-│  Layer 3b: Information Flow Control                               │
-│  Taint tracking (src/security/taint-tracker.ts) +                 │
-│  Deterministic policy engine (src/security/policy-engine.ts)      │
-├──────────────────────────────────────────────────────────┤
-│  Layer 4: Output Validation (src/security/output-validator.ts)    │
-│  Canary verification, schema validation, exfiltration detection   │
-├──────────────────────────────────────────────────────────┤
-│  Layer 5: Knowledge Integrity (src/security/knowledge-guard.ts)   │
-│  Write validation, taint persistence, review queue, provenance    │
-├──────────────────────────────────────────────────────────┤
-│  Layer 6: Audit Trail (src/security/audit-logger.ts)              │
-│  JSONL logging, compliance-grade event trail                      │
-└──────────────────────────────────────────────────────────┘
-```
+![AIOS Security Architecture](security-architecture.png)
+
+| Layer | Component | Source | Key Features |
+|-------|-----------|--------|-------------|
+| **1** | Input Boundary Guard | `src/security/input-guard.ts` | Unicode normalization, regex patterns, encoding detection, fuzzy keyword matching (typoglycemia-resistant) |
+| **2** | Prompt Architecture | `src/security/prompt-builder.ts` | Instruction hierarchy, data tagging (`<user_data>`), canary tokens, delimiter diversity |
+| **3** | Execution Control | `src/security/plan-enforcer.ts` | Plan immutability (hash + freeze), Router input sanitization, allowed-patterns-set enforcement |
+| **3b** | Information Flow Control | `src/security/taint-tracker.ts` + `src/security/policy-engine.ts` | Taint tracking, deterministic policy engine (no LLM heuristics) |
+| **4** | Output Validation | `src/security/output-validator.ts` | Canary verification, schema validation, exfiltration detection |
+| **5** | Knowledge Integrity | `src/security/knowledge-guard.ts` | Write validation, taint persistence, review queue, provenance |
+| **6** | Audit Trail | `src/security/audit-logger.ts` | JSONL logging, compliance-grade event trail |
 
 ## Taint Tracking Model
 
