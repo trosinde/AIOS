@@ -224,6 +224,7 @@ export interface McpServerConfig {
   prefix?: string;         // Pattern-Name-Prefix (default: Server-Name)
   description?: string;    // Menschenlesbarer Name für Katalog
   exclude?: string[];      // Tool-Namen die nicht registriert werden
+  proxy?: boolean;         // Tools via MCP-Server nach außen exponieren (default: true)
 }
 
 export interface McpConfig {

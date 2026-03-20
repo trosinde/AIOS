@@ -74,6 +74,12 @@ mcp:
       exclude: [pdf_ocr]
       env:
         MCP_PDFTOOLS_VENV: "/mnt/c/Users/rosin-1/repos/mcp_pdftools/venv/bin/python"
+    outlook:
+      command: /mnt/c/Users/rosin-1/repos/mcp_outlook/dotnet_bridge/bin/Release/net48/McpOutlookBridge.exe
+      args: ["--mcp"]
+      category: office
+      prefix: outlook
+      description: "Outlook – Calendar & Mail via COM"
 
 rag:
   defaultProvider: local
