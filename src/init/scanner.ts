@@ -166,9 +166,14 @@ export function scanProject(cwd: string): ScanResult {
     }
   }
 
-  // ─── Source file count ──────────────────────────────
-  const sourceExts = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".go"]);
-  result.sourceFileCount = countSourceFiles(cwd, sourceExts);
+  // ─── Source file count + fallback language detection ──
+  const langCounts = countSourceFilesByLanguage(cwd);
+  result.sourceFileCount = langCounts.typescript + langCounts.javascript
+    + langCounts.python + langCounts.rust + langCounts.go;
+
+  if (result.language === "unknown" && result.sourceFileCount > 0) {
+    result.language = inferLanguageFromCounts(langCounts);
+  }
 
   // ─── CI/CD detection ───────────────────────────────
   if (existsSync(join(cwd, ".github", "workflows"))) {
@@ -237,23 +242,59 @@ function detectJsFrameworks(deps: Record<string, any>, frameworks: string[]): vo
   }
 }
 
-function countSourceFiles(dir: string, exts: Set<string>): number {
-  let count = 0;
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (IGNORE_DIRS.has(entry.name)) continue;
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        count += countSourceFiles(fullPath, exts);
-      } else if (entry.isFile() && exts.has(extname(entry.name))) {
-        count++;
+interface LangCounts {
+  typescript: number;
+  javascript: number;
+  python: number;
+  rust: number;
+  go: number;
+}
+
+const EXT_TO_LANG: Record<string, keyof LangCounts> = {
+  ".ts": "typescript", ".tsx": "typescript",
+  ".js": "javascript", ".jsx": "javascript",
+  ".py": "python",
+  ".rs": "rust",
+  ".go": "go",
+};
+
+function countSourceFilesByLanguage(dir: string): LangCounts {
+  const counts: LangCounts = { typescript: 0, javascript: 0, python: 0, rust: 0, go: 0 };
+  function walk(d: string): void {
+    try {
+      const entries = readdirSync(d, { withFileTypes: true });
+      for (const entry of entries) {
+        if (IGNORE_DIRS.has(entry.name)) continue;
+        const fullPath = join(d, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile()) {
+          const lang = EXT_TO_LANG[extname(entry.name)];
+          if (lang) counts[lang]++;
+        }
       }
+    } catch {
+      // Permission errors etc.
     }
-  } catch {
-    // Permission errors etc.
   }
-  return count;
+  walk(dir);
+  return counts;
+}
+
+function inferLanguageFromCounts(
+  counts: LangCounts,
+): "typescript" | "javascript" | "python" | "rust" | "go" | "mixed" | "unknown" {
+  const entries = (Object.entries(counts) as [keyof LangCounts, number][])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (entries.length === 0) return "unknown";
+  if (entries.length === 1) return entries[0][0];
+
+  const [dominant, second] = entries;
+  // Secondary language is "significant" if >= 20% of dominant count
+  if (second[1] >= dominant[1] * 0.2) return "mixed";
+  return dominant[0];
 }
 
 function countFilesRecursive(dir: string, suffix: string): number {

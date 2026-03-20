@@ -215,6 +215,61 @@ describe("scanner", () => {
     });
   });
 
+  describe("extension-based language fallback", () => {
+    it("detects Python from .py files when no manifest exists", () => {
+      mkdirSync(join(testDir, "src"), { recursive: true });
+      for (let i = 0; i < 10; i++) {
+        writeFileSync(join(testDir, "src", `module${i}.py`), "x = 1");
+      }
+      const result = scanProject(testDir);
+      expect(result.language).toBe("python");
+      expect(result.sourceFileCount).toBe(10);
+    });
+
+    it("detects TypeScript from .ts files when no manifest exists", () => {
+      mkdirSync(join(testDir, "src"), { recursive: true });
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(join(testDir, "src", `file${i}.ts`), "export const x = 1;");
+      }
+      const result = scanProject(testDir);
+      expect(result.language).toBe("typescript");
+    });
+
+    it("returns mixed when multiple languages have significant presence", () => {
+      mkdirSync(join(testDir, "src"), { recursive: true });
+      for (let i = 0; i < 10; i++) {
+        writeFileSync(join(testDir, "src", `mod${i}.py`), "x = 1");
+      }
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(join(testDir, "src", `mod${i}.ts`), "export const x = 1;");
+      }
+      const result = scanProject(testDir);
+      expect(result.language).toBe("mixed");
+    });
+
+    it("ignores insignificant secondary language files", () => {
+      mkdirSync(join(testDir, "src"), { recursive: true });
+      for (let i = 0; i < 100; i++) {
+        writeFileSync(join(testDir, "src", `mod${i}.py`), "x = 1");
+      }
+      writeFileSync(join(testDir, "src", "config.js"), "module.exports = {}");
+      const result = scanProject(testDir);
+      expect(result.language).toBe("python");
+    });
+
+    it("does not override manifest-based detection", () => {
+      // package.json without pyproject.toml → language set to "javascript" by manifest
+      // fallback does not run, even though .py files dominate
+      writeFileSync(join(testDir, "package.json"), JSON.stringify({ name: "test" }));
+      mkdirSync(join(testDir, "src"), { recursive: true });
+      for (let i = 0; i < 50; i++) {
+        writeFileSync(join(testDir, "src", `mod${i}.py`), "x = 1");
+      }
+      const result = scanProject(testDir);
+      expect(result.language).toBe("javascript");
+    });
+  });
+
   describe("ignores node_modules", () => {
     it("does not count files in node_modules", () => {
       mkdirSync(join(testDir, "node_modules", "some-pkg"), { recursive: true });
