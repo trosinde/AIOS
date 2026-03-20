@@ -4,7 +4,7 @@ import { join } from "path";
 import { homedir } from "os";
 import chalk from "chalk";
 import ora from "ora";
-import { saveConfig, saveEnv, loadConfig, getAiosHome } from "../utils/config.js";
+import { saveConfig, saveEnv, loadConfig, getAiosHome, readEnvKey, removeEnvKey } from "../utils/config.js";
 import type { AiosConfig, ProviderConfig } from "../types.js";
 
 // ─── Prompt Helpers ────────────────────────────────────────
@@ -85,64 +85,46 @@ function updateShellRC(): void {
   console.log(chalk.gray(`  .env-Laden in ${rcFile} eingetragen`));
 }
 
-// ─── Status Display ────────────────────────────────────────
+// ─── Key Masking ──────────────────────────────────────────
 
-function getConfigStatus(): { config: AiosConfig; hasApiKey: boolean; hasGeminiKey: boolean } {
-  const aiosHome = getAiosHome();
-  const envPath = join(aiosHome, ".env");
-
-  let config: AiosConfig;
-  try {
-    config = loadConfig();
-  } catch {
-    config = {
-      providers: {},
-      defaults: { provider: "claude" },
-      paths: { patterns: join("~/.aios", "patterns"), personas: join("~/.aios", "personas") },
-      tools: { output_dir: "./output", allowed: [] },
-    };
-  }
-
-  let hasApiKey = false;
-  let hasGeminiKey = false;
-  if (existsSync(envPath)) {
-    const envContent = readFileSync(envPath, "utf-8");
-    hasApiKey = envContent.includes("ANTHROPIC_API_KEY=");
-    hasGeminiKey = envContent.includes("GEMINI_API_KEY=");
-  }
-  if (process.env.ANTHROPIC_API_KEY) hasApiKey = true;
-  if (process.env.GEMINI_API_KEY) hasGeminiKey = true;
-
-  return { config, hasApiKey, hasGeminiKey };
+function maskKey(key: string | undefined): string {
+  if (!key) return chalk.red("✗ fehlt");
+  if (key.length <= 11) return chalk.green("✓ gesetzt");
+  return chalk.green(`✓ ${key.slice(0, 8)}...${key.slice(-3)}`);
 }
 
-function showStatus(config: AiosConfig, hasApiKey: boolean, hasGeminiKey: boolean): void {
+// ─── Status Display ────────────────────────────────────────
+
+function showStatus(
+  providers: Record<string, ProviderConfig>,
+  defaultProvider: string,
+  anthropicKey: string | undefined,
+  geminiKey: string | undefined,
+): void {
   console.log(chalk.bold("  Aktuelle Konfiguration:"));
   console.log();
 
   // Anthropic status
-  const claudeProvider = config.providers["claude"];
+  const claudeProvider = providers["claude"];
   if (claudeProvider) {
-    const keyStatus = hasApiKey ? chalk.green("✓ gesetzt") : chalk.red("✗ fehlt");
-    console.log(`  Anthropic (Claude):  ${chalk.white(claudeProvider.model)}  │  API Key: ${keyStatus}`);
+    console.log(`  Anthropic (Claude):  ${chalk.white(claudeProvider.model)}  │  API Key: ${maskKey(anthropicKey)}`);
   } else {
     console.log(`  Anthropic (Claude):  ${chalk.gray("nicht konfiguriert")}`);
   }
 
   // Gemini status
-  const geminiProvider = config.providers["gemini"];
+  const geminiProvider = providers["gemini"];
   if (geminiProvider) {
-    const keyStatus = hasGeminiKey ? chalk.green("✓ gesetzt") : chalk.red("✗ fehlt");
-    console.log(`  Google (Gemini):     ${chalk.white(geminiProvider.model)}  │  API Key: ${keyStatus}`);
+    console.log(`  Google (Gemini):     ${chalk.white(geminiProvider.model)}  │  API Key: ${maskKey(geminiKey)}`);
   } else {
     console.log(`  Google (Gemini):     ${chalk.gray("nicht konfiguriert")}`);
   }
 
   // Ollama status
-  const ollamaProvider = config.providers["ollama-fast"];
+  const ollamaProvider = providers["ollama-fast"];
   if (ollamaProvider) {
     console.log(`  Ollama:              ${chalk.white(ollamaProvider.model)}  │  ${ollamaProvider.endpoint}`);
-    const ollamaCode = config.providers["ollama-code"];
+    const ollamaCode = providers["ollama-code"];
     if (ollamaCode) {
       console.log(`  Ollama (Code):       ${chalk.white(ollamaCode.model)}`);
     }
@@ -151,7 +133,7 @@ function showStatus(config: AiosConfig, hasApiKey: boolean, hasGeminiKey: boolea
   }
 
   // Default provider
-  console.log(`  Default Provider:    ${chalk.white(config.defaults.provider)}`);
+  console.log(`  Default Provider:    ${chalk.white(defaultProvider)}`);
   console.log();
 }
 
@@ -162,13 +144,23 @@ async function configureAnthropic(
   providers: Record<string, ProviderConfig>,
   envVars: Record<string, string>,
   existing?: ProviderConfig,
+  existingKey?: string,
 ): Promise<Interface> {
   console.log();
   console.log(chalk.cyan("▸ Anthropic (Claude)"));
 
-  const apiKey = await askSecret(rl, "API Key (sk-ant-...)");
-  if (apiKey) {
-    envVars["ANTHROPIC_API_KEY"] = apiKey;
+  if (existingKey) {
+    console.log(`  Aktueller API Key: ${maskKey(existingKey)}`);
+    const changeKey = await askYN(rl, "API Key ändern?", false);
+    if (changeKey) {
+      const apiKey = await askSecret(rl, "Neuer API Key (sk-ant-...)");
+      if (apiKey) envVars["ANTHROPIC_API_KEY"] = apiKey;
+    }
+  } else {
+    const apiKey = await askSecret(rl, "API Key (sk-ant-...)");
+    if (apiKey) {
+      envVars["ANTHROPIC_API_KEY"] = apiKey;
+    }
   }
 
   console.log("  Modell wählen:");
@@ -213,13 +205,23 @@ async function configureGemini(
   providers: Record<string, ProviderConfig>,
   envVars: Record<string, string>,
   existing?: ProviderConfig,
+  existingKey?: string,
 ): Promise<Interface> {
   console.log();
   console.log(chalk.cyan("▸ Google (Gemini)"));
 
-  const apiKey = await askSecret(rl, "API Key (AIza...)");
-  if (apiKey) {
-    envVars["GEMINI_API_KEY"] = apiKey;
+  if (existingKey) {
+    console.log(`  Aktueller API Key: ${maskKey(existingKey)}`);
+    const changeKey = await askYN(rl, "API Key ändern?", false);
+    if (changeKey) {
+      const apiKey = await askSecret(rl, "Neuer API Key (AIza...)");
+      if (apiKey) envVars["GEMINI_API_KEY"] = apiKey;
+    }
+  } else {
+    const apiKey = await askSecret(rl, "API Key (AIza...)");
+    if (apiKey) {
+      envVars["GEMINI_API_KEY"] = apiKey;
+    }
   }
 
   console.log("  Modell wählen:");
@@ -314,6 +316,7 @@ async function configureOllama(
 async function configureDefaultProvider(
   rl: Interface,
   providers: Record<string, ProviderConfig>,
+  currentDefault?: string,
 ): Promise<string> {
   const providerNames = Object.keys(providers);
   if (providerNames.length === 0) {
@@ -332,7 +335,8 @@ async function configureDefaultProvider(
     const typeLabel = p.type === "anthropic" ? "Anthropic API" : p.type === "gemini" ? "Google API" : "Lokal";
     return `${name.padEnd(15)} (${typeLabel})`;
   });
-  const defIdx = await askChoice(rl, descriptions, 0);
+  const currentIdx = currentDefault ? Math.max(0, providerNames.indexOf(currentDefault)) : 0;
+  const defIdx = await askChoice(rl, descriptions, currentIdx);
   return providerNames[defIdx];
 }
 
@@ -342,6 +346,7 @@ function saveAndFinish(
   providers: Record<string, ProviderConfig>,
   defaultProvider: string,
   envVars: Record<string, string>,
+  envKeysToRemove: string[],
 ): void {
   const config: AiosConfig = {
     providers,
@@ -362,6 +367,13 @@ function saveAndFinish(
   if (Object.keys(envVars).length > 0) {
     const envPath = saveEnv(envVars);
     console.log(chalk.cyan(`  ▸ API Keys gespeichert: ${envPath}`));
+  }
+
+  for (const key of envKeysToRemove) {
+    removeEnvKey(key);
+  }
+  if (envKeysToRemove.length > 0) {
+    console.log(chalk.cyan(`  ▸ Entfernte Keys: ${envKeysToRemove.join(", ")}`));
   }
 
   updateShellRC();
@@ -387,8 +399,18 @@ export async function runConfigure(): Promise<void> {
   console.log(chalk.bold("═══════════════════════════════════════"));
   console.log();
 
-  // Load existing config for status display
-  const { config: existingConfig, hasApiKey, hasGeminiKey } = getConfigStatus();
+  // Load existing config
+  let existingConfig: AiosConfig;
+  try {
+    existingConfig = loadConfig();
+  } catch {
+    existingConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: join("~/.aios", "patterns"), personas: join("~/.aios", "personas") },
+      tools: { output_dir: "./output", allowed: [] },
+    };
+  }
 
   // Check if this is a fresh setup (no config file exists)
   const configExists = existsSync(join(aiosHome, "config.yaml"));
@@ -429,106 +451,184 @@ export async function runConfigure(): Promise<void> {
     const defaultProvider = await configureDefaultProvider(rl, providers);
 
     rl.close();
-    saveAndFinish(providers, defaultProvider, envVars);
+    saveAndFinish(providers, defaultProvider, envVars, []);
     return;
   }
 
-  // Existing config: show menu
-  showStatus(existingConfig, hasApiKey, hasGeminiKey);
+  // ─── Persistent Menu Loop (existing config) ─────────────
+
+  // Mutable working copies
+  const providers: Record<string, ProviderConfig> = { ...existingConfig.providers };
+  const envVars: Record<string, string> = {};
+  const envKeysToRemove: string[] = [];
+  let defaultProvider = existingConfig.defaults.provider;
+  let dirty = false;
+
+  // Track current key values (may be updated by user during session)
+  let anthropicKey = readEnvKey("ANTHROPIC_API_KEY");
+  let geminiKey = readEnvKey("GEMINI_API_KEY");
 
   let running = true;
   while (running) {
-    console.log(chalk.bold("  Was möchtest du konfigurieren?"));
-    console.log();
-    const menuOptions = [
-      "Anthropic (Claude) – API Key & Modell",
-      "Google (Gemini) – API Key & Modell",
-      "Ollama – Lokale Modelle",
-      "Default Provider wählen",
-      "Alles neu konfigurieren",
-      "Beenden",
-    ];
-    const choice = await askChoice(rl, menuOptions, 0);
+    // Show current status
+    const effectiveAnthropicKey = envKeysToRemove.includes("ANTHROPIC_API_KEY")
+      ? undefined
+      : (envVars["ANTHROPIC_API_KEY"] || anthropicKey);
+    const effectiveGeminiKey = envKeysToRemove.includes("GEMINI_API_KEY")
+      ? undefined
+      : (envVars["GEMINI_API_KEY"] || geminiKey);
 
-    // Work with a copy of existing providers
-    const providers: Record<string, ProviderConfig> = { ...existingConfig.providers };
-    const envVars: Record<string, string> = {};
+    showStatus(providers, defaultProvider, effectiveAnthropicKey, effectiveGeminiKey);
 
-    switch (choice) {
-      case 0: {
-        // Anthropic
-        rl = await configureAnthropic(rl, providers, envVars, existingConfig.providers["claude"]);
-        const defaultProvider = await configureDefaultProvider(rl, providers);
-        rl.close();
-        saveAndFinish(providers, defaultProvider, envVars);
-        running = false;
-        break;
-      }
-      case 1: {
-        // Gemini
-        rl = await configureGemini(rl, providers, envVars, existingConfig.providers["gemini"]);
-        const defaultProvider = await configureDefaultProvider(rl, providers);
-        rl.close();
-        saveAndFinish(providers, defaultProvider, envVars);
-        running = false;
-        break;
-      }
-      case 2: {
-        // Ollama
-        rl = await configureOllama(rl, providers, existingConfig.providers["ollama-fast"]);
-        const defaultProvider = await configureDefaultProvider(rl, providers);
-        rl.close();
-        saveAndFinish(providers, defaultProvider, envVars);
-        running = false;
-        break;
-      }
-      case 3: {
-        // Default provider only
-        const defaultProvider = await configureDefaultProvider(rl, providers);
-        rl.close();
-        saveAndFinish(providers, defaultProvider, envVars);
-        running = false;
-        break;
-      }
-      case 4: {
-        // Full reconfigure
-        const freshProviders: Record<string, ProviderConfig> = {};
+    // Build dynamic menu
+    type MenuItem = { label: string; action: () => Promise<void> };
+    const menuItems: MenuItem[] = [];
 
-        console.log();
-        console.log(chalk.cyan("▸ Anthropic (Claude)"));
-        const setupAnthropic = await askYN(rl, "API Key einrichten?", true);
-        if (setupAnthropic) {
-          rl = await configureAnthropic(rl, freshProviders, envVars, existingConfig.providers["claude"]);
-        }
-        console.log();
-
-        console.log(chalk.cyan("▸ Google (Gemini)"));
-        const setupGemini = await askYN(rl, "API Key einrichten?", false);
-        if (setupGemini) {
-          rl = await configureGemini(rl, freshProviders, envVars, existingConfig.providers["gemini"]);
-        }
-        console.log();
-
-        console.log(chalk.cyan("▸ Ollama (lokale Modelle)"));
-        const setupOllama = await askYN(rl, "Ollama-Server einrichten?", false);
-        if (setupOllama) {
-          rl = await configureOllama(rl, freshProviders, existingConfig.providers["ollama-fast"]);
-        }
-        console.log();
-
-        const defaultProvider = await configureDefaultProvider(rl, freshProviders);
-        rl.close();
-        saveAndFinish(freshProviders, defaultProvider, envVars);
-        running = false;
-        break;
-      }
-      case 5: {
-        // Exit
-        console.log();
-        rl.close();
-        running = false;
-        break;
-      }
+    // Anthropic options
+    if (providers["claude"]) {
+      menuItems.push({
+        label: "Anthropic (Claude) ändern",
+        action: async () => {
+          rl = await configureAnthropic(rl, providers, envVars, providers["claude"], effectiveAnthropicKey);
+          if (envVars["ANTHROPIC_API_KEY"]) anthropicKey = envVars["ANTHROPIC_API_KEY"];
+          dirty = true;
+        },
+      });
+      menuItems.push({
+        label: "Anthropic (Claude) entfernen",
+        action: async () => {
+          delete providers["claude"];
+          envKeysToRemove.push("ANTHROPIC_API_KEY");
+          if (defaultProvider === "claude") {
+            const keys = Object.keys(providers);
+            defaultProvider = keys[0] || "";
+          }
+          dirty = true;
+          console.log(chalk.yellow("  ✓ Anthropic entfernt"));
+        },
+      });
+    } else {
+      menuItems.push({
+        label: "Anthropic (Claude) einrichten",
+        action: async () => {
+          rl = await configureAnthropic(rl, providers, envVars);
+          if (envVars["ANTHROPIC_API_KEY"]) anthropicKey = envVars["ANTHROPIC_API_KEY"];
+          dirty = true;
+        },
+      });
     }
+
+    // Gemini options
+    if (providers["gemini"]) {
+      menuItems.push({
+        label: "Google (Gemini) ändern",
+        action: async () => {
+          rl = await configureGemini(rl, providers, envVars, providers["gemini"], effectiveGeminiKey);
+          if (envVars["GEMINI_API_KEY"]) geminiKey = envVars["GEMINI_API_KEY"];
+          dirty = true;
+        },
+      });
+      menuItems.push({
+        label: "Google (Gemini) entfernen",
+        action: async () => {
+          delete providers["gemini"];
+          envKeysToRemove.push("GEMINI_API_KEY");
+          if (defaultProvider === "gemini") {
+            const keys = Object.keys(providers);
+            defaultProvider = keys[0] || "";
+          }
+          dirty = true;
+          console.log(chalk.yellow("  ✓ Gemini entfernt"));
+        },
+      });
+    } else {
+      menuItems.push({
+        label: "Google (Gemini) einrichten",
+        action: async () => {
+          rl = await configureGemini(rl, providers, envVars);
+          if (envVars["GEMINI_API_KEY"]) geminiKey = envVars["GEMINI_API_KEY"];
+          dirty = true;
+        },
+      });
+    }
+
+    // Ollama options
+    if (providers["ollama-fast"]) {
+      menuItems.push({
+        label: "Ollama ändern",
+        action: async () => {
+          rl = await configureOllama(rl, providers, providers["ollama-fast"]);
+          dirty = true;
+        },
+      });
+      menuItems.push({
+        label: "Ollama entfernen",
+        action: async () => {
+          delete providers["ollama-fast"];
+          delete providers["ollama-code"];
+          if (defaultProvider === "ollama-fast" || defaultProvider === "ollama-code") {
+            const keys = Object.keys(providers);
+            defaultProvider = keys[0] || "";
+          }
+          dirty = true;
+          console.log(chalk.yellow("  ✓ Ollama entfernt"));
+        },
+      });
+    } else {
+      menuItems.push({
+        label: "Ollama einrichten",
+        action: async () => {
+          rl = await configureOllama(rl, providers);
+          dirty = true;
+        },
+      });
+    }
+
+    // Default provider (only if >1 provider)
+    if (Object.keys(providers).filter((k) => k !== "ollama-code").length > 1) {
+      menuItems.push({
+        label: "Default Provider ändern",
+        action: async () => {
+          defaultProvider = await configureDefaultProvider(rl, providers, defaultProvider);
+          dirty = true;
+        },
+      });
+    }
+
+    // Exit options
+    if (dirty) {
+      menuItems.push({
+        label: chalk.green("Speichern & Beenden"),
+        action: async () => {
+          rl.close();
+          saveAndFinish(providers, defaultProvider, envVars, envKeysToRemove);
+          running = false;
+        },
+      });
+      menuItems.push({
+        label: "Verwerfen & Beenden",
+        action: async () => {
+          console.log(chalk.yellow("  Änderungen verworfen."));
+          rl.close();
+          running = false;
+        },
+      });
+    } else {
+      menuItems.push({
+        label: "Beenden",
+        action: async () => {
+          rl.close();
+          running = false;
+        },
+      });
+    }
+
+    // Display menu
+    console.log(chalk.bold("  Was möchtest du tun?"));
+    console.log();
+    const labels = menuItems.map((m) => m.label);
+    const choice = await askChoice(rl, labels, 0);
+    await menuItems[choice].action();
+    console.log();
   }
 }
