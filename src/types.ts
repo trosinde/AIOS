@@ -231,6 +231,94 @@ export interface McpConfig {
   servers: Record<string, McpServerConfig>;
 }
 
+// ─── Context Federation ──────────────────────────────────
+
+export interface ContextCapability {
+  id: string;
+  description: string;
+  input_types: string[];
+  output_type: string;
+}
+
+export interface ContextExport {
+  type: string;
+  scope: string;
+  description: string;
+}
+
+export interface ContextAccept {
+  type: string;
+  description: string;
+}
+
+export interface ContextLink {
+  name: string;
+  path: string;
+  relationship: "audits" | "consults" | "feeds" | "depends_on";
+}
+
+export interface ContextManifest {
+  schema_version: string;
+  name: string;
+  description: string;
+  type: "project" | "team" | "library";
+  capabilities: ContextCapability[];
+  exports: ContextExport[];
+  accepts: ContextAccept[];
+  config: {
+    default_provider: string;
+    patterns_dir: string;
+    personas_dir: string;
+    knowledge_dir: string;
+    pattern_sources?: string[];
+    standards?: string[];
+    team?: {
+      personas: string[];
+      default_persona?: string;
+    };
+  };
+  links: ContextLink[];
+}
+
+// ─── Cross-Context Execution ─────────────────────────────
+
+export interface CrossContextStep {
+  id: string;
+  context: string;
+  task: string;
+  depends_on: string[];
+  input_from: string[];
+  output_type: string;
+}
+
+export interface CrossContextPlan {
+  analysis: {
+    goal: string;
+    contexts_needed: string[];
+    single_context: boolean;
+  };
+  plan: {
+    type: "pipe" | "scatter_gather" | "dag";
+    steps: CrossContextStep[];
+  };
+  reasoning: string;
+}
+
+export interface CrossContextStepResult {
+  stepId: string;
+  context: string;
+  output: string;
+  localPlan?: ExecutionPlan;
+  durationMs: number;
+}
+
+export interface CrossContextResult {
+  plan: CrossContextPlan;
+  results: Map<string, CrossContextStepResult>;
+  status: Map<string, StepStatus>;
+  totalDurationMs: number;
+}
+
 // ─── Config ─────────────────────────────────────────────
 
 export interface AiosConfig {

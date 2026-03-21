@@ -62,10 +62,139 @@ program
   .argument("[task...]", "Aufgabe in natürlicher Sprache")
   .option("--dry-run", "Nur planen, nicht ausführen")
   .option("--provider <name>", "LLM Provider überschreiben")
+  .option("--cross", "Cross-Context Modus: Orchestriert über mehrere Kontexte")
+  .option("--context <name>", "Aufgabe an spezifischen Kontext delegieren")
   .action(async (taskParts: string[], opts) => {
     const stdinInput = await readStdin();
     const task = taskParts.join(" ");
     if (!task && !stdinInput) { program.help(); return; }
+
+    const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
+
+    // ─── Cross-Context Modus ────────────────────────────
+    if (opts.cross) {
+      const { buildContextCatalog, readRegistry } = await import("./context/registry.js");
+      const { CrossContextEngine, validateCrossContextPlan } = await import("./context/cross-engine.js");
+      const { randomUUID } = await import("node:crypto");
+      const config = loadConfig();
+      const providerName = opts.provider || config.defaults.provider;
+      const providerCfg = config.providers[providerName];
+      if (!providerCfg) {
+        console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+        process.exit(1);
+      }
+
+      const registry = readRegistry();
+      if (registry.contexts.length === 0) {
+        console.error(chalk.red("Keine Kontexte registriert. Erstelle mit: aios federation-init"));
+        process.exit(1);
+      }
+
+      const provider = createProvider(providerCfg);
+      const catalog = buildContextCatalog();
+
+      // Load cross-router pattern
+      const pRegistry = new PatternRegistry(config.paths.patterns);
+      const crossRouter = pRegistry.get("_cross_router");
+      if (!crossRouter) {
+        console.error(chalk.red("Cross-Router-Pattern nicht gefunden."));
+        process.exit(1);
+      }
+
+      const systemPrompt = crossRouter.systemPrompt.replace("{CONTEXT_CATALOG}", catalog);
+      console.error(chalk.blue("🌐 Cross-Context Routing..."));
+
+      // ExecutionContext für den Cross-Context-Lauf
+      const crossCtx = { trace_id: randomUUID(), context_id: "cross-context", started_at: Date.now() };
+      const response = await provider.complete(systemPrompt, fullInput, undefined, crossCtx);
+
+      let rawPlan: unknown;
+      try {
+        const jsonMatch = response.content.match(/```json\s*([\s\S]*?)```/) || [null, response.content];
+        rawPlan = JSON.parse((jsonMatch[1] ?? response.content).trim());
+      } catch {
+        console.error(chalk.red("Cross-Context Router hat kein valides JSON geliefert."));
+        console.error(response.content);
+        process.exit(1);
+      }
+
+      // Schema-Validierung des LLM-generierten Plans
+      let plan: import("./types.js").CrossContextPlan;
+      try {
+        plan = validateCrossContextPlan(rawPlan);
+      } catch (err) {
+        console.error(chalk.red(`Ungültiger Cross-Context Plan: ${err instanceof Error ? err.message : err}`));
+        process.exit(1);
+      }
+
+      if (opts.dryRun) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+
+      const crossEngine = new CrossContextEngine();
+      const result = await crossEngine.execute(plan, fullInput, crossCtx);
+
+      // Output last step result
+      const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
+      const lastResult = result.results.get(lastStep.id);
+      if (lastResult) {
+        process.stdout.write(lastResult.output);
+      }
+
+      console.error(chalk.green(`\n✅ Cross-Context Ausführung abgeschlossen (${result.totalDurationMs}ms)`));
+      return;
+    }
+
+    // ─── Single-Context Modus ───────────────────────────
+    if (opts.context) {
+      const { readRegistry } = await import("./context/registry.js");
+      const { readManifest, assertPathWithinBase } = await import("./context/manifest.js");
+      const { resolve: resolvePath } = await import("node:path");
+
+      const registry = readRegistry();
+      const entry = registry.contexts.find((c) => c.name === opts.context);
+      if (!entry) {
+        console.error(chalk.red(`Kontext "${opts.context}" nicht gefunden.`));
+        process.exit(1);
+      }
+
+      const manifest = readManifest(entry.path);
+      const config = loadConfig();
+      const providerName = opts.provider || manifest.config.default_provider || config.defaults.provider;
+      const providerCfg = config.providers[providerName];
+      if (!providerCfg) {
+        console.error(chalk.red(`Provider "${providerName}" nicht gefunden.`));
+        process.exit(1);
+      }
+
+      const provider = createProvider(providerCfg);
+
+      // Path Traversal Schutz
+      const patternsDir = resolvePath(entry.path, ".aios", manifest.config.patterns_dir);
+      assertPathWithinBase(patternsDir, entry.path);
+      const personasDir = resolvePath(entry.path, ".aios", manifest.config.personas_dir);
+      assertPathWithinBase(personasDir, entry.path);
+
+      const pRegistry = new PatternRegistry(patternsDir);
+      const personas = new PersonaRegistry(personasDir);
+      const router = new Router(pRegistry, provider);
+      const engine = new Engine(pRegistry, provider, config, personas);
+
+      console.error(chalk.blue(`🎯 Kontext: ${manifest.name} (${manifest.type})`));
+      console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
+
+      const plan = await router.planWorkflow(fullInput);
+      console.error(chalk.blue(`📋 Plan: ${plan.plan.type} (${plan.plan.steps.length} Schritte)`));
+
+      if (opts.dryRun) { console.log(JSON.stringify(plan, null, 2)); return; }
+
+      const result = await engine.execute(plan, fullInput);
+      const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
+      const output = result.results.get(lastStep.id);
+      if (output) process.stdout.write(output.output);
+      return;
+    }
 
     const config = loadConfig();
     const registry = new PatternRegistry(config.paths.patterns);
@@ -83,7 +212,6 @@ program
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const selector = buildProviderSelector(config);
     const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
-    const fullInput = [task, stdinInput].filter(Boolean).join("\n\n");
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
     const plan = await router.planWorkflow(fullInput);
@@ -312,6 +440,20 @@ program
     await mcpManager?.shutdown();
   });
 
+// ─── aios federation init ───────────────────────────────
+program
+  .command("federation-init")
+  .description("AIOS-Kontext für Cross-Context Federation initialisieren oder erweitern")
+  .option("--name <name>", "Kontext-Name")
+  .option("--description <desc>", "Beschreibung")
+  .option("--type <type>", "Typ: project | team | library", "project")
+  .option("--template <tpl>", "Template: project | team | library")
+  .option("--upgrade", "Nur fehlende Felder ergänzen")
+  .action(async (opts) => {
+    const { initContext } = await import("./context/init.js");
+    await initContext(process.cwd(), opts);
+  });
+
 // ─── aios context ───────────────────────────────────────
 const contextCmd = program.command("context").description("Context-Verwaltung");
 
@@ -384,6 +526,140 @@ contextCmd
     if (active.config.domain) console.log(chalk.gray(`Domain: ${active.config.domain}`));
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
+    }
+  });
+
+// ─── aios context info [name] ────────────────────────────
+contextCmd
+  .command("info [name]")
+  .description("Details eines Kontexts anzeigen (Federation-Manifest)")
+  .action(async (name?: string) => {
+    const YAML = await import("yaml");
+    if (name) {
+      const { readRegistry } = await import("./context/registry.js");
+      const registry = readRegistry();
+      const entry = registry.contexts.find((c) => c.name === name);
+      if (!entry) {
+        console.error(chalk.red(`Kontext "${name}" nicht in der Registry gefunden.`));
+        process.exit(1);
+      }
+      const { readManifest } = await import("./context/manifest.js");
+      const manifest = readManifest(entry.path);
+      console.log(YAML.stringify(manifest));
+    } else {
+      const { readManifest, hasContext } = await import("./context/manifest.js");
+      if (!hasContext(process.cwd())) {
+        console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
+        console.error(chalk.gray("Erstelle mit: aios federation-init"));
+        process.exit(1);
+      }
+      const manifest = readManifest(process.cwd());
+      console.log(YAML.stringify(manifest));
+    }
+  });
+
+// ─── aios context link <target> ──────────────────────────
+contextCmd
+  .command("link <target>")
+  .description("Verknüpfung zu anderem Kontext herstellen")
+  .option("--relationship <rel>", "Beziehungstyp: audits | consults | feeds | depends_on", "consults")
+  .action(async (target: string, opts) => {
+    const validRelationships = ["audits", "consults", "feeds", "depends_on"];
+    if (!validRelationships.includes(opts.relationship)) {
+      console.error(chalk.red(`Ungültiger Beziehungstyp: "${opts.relationship}". Erlaubt: ${validRelationships.join(", ")}`));
+      process.exit(1);
+    }
+
+    const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
+    const { readRegistry } = await import("./context/registry.js");
+    const { resolve } = await import("node:path");
+
+    if (!hasContext(process.cwd())) {
+      console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
+      process.exit(1);
+    }
+
+    const registry = readRegistry();
+    let targetPath: string;
+    let targetName: string;
+
+    const byName = registry.contexts.find((c) => c.name === target);
+    if (byName) {
+      targetPath = byName.path;
+      targetName = byName.name;
+    } else if (hasContext(resolve(target))) {
+      const targetManifest = readManifest(resolve(target));
+      targetPath = resolve(target);
+      targetName = targetManifest.name;
+    } else {
+      console.error(chalk.red(`Kontext "${target}" nicht gefunden (weder Name noch Pfad).`));
+      process.exit(1);
+    }
+
+    const manifest = readManifest(process.cwd());
+
+    if (manifest.links.some((l) => l.path === targetPath)) {
+      console.error(chalk.yellow(`Bereits verknüpft mit "${targetName}".`));
+      return;
+    }
+
+    manifest.links.push({
+      name: targetName,
+      path: targetPath,
+      relationship: opts.relationship,
+    });
+
+    writeManifest(process.cwd(), manifest);
+    console.error(chalk.green(`✅ Verknüpft: ${manifest.name} → ${targetName} (${opts.relationship})`));
+  });
+
+// ─── aios context unlink <target> ────────────────────────
+contextCmd
+  .command("unlink <target>")
+  .description("Verknüpfung zu anderem Kontext entfernen")
+  .action(async (target: string) => {
+    const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
+    if (!hasContext(process.cwd())) {
+      console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
+      process.exit(1);
+    }
+
+    const manifest = readManifest(process.cwd());
+    const before = manifest.links.length;
+    manifest.links = manifest.links.filter(
+      (l) => l.name !== target && l.path !== target
+    );
+
+    if (manifest.links.length === before) {
+      console.error(chalk.yellow(`Keine Verknüpfung zu "${target}" gefunden.`));
+      return;
+    }
+
+    writeManifest(process.cwd(), manifest);
+    console.error(chalk.green(`✅ Verknüpfung zu "${target}" entfernt.`));
+  });
+
+// ─── aios context catalog ────────────────────────────────
+contextCmd
+  .command("catalog")
+  .description("Federation-Katalog aller registrierten Kontexte anzeigen")
+  .action(async () => {
+    const { readRegistry } = await import("./context/registry.js");
+    const registry = readRegistry();
+    if (registry.contexts.length === 0) {
+      console.error(chalk.yellow("Keine Kontexte in der Federation-Registry."));
+      console.error(chalk.gray("Erstelle mit: aios federation-init"));
+      return;
+    }
+    for (const c of registry.contexts) {
+      console.log(
+        `${chalk.cyan(c.name.padEnd(25))} ${chalk.gray(c.type.padEnd(10))} ${c.description}`
+      );
+      console.log(chalk.gray(`  ${c.path}`));
+      if (c.capabilities.length > 0) {
+        console.log(chalk.gray(`  Capabilities: ${c.capabilities.join(", ")}`));
+      }
+      console.log();
     }
   });
 
