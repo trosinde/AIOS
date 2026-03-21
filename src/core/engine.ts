@@ -7,7 +7,9 @@ import type { ProviderSelector } from "../agents/provider-selector.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
-import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, SelectionStrategy, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { QualityPipeline } from "./quality/pipeline.js";
+import type { KnowledgeBus } from "./knowledge-bus.js";
+import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, QualityLevel, SelectionStrategy, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 
@@ -24,6 +26,8 @@ export class Engine {
   private mcpManager?: McpManager;
   private ragService?: RAGService;
   private providerSelector?: ProviderSelector;
+  private qualityPipeline?: QualityPipeline;
+  private knowledgeBus?: KnowledgeBus;
 
   constructor(
     registry: PatternRegistry,
@@ -33,6 +37,8 @@ export class Engine {
     mcpManager?: McpManager,
     ragService?: RAGService,
     providerSelector?: ProviderSelector,
+    qualityPipeline?: QualityPipeline,
+    knowledgeBus?: KnowledgeBus,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -41,6 +47,8 @@ export class Engine {
     this.mcpManager = mcpManager;
     this.ragService = ragService;
     this.providerSelector = providerSelector;
+    this.qualityPipeline = qualityPipeline;
+    this.knowledgeBus = knowledgeBus;
   }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -161,6 +169,54 @@ export class Engine {
           outputType: "text",
           durationMs: Date.now() - t0,
         };
+      }
+
+      // ── Quality Backbone: Check at output boundaries ──
+      if (this.qualityPipeline && stepResult.outputType === "text") {
+        const isLastStep = plan.plan.steps[plan.plan.steps.length - 1].id === step.id;
+        const isOutputBoundary = isLastStep || step.depends_on.length === 0 && plan.plan.steps.filter(s => s.depends_on.includes(step.id)).length === 0;
+
+        if (isOutputBoundary) {
+          const pattern = this.registry.get(step.pattern);
+          if (pattern) {
+            const personaId = step.persona ?? pattern.meta.persona;
+            const persona = personaId ? this.personaRegistry?.get(personaId) : undefined;
+
+            console.error(chalk.blue(`  🔍 Quality check: ${step.id}`));
+            const qualityResult = await this.qualityPipeline.evaluate(
+              stepResult.output,
+              pattern.meta,
+              userInput,
+              this.buildInput(step, userInput, results),
+              ctx,
+              {
+                persona,
+                workflowPosition: {
+                  workflowId: ctx.trace_id,
+                  stepId: step.id,
+                  isOutputBoundary: true,
+                },
+                knowledgeBus: this.knowledgeBus,
+                rerunPattern: async (reworkHint: string, previousOutput: string) => {
+                  const providerToUse = this.resolveProvider(pattern, step);
+                  const reworkPrompt = `${pattern.systemPrompt}\n\n## REWORK FEEDBACK\n\nYour previous output had issues. Fix the following:\n${reworkHint}`;
+                  const reworkInput = `${this.buildInput(step, userInput, results)}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
+                  const resp = await providerToUse.complete(reworkPrompt, reworkInput, undefined, ctx);
+                  return resp.content;
+                },
+              },
+            );
+
+            stepResult = {
+              ...stepResult,
+              output: qualityResult.output,
+            };
+
+            if (!qualityResult.passed) {
+              throw new Error(`Quality Gate blocked step "${step.id}": ${qualityResult.findings.filter(f => f.severity === "critical").map(f => f.message).join("; ")}`);
+            }
+          }
+        }
       }
 
       results.set(step.id, stepResult);

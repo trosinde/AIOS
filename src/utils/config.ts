@@ -147,6 +147,7 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
       ? { servers: { ...DEFAULT_CONFIG.mcp!.servers, ...expanded.mcp.servers } }
       : DEFAULT_CONFIG.mcp,
     rag: expanded.rag,
+    quality: expanded.quality,
   };
 }
 
