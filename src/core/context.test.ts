@@ -176,6 +176,27 @@ describe("ContextManager", () => {
     expect(active.name).toBe("default");
   });
 
+  // ─── rename ────────────────────────────────────────────
+
+  it("benennt einen lokalen Context um", () => {
+    cm.init("old-name", true, tmpDir);
+    const result = cm.rename("old-name", "new-name", tmpDir);
+    expect(result.source).toBe("project");
+
+    const active = cm.resolveActive(tmpDir);
+    expect(active.name).toBe("new-name");
+  });
+
+  it("wirft Fehler bei ungültigem Namen", () => {
+    cm.init("valid-ctx", true, tmpDir);
+    expect(() => cm.rename("valid-ctx", "INVALID NAME!", tmpDir)).toThrow("Ungültiger Name");
+    expect(() => cm.rename("valid-ctx", "has_underscore", tmpDir)).toThrow("Ungültiger Name");
+  });
+
+  it("wirft Fehler wenn Context nicht gefunden", () => {
+    expect(() => cm.rename("nonexistent", "new-name", tmpDir)).toThrow("nicht gefunden");
+  });
+
   // ─── Cross-module round-trip ──────────────────────────
 
   it("ContextManager.init() schreibt parseContextYaml-kompatibles Format", () => {

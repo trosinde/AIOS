@@ -513,6 +513,49 @@ contextCmd
     }
   });
 
+// ─── aios context rename <new-name> ─────────────────────
+contextCmd
+  .command("rename <new-name>")
+  .description("Aktiven Context umbenennen")
+  .action(async (newName: string) => {
+    const { ContextManager } = await import("./core/context.js");
+    const { readRegistry, writeRegistry } = await import("./context/registry.js");
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    if (active.name === "default") {
+      console.error(chalk.red("Der Default-Context kann nicht umbenannt werden."));
+      process.exit(1);
+    }
+
+    try {
+      const result = cm.rename(active.name, newName);
+
+      // Update global registry
+      const registry = readRegistry();
+      const entry = registry.contexts.find((c) => c.name === active.name);
+      if (entry) {
+        entry.name = newName;
+        entry.path = result.path;
+        entry.last_updated = new Date().toISOString();
+        // Update links in other registry entries
+        for (const other of registry.contexts) {
+          if (other.links) {
+            for (const link of other.links) {
+              if (link.name === active.name) link.name = newName;
+            }
+          }
+        }
+        writeRegistry(registry);
+      }
+
+      console.log(chalk.green(`Context umbenannt: ${active.name} → ${newName}`));
+    } catch (err) {
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+  });
+
 // ─── aios context info [name] ────────────────────────────
 contextCmd
   .command("info [name]")
