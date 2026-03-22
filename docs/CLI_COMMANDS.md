@@ -212,6 +212,14 @@ aios context info
 aios context info dvoi-engineering
 ```
 
+### `aios context rename <new-name>`
+
+Benennt den aktiven Context um. Aktualisiert context.yaml, Verzeichnisname (global), active_context und Links in anderen Contexts.
+
+```bash
+aios context rename new-project-name
+```
+
 ### `aios context link <target>`
 
 Erstellt eine Verknüpfung zu einem anderen Context für Federation.

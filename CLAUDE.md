@@ -207,6 +207,7 @@ aios update --check                      # Nur prüfen ob Updates verfügbar
 aios configure                           # Interaktiver Setup-Wizard
 aios context init <name> [--local]       # Create new context
 aios context switch <name>               # Switch active context
+aios context rename <new-name>           # Rename active context
 aios context list                        # List all contexts
 aios context show                        # Show active context
 aios knowledge publish --type <type>     # Publish knowledge item (stdin)

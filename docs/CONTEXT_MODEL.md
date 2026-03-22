@@ -203,7 +203,21 @@ aios context init --local
 # Wird automatisch aktiviert wenn man sich im Verzeichnis befindet
 ```
 
-### 5.4 Auflösung des aktiven Kontexts
+### 5.4 Umbenennung
+
+```bash
+# Aktiven Context umbenennen
+aios context rename new-name
+
+# Aktualisiert automatisch:
+# - context.yaml (name-Feld)
+# - Verzeichnisname (bei globalen Contexts)
+# - ~/.aios/active_context (falls betroffen)
+# - Links in anderen Contexts die auf den alten Namen zeigen
+# - Federation-Registry
+```
+
+### 5.5 Auflösung des aktiven Kontexts
 
 ```
 1. .aios/context.yaml im CWD?           → Verwende Projekt-Context
