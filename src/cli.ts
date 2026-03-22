@@ -87,7 +87,7 @@ program
 
       const registry = readRegistry();
       if (registry.contexts.length === 0) {
-        console.error(chalk.red("Keine Kontexte registriert. Erstelle mit: aios federation-init"));
+        console.error(chalk.red("Keine Kontexte registriert. Registriere mit: aios context scan <pfad>"));
         process.exit(1);
       }
 
@@ -635,7 +635,7 @@ contextCmd
     const registry = readRegistry();
     if (registry.contexts.length === 0) {
       console.error(chalk.yellow("Keine Kontexte in der Federation-Registry."));
-      console.error(chalk.gray("Erstelle mit: aios federation-init"));
+      console.error(chalk.gray("Registriere mit: aios context scan <pfad>"));
       return;
     }
     for (const c of registry.contexts) {
