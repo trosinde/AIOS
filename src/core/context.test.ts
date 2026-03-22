@@ -176,6 +176,48 @@ describe("ContextManager", () => {
     expect(active.name).toBe("default");
   });
 
+  // ─── rename ────────────────────────────────────────────
+
+  it("benennt einen lokalen Context um", () => {
+    cm.init("old-name", true, tmpDir);
+    const result = cm.rename("old-name", "new-name", tmpDir);
+    expect(result.source).toBe("project");
+
+    const active = cm.resolveActive(tmpDir);
+    expect(active.name).toBe("new-name");
+  });
+
+  it("wirft Fehler bei ungültigem neuen Namen", () => {
+    cm.init("valid-ctx", true, tmpDir);
+    expect(() => cm.rename("valid-ctx", "INVALID NAME!", tmpDir)).toThrow("Ungültiger Name");
+    expect(() => cm.rename("valid-ctx", "has_underscore", tmpDir)).toThrow("Ungültiger Name");
+  });
+
+  it("wirft Fehler bei ungültigem alten Namen (Path-Traversal-Schutz)", () => {
+    expect(() => cm.rename("../escape", "new-name", tmpDir)).toThrow("Ungültiger Name");
+    expect(() => cm.rename("../../etc", "new-name", tmpDir)).toThrow("Ungültiger Name");
+  });
+
+  it("wirft Fehler wenn alter und neuer Name identisch", () => {
+    cm.init("same-name", true, tmpDir);
+    expect(() => cm.rename("same-name", "same-name", tmpDir)).toThrow("identisch");
+  });
+
+  it("wirft Fehler wenn Context nicht gefunden", () => {
+    expect(() => cm.rename("nonexistent", "new-name", tmpDir)).toThrow("nicht gefunden");
+  });
+
+  it("aktualisiert context.yaml korrekt nach Rename", () => {
+    cm.init("before-rename", true, tmpDir);
+    cm.rename("before-rename", "after-rename", tmpDir);
+    const raw = readFileSync(join(tmpDir, ".aios", "context.yaml"), "utf-8");
+    expect(raw).toContain("name: after-rename");
+    expect(raw).not.toContain("name: before-rename");
+    // Other fields preserved
+    expect(raw).toContain("schema_version");
+    expect(raw).toContain("type: project");
+  });
+
   // ─── Cross-module round-trip ──────────────────────────
 
   it("ContextManager.init() schreibt parseContextYaml-kompatibles Format", () => {

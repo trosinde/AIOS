@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
 import { stringify } from "yaml";
@@ -234,6 +234,103 @@ export class ContextManager {
     if (existsSync(kernelPatterns)) dirs.push(kernelPatterns);
 
     return dirs;
+  }
+
+  /**
+   * Rename a context (updates context.yaml, directory, active_context, links).
+   * Works for both project-local and global contexts.
+   */
+  rename(oldName: string, newName: string, cwd: string = process.cwd()): { path: string; source: "project" | "global" } {
+    // Validate both names to prevent path traversal
+    const kebabPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+    if (!kebabPattern.test(oldName)) {
+      throw new Error(`Ungültiger Name "${oldName}". Erlaubt: kebab-case (z.B. my-context).`);
+    }
+    if (!kebabPattern.test(newName)) {
+      throw new Error(`Ungültiger Name "${newName}". Erlaubt: kebab-case (z.B. my-context).`);
+    }
+    if (oldName === newName) {
+      throw new Error(`Alter und neuer Name sind identisch: "${oldName}".`);
+    }
+
+    // Find the context to rename (cache config to avoid double read)
+    const localContextPath = join(cwd, ".aios", "context.yaml");
+    let cachedConfig: ContextConfig | null = null;
+    let isLocal = false;
+    if (existsSync(localContextPath)) {
+      cachedConfig = this.loadContextYaml(localContextPath);
+      isLocal = cachedConfig?.name === oldName;
+    }
+
+    const globalDir = join(CONTEXTS_DIR, oldName);
+    const isGlobal = !isLocal && existsSync(join(globalDir, "context.yaml"));
+
+    if (!isLocal && !isGlobal) {
+      throw new Error(`Context "${oldName}" nicht gefunden.`);
+    }
+
+    // Check target name doesn't already exist (both local and global)
+    const newGlobalDir = join(CONTEXTS_DIR, newName);
+    if (existsSync(join(newGlobalDir, "context.yaml"))) {
+      throw new Error(`Context "${newName}" existiert bereits (global).`);
+    }
+
+    // Load config for global (local already cached above)
+    const contextYamlPath = isLocal ? localContextPath : join(globalDir, "context.yaml");
+    const config = isLocal ? cachedConfig : this.loadContextYaml(contextYamlPath);
+    if (!config) {
+      throw new Error(`Konnte context.yaml nicht laden: ${contextYamlPath}`);
+    }
+
+    // 1. For global contexts: rename the directory first (most likely to fail)
+    let finalPath: string;
+    if (isGlobal) {
+      renameSync(globalDir, newGlobalDir);
+      finalPath = newGlobalDir;
+    } else {
+      finalPath = join(cwd, ".aios");
+    }
+
+    // 2. Update context.yaml name field (path changed for global after renameSync)
+    const updatedYamlPath = isGlobal ? join(newGlobalDir, "context.yaml") : contextYamlPath;
+    config.name = newName;
+    writeFileSync(updatedYamlPath, stringify(config, { lineWidth: 120 }), "utf-8");
+
+    // 3. Update active_context if it pointed to the old name
+    if (existsSync(ACTIVE_CONTEXT_FILE)) {
+      const activeName = readFileSync(ACTIVE_CONTEXT_FILE, "utf-8").trim();
+      if (activeName === oldName) {
+        writeFileSync(ACTIVE_CONTEXT_FILE, newName, "utf-8");
+      }
+    }
+
+    // 4. Update links in other contexts that reference the old name
+    if (existsSync(CONTEXTS_DIR)) {
+      const resolvedOldDir = resolve(globalDir);
+      for (const entry of readdirSync(CONTEXTS_DIR, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const otherYaml = join(CONTEXTS_DIR, entry.name, "context.yaml");
+        if (!existsSync(otherYaml)) continue;
+        const otherConfig = this.loadContextYaml(otherYaml);
+        if (!otherConfig?.links?.length) continue;
+
+        let changed = false;
+        for (const link of otherConfig.links) {
+          if (link.name === oldName) {
+            link.name = newName;
+            if (isGlobal && resolve(link.path) === resolvedOldDir) {
+              link.path = newGlobalDir;
+            }
+            changed = true;
+          }
+        }
+        if (changed) {
+          writeFileSync(otherYaml, stringify(otherConfig, { lineWidth: 120 }), "utf-8");
+        }
+      }
+    }
+
+    return { path: finalPath, source: isLocal ? "project" : "global" };
   }
 
   // ─── Helpers ──────────────────────────────────────────
