@@ -13,7 +13,7 @@ function run(cmd: string, cwd: string): string {
   return execSync(cmd, { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 
-function readVersion(repoPath: string): string {
+export function readVersion(repoPath: string): string {
   const pkgPath = join(repoPath, "package.json");
   if (!existsSync(pkgPath)) return "unknown";
   try {
@@ -24,7 +24,7 @@ function readVersion(repoPath: string): string {
   }
 }
 
-function syncNewFiles(source: string, target: string): void {
+export function syncNewFiles(source: string, target: string): void {
   if (!existsSync(source)) return;
   mkdirSync(target, { recursive: true });
   cpSync(source, target, { recursive: true, force: false });
