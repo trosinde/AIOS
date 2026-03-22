@@ -284,5 +284,19 @@ describe("PatternRegistry", () => {
       expect(reg.patternsDir).toBe(dirA);
       expect(reg.patternsDirs).toEqual([dirA]);
     });
+
+    it("ignoriert nicht-existierende Verzeichnisse im Array", () => {
+      writePattern(dirA, "pattern_a", "dir-a");
+      const reg = new PatternRegistry([dirA, "/tmp/nonexistent_xyz_98765"]);
+      expect(reg.get("pattern_a")).toBeDefined();
+      expect(reg.list().length).toBe(1);
+    });
+
+    it("behandelt doppelte Verzeichnisse ohne Fehler", () => {
+      writePattern(dirA, "pattern_a", "dir-a");
+      const reg = new PatternRegistry([dirA, dirA]);
+      expect(reg.get("pattern_a")).toBeDefined();
+      expect(reg.list().length).toBe(1);
+    });
   });
 });
