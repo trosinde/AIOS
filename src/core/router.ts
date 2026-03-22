@@ -22,37 +22,80 @@ export class Router {
     const parts = [`## AUFGABE\n\n${task}`, `## VERFÜGBARE PATTERNS\n\n${catalog}`];
     if (projectContext) parts.push(`## PROJEKTKONTEXT\n\n${projectContext}`);
 
-    const response = await this.provider.complete(systemPrompt, parts.join("\n\n"), undefined, ctx);
+    const userInput = parts.join("\n\n");
+    const response = await this.provider.complete(systemPrompt, userInput, undefined, ctx);
+    let plan = this.extractPlan(response.content);
 
-    // JSON aus Antwort extrahieren (LLM könnte es in ```json``` wrappen)
+    // Validate: retry once if LLM hallucinated patterns
+    const invalidPatterns = this.findInvalidPatterns(plan);
+    if (invalidPatterns.length > 0) {
+      const unique = [...new Set(invalidPatterns)];
+      const correction = `\n\n## KORREKTUR\n\nDein vorheriger Plan enthielt ungültige Patterns: ${unique.join(", ")}\nDiese existieren NICHT im Katalog. Bitte erstelle einen neuen Plan NUR mit Patterns aus dem Katalog.`;
+      const retryResponse = await this.provider.complete(systemPrompt, userInput + correction, undefined, ctx);
+      plan = this.extractPlan(retryResponse.content);
+
+      const stillInvalid = this.findInvalidPatterns(plan);
+      if (stillInvalid.length > 0) {
+        plan = this.filterInvalidSteps(plan);
+        if (plan.plan.steps.length === 0) {
+          throw new Error("Router konnte keinen gültigen Plan erstellen – alle Patterns ungültig");
+        }
+      }
+    }
+
+    this.validateDependencies(plan);
+    return plan;
+  }
+
+  private extractPlan(content: string): ExecutionPlan {
     let jsonStr: string;
-    const fencedMatch = response.content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    const fencedMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
     if (fencedMatch) {
       jsonStr = fencedMatch[1];
     } else {
-      const rawMatch = response.content.match(/\{[\s\S]*\}/);
+      const rawMatch = content.match(/\{[\s\S]*\}/);
       if (!rawMatch) {
-        throw new Error("Router hat keinen gültigen Plan erzeugt:\n" + response.content);
+        throw new Error("Router hat keinen gültigen Plan erzeugt:\n" + content);
       }
       jsonStr = rawMatch[0];
     }
 
-    let plan: ExecutionPlan;
     try {
-      plan = JSON.parse(jsonStr);
+      return JSON.parse(jsonStr);
     } catch {
       throw new Error("Router hat ungültiges JSON erzeugt:\n" + jsonStr.slice(0, 200));
     }
-    this.validate(plan);
-    return plan;
   }
 
-  private validate(plan: ExecutionPlan): void {
-    const ids = new Set(plan.plan.steps.map((s) => s.id));
+  private findInvalidPatterns(plan: ExecutionPlan): string[] {
+    return plan.plan.steps
+      .map(s => s.pattern)
+      .filter(p => !this.registry.get(p));
+  }
+
+  private filterInvalidSteps(plan: ExecutionPlan): ExecutionPlan {
+    const removedIds = new Set<string>();
     for (const step of plan.plan.steps) {
       if (!this.registry.get(step.pattern)) {
-        throw new Error(`Pattern "${step.pattern}" im Plan existiert nicht`);
+        console.error(`⚠️  Pattern "${step.pattern}" existiert nicht – Step "${step.id}" wird übersprungen`);
+        removedIds.add(step.id);
       }
+    }
+
+    const steps = plan.plan.steps
+      .filter(step => !removedIds.has(step.id))
+      .map(step => {
+        const depends_on = step.depends_on.filter(dep => !removedIds.has(dep));
+        const input_from = step.input_from.filter(ref => !removedIds.has(ref));
+        return { ...step, depends_on, input_from: input_from.length > 0 ? input_from : ["$USER_INPUT"] };
+      });
+
+    return { ...plan, plan: { ...plan.plan, steps } };
+  }
+
+  private validateDependencies(plan: ExecutionPlan): void {
+    const ids = new Set(plan.plan.steps.map((s) => s.id));
+    for (const step of plan.plan.steps) {
       for (const dep of step.depends_on) {
         if (!ids.has(dep)) throw new Error(`Dependency "${dep}" in Step "${step.id}" existiert nicht`);
       }
