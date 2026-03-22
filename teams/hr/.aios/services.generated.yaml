@@ -1,0 +1,55 @@
+- name: employees
+  description: Mitarbeiterverzeichnis mit Kontaktdaten und Abteilungszuordnung
+  context: hr
+  data_file: employees.json
+  fields:
+    - name: name
+      type: string
+      sample: Max Mustermann
+    - name: personnel_number
+      type: string
+      sample: P-1042
+    - name: department
+      type: string
+      sample: Engineering
+    - name: role
+      type: string
+      sample: Senior Developer
+    - name: email
+      type: string
+      sample: max.mustermann@firma.de
+    - name: location
+      type: string
+      sample: Berlin
+    - name: start_date
+      type: string
+      sample: 2020-03-15
+  key_fields:
+    - name
+    - personnel_number
+    - department
+    - email
+  record_count: 5
+  last_indexed: 1774209546887
+- name: departments
+  description: Abteilungen mit Leitung und Standort
+  context: hr
+  data_file: departments.yaml
+  fields:
+    - name: name
+      type: string
+      sample: Engineering
+    - name: head
+      type: string
+      sample: Max Mustermann
+    - name: location
+      type: string
+      sample: Berlin
+    - name: headcount
+      type: number
+      sample: "12"
+  key_fields:
+    - name
+    - head
+  record_count: 4
+  last_indexed: 1774209546888
