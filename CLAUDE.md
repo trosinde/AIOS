@@ -198,6 +198,8 @@ aios patterns list                       # List all patterns
 aios patterns show <name>               # Show pattern details
 aios persona list                        # List all personas
 aios persona validate [name]             # Validate persona against Base Trait Protocol
+aios update                              # Update AIOS auf neueste Version
+aios update --check                      # Nur prüfen ob Updates verfügbar
 aios configure                           # Interaktiver Setup-Wizard
 aios context init <name> [--local]       # Create new context
 aios context switch <name>               # Switch active context

@@ -56,36 +56,14 @@ paths:
   personas: ./personas
 
 mcp:
-  servers:
-    azure-devops:
-      command: node
-      args: ["/mnt/c/Users/rosin-1/repos/mcp-azure_devops/ts/dist/index.js"]
-      category: devops
-      prefix: azdo
-      description: "Azure DevOps – Work Items, Git, Tests, Sprints"
-      env:
-        AZDO_CONFIG: "./azdo-config.json"
-    pdftools:
-      command: node
-      args: ["/mnt/c/Users/rosin-1/repos/mcp_pdftools/mcp-server/dist/index.js"]
-      category: pdf
-      prefix: pdf
-      description: "PDFTools – PDF operations (merge, split, extract, convert)"
-      exclude: [pdf_ocr]
-      env:
-        MCP_PDFTOOLS_VENV: "/mnt/c/Users/rosin-1/repos/mcp_pdftools/venv/bin/python"
-    outlook:
-      command: /mnt/c/Users/rosin-1/repos/mcp_outlook/dotnet_bridge/bin/Release/net48/McpOutlookBridge.exe
-      args: ["--mcp"]
-      category: office
-      prefix: outlook
-      description: "Outlook – Calendar & Mail via COM"
-    intranet:
-      command: /mnt/c/Users/rosin-1/repos/mcp_intranet_scrapping/src/bin/Release/net48/McpIntranetScraper.exe
-      args: ["--mcp"]
-      category: web
-      prefix: intranet
-      description: "Intranet Scraper – Authenticated web scraping via Edge (NTLM/Kerberos)"
+  servers: {}
+  # MCP-Server werden über 'aios configure' oder ~/.aios/config.yaml konfiguriert.
+  # Beispiel:
+  #   azure-devops:
+  #     command: node
+  #     args: ["/pfad/zu/mcp-server/dist/index.js"]
+  #     category: devops
+  #     description: "Azure DevOps"
 
 rag:
   defaultProvider: local
