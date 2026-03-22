@@ -263,6 +263,62 @@ export interface ContextLink {
   relationship: "audits" | "consults" | "feeds" | "depends_on";
 }
 
+// ─── Data Manifest (User Space) ──────────────────────
+
+export interface DataSource {
+  file: string;                    // Relativer Pfad zur Datendatei
+  name: string;                    // Service-Name (snake_case)
+  description: string;
+  key_fields?: string[];           // Felder für direkte Suche
+}
+
+export interface DataManifest {
+  version: "1.0";
+  sources: DataSource[];
+}
+
+// ─── Auto-generierte Service Interfaces (User Space) ──
+
+export interface InferredField {
+  name: string;
+  type: "string" | "number" | "boolean" | "object" | "array";
+  sample?: string;
+}
+
+export interface ServiceEndpoint {
+  name: string;
+  description: string;
+  context: string;
+  data_file: string;
+  fields: InferredField[];
+  key_fields: string[];
+  record_count: number;
+  last_indexed: number;
+}
+
+export interface ServiceCallResult {
+  endpoint: string;
+  context: string;
+  query: Record<string, unknown>;
+  results: Record<string, unknown>[];
+  method: "direct" | "llm";
+  durationMs: number;
+}
+
+export interface ServiceRequest {
+  id: string;
+  trace_id: string;
+  source_context: string;
+  target_context: string;
+  endpoint: string;
+  input: string;
+  status: "pending" | "running" | "completed" | "failed";
+  created_at: number;
+  completed_at?: number;
+  response?: string;
+  error?: string;
+}
+
 export interface ComplianceStandard {
   id: string;
   level?: string;

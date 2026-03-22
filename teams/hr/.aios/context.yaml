@@ -1,0 +1,46 @@
+schema_version: "1.0"
+name: hr
+description: "Human Resources – Mitarbeiterverwaltung, Personalwesen"
+type: team
+
+capabilities:
+  - id: employee_management
+    description: "Verwaltet Mitarbeiterdaten und Personalinformationen"
+    input_types: [query, personnel_number, name]
+    output_type: employee_info
+  - id: department_management
+    description: "Abteilungsverwaltung und Organigramm"
+    input_types: [query]
+    output_type: department_info
+
+exports:
+  - type: employee_info
+    scope: shared
+    description: "Mitarbeiterinformationen (Name, Abteilung, Rolle, Kontakt)"
+  - type: department_info
+    scope: shared
+    description: "Abteilungsinformationen und Struktur"
+
+accepts:
+  - type: employee_query
+    description: "Anfragen zu Mitarbeitern nach Name oder Personalnummer"
+
+links:
+  - name: securitas
+    path: ../securitas
+    relationship: consults
+  - name: network
+    path: ../network
+    relationship: consults
+
+config:
+  default_provider: claude
+  patterns_dir: ./patterns
+  personas_dir: ./personas
+  knowledge_dir: ./knowledge
+  team:
+    personas: []
+
+permissions:
+  allow_ipc: true
+  allow_tool_execution: false

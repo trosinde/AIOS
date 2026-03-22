@@ -1,0 +1,33 @@
+- name: security_findings
+  description: Sicherheitsbefunde und Empfehlungen
+  context: securitas
+  data_file: security_findings.json
+  fields:
+    - name: id
+      type: string
+      sample: SEC-001
+    - name: title
+      type: string
+      sample: SQL Injection in Login-Formular
+    - name: severity
+      type: string
+      sample: critical
+    - name: component
+      type: string
+      sample: auth-service
+    - name: description
+      type: string
+      sample: Parametrisierte Queries nicht verwendet im Login-E…
+    - name: status
+      type: string
+      sample: open
+    - name: found_date
+      type: string
+      sample: 2026-03-10
+  key_fields:
+    - id
+    - title
+    - severity
+    - component
+  record_count: 5
+  last_indexed: 1774209546894

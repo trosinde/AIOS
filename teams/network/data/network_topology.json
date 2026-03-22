@@ -1,0 +1,52 @@
+[
+  {
+    "id": "NET-001",
+    "name": "Production VLAN",
+    "type": "vlan",
+    "subnet": "10.0.1.0/24",
+    "gateway": "10.0.1.1",
+    "description": "Produktionsnetzwerk für alle Services",
+    "status": "active",
+    "zone": "production"
+  },
+  {
+    "id": "NET-002",
+    "name": "Staging VLAN",
+    "type": "vlan",
+    "subnet": "10.0.2.0/24",
+    "gateway": "10.0.2.1",
+    "description": "Staging-Umgebung für Tests vor Deployment",
+    "status": "active",
+    "zone": "staging"
+  },
+  {
+    "id": "NET-003",
+    "name": "Management Network",
+    "type": "vlan",
+    "subnet": "10.0.100.0/24",
+    "gateway": "10.0.100.1",
+    "description": "Admin-Zugriff auf Netzwerk-Infrastruktur",
+    "status": "active",
+    "zone": "management"
+  },
+  {
+    "id": "NET-004",
+    "name": "DMZ",
+    "type": "dmz",
+    "subnet": "172.16.0.0/24",
+    "gateway": "172.16.0.1",
+    "description": "Demilitarisierte Zone für öffentliche Services",
+    "status": "active",
+    "zone": "public"
+  },
+  {
+    "id": "NET-005",
+    "name": "VPN Tunnel Berlin-München",
+    "type": "vpn",
+    "subnet": "10.10.0.0/16",
+    "gateway": "10.10.0.1",
+    "description": "Site-to-Site VPN zwischen Standorten",
+    "status": "active",
+    "zone": "inter-site"
+  }
+]

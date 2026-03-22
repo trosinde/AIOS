@@ -1,0 +1,36 @@
+- name: network_topology
+  description: Netzwerk-Topologien und Konfigurationen
+  context: network
+  data_file: network_topology.json
+  fields:
+    - name: id
+      type: string
+      sample: NET-001
+    - name: name
+      type: string
+      sample: Production VLAN
+    - name: type
+      type: string
+      sample: vlan
+    - name: subnet
+      type: string
+      sample: 10.0.1.0/24
+    - name: gateway
+      type: string
+      sample: 10.0.1.1
+    - name: description
+      type: string
+      sample: Produktionsnetzwerk für alle Services
+    - name: status
+      type: string
+      sample: active
+    - name: zone
+      type: string
+      sample: production
+  key_fields:
+    - id
+    - name
+    - type
+    - subnet
+  record_count: 5
+  last_indexed: 1774209546893

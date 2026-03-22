@@ -54,6 +54,7 @@ AIOS entwickelt sich zu einem **Betriebssystem-Kernel für AI-Agenten**. Das Ker
 - Domain-Patterns (CRA-spezifische Templates)
 - Context-lokales Wissen
 - Workflow-Definitionen für spezifische Projekte
+- Service Interfaces (data/manifest.yaml, Template-Daten, Query-Engine)
 
 **Die goldene Regel:** Wenn du überlegst ob etwas in den Kernel gehört, frage dich: "Würde ein Perl-Entwickler, ein Java-Entwickler UND ein CRA-Compliance-Beauftragter das gleichermaßen brauchen?" Nur wenn ja → Kernel. Sonst → User Space / Context.
 
@@ -81,6 +82,33 @@ User Input → [Router/Meta-Agent] → Execution Plan (JSON) → [DAG Engine] �
 ### Execution Plan Types
 
 Plans have a `type` field: `pipe`, `scatter_gather`, `dag`, or `saga`. Steps can have `retry`, `quality_gate`, and `compensate` (saga rollback) configuration.
+
+### Service Interfaces (User Space)
+
+Kontexte können strukturierte Daten als abfragbare Services bereitstellen. Komplett im User Space – kein Kernel-Code betroffen.
+
+```
+teams/hr/
+├── .aios/context.yaml                 ← Kontext-Definition
+├── data/
+│   ├── manifest.yaml                  ← Deklariert welche Dateien Services sind
+│   ├── employees.json                 ← Strukturierte Daten (Array von Objekten)
+│   └── departments.yaml              ← Weitere Datenquellen
+└── .aios/services.generated.yaml      ← Auto-generierter Cache
+```
+
+**Ablauf:**
+1. `aios service init teams/hr` → Liest `context.yaml` exports, generiert Template-Daten + `data/manifest.yaml`
+2. `aios service list` → Inferiert Schema aus Dateien, zeigt alle Endpoints
+3. `aios service call hr.employees '{"name": "Max"}'` → Hybrid-Suche: direkt in JSON, bei Bedarf LLM-Fallback
+
+**Module** (alle in `src/service/`, User Space):
+- `manifest-parser.ts` – Liest und validiert `data/manifest.yaml`
+- `schema-inferrer.ts` – Erkennt Felder/Typen aus JSON/YAML automatisch
+- `service-generator.ts` – Generiert ServiceEndpoints mit mtime-basiertem Cache
+- `query-engine.ts` – Hybrid: direkte Suche + LLM-Fallback (via PromptBuilder)
+- `service-bus.ts` – Orchestrierung, Discovery, SQLite Request-Tracking
+- `service-init.ts` – Bootstrap für bestehende Kontexte (domänenspezifische Templates)
 
 ## Kernel ABI – Stabilitätsvertrag
 
@@ -213,6 +241,11 @@ aios context show                        # Show active context
 aios knowledge publish --type <type>     # Publish knowledge item (stdin)
 aios knowledge query [--type] [--tags]   # Query knowledge bus
 aios knowledge search <query>            # Full-text search
+aios service init [path]                 # Bootstrap service interface für Kontext
+aios service list                        # Alle Service-Endpoints auflisten
+aios service show <ctx>.<endpoint>       # Endpoint-Details + Schema anzeigen
+aios service call <ctx>.<ep> <json>      # Service-Endpoint abfragen
+aios service refresh [context]           # Service-Cache neu generieren
 ```
 
 ## Aktueller Fokus: Kernel-OS-Evolution
@@ -264,7 +297,18 @@ aios knowledge search <query>            # Full-text search
 - [x] `.env` Management (loadEnv, saveEnv)
 - [x] `saveConfig()` für Config-Persistierung
 
-### Noch offen (nach Phase 4)
+### Phase 4b – Service Interfaces (Cross-Context Data Sharing) ✅
+- [x] `data/manifest.yaml` als Deklaration welche Dateien als Service verfügbar sind
+- [x] Schema-Inferenz aus JSON/YAML-Datendateien (`src/service/schema-inferrer.ts`)
+- [x] Service-Generator mit Cache-Invalidierung (`src/service/service-generator.ts`)
+- [x] Hybrid Query-Engine: direkte Suche + LLM-Fallback (`src/service/query-engine.ts`)
+- [x] ServiceBus: Discovery, Call, Request-Tracking in SQLite (`src/service/service-bus.ts`)
+- [x] `aios service init` Bootstrap für bestehende Kontexte (`src/service/service-init.ts`)
+- [x] `aios service list/show/call/refresh` CLI-Befehle
+- [x] PromptBuilder-Integration für sichere LLM-Calls
+- [x] Beispiel-Kontexte: HR (Mitarbeiter, Abteilungen), Securitas (Findings), Network (Topologie)
+
+### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)
 - Phase 7: Stable Kernel ABI v1.0 Freeze

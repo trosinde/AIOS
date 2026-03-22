@@ -911,6 +911,196 @@ knowledgeCmd
     bus.close();
   });
 
+// ─── aios service ────────────────────────────────────────
+const serviceCmd = program.command("service").description("Service Interface Verwaltung");
+
+serviceCmd
+  .command("init [path]")
+  .description("Service-Interface für bestehenden Kontext einrichten")
+  .action(async (contextPath?: string) => {
+    const { initServiceInterface } = await import("./service/service-init.js");
+    const cwd = contextPath ? join(process.cwd(), contextPath) : process.cwd();
+
+    try {
+      const result = initServiceInterface(cwd);
+
+      if (!result.manifestCreated) {
+        console.error(chalk.yellow(result.message));
+        return;
+      }
+
+      console.error(chalk.green(`✅ ${result.message}`));
+
+      if (result.dataFilesCreated.length > 0) {
+        console.error(chalk.gray("\nErstellt Template-Dateien:"));
+        for (const f of result.dataFilesCreated) {
+          console.error(chalk.gray(`  → data/${f} (bitte mit echten Daten ersetzen)`));
+        }
+      }
+
+      if (result.sourcesDetected.length > 0) {
+        console.error(chalk.gray("\nErkannte Services:"));
+        for (const s of result.sourcesDetected) {
+          console.error(chalk.gray(`  → ${s.name}: ${s.description}`));
+          if (s.key_fields?.length) {
+            console.error(chalk.gray(`    key_fields: ${s.key_fields.join(", ")}`));
+          }
+        }
+      }
+
+      console.error(chalk.gray("\nNächste Schritte:"));
+      console.error(chalk.gray("  1. Template-Daten in data/ mit echten Daten ersetzen"));
+      console.error(chalk.gray("  2. data/manifest.yaml anpassen (key_fields, descriptions)"));
+      console.error(chalk.gray("  3. 'aios service list' um Endpoints zu prüfen"));
+    } catch (err) {
+      console.error(chalk.red(`Fehler: ${err instanceof Error ? err.message : err}`));
+      process.exit(1);
+    }
+  });
+
+serviceCmd
+  .command("list")
+  .description("Alle verfügbaren Service-Endpoints auflisten")
+  .action(async () => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      const endpoints = bus.discoverAll();
+
+      if (endpoints.length === 0) {
+        console.error(chalk.yellow("Keine Service-Endpoints gefunden."));
+        console.error(chalk.gray("Erstelle data/manifest.yaml in einem Kontext-Verzeichnis."));
+        return;
+      }
+
+      for (const ep of endpoints) {
+        console.log(chalk.bold(`  ${ep.context}.${ep.name}`) + chalk.gray(`  ${ep.description} (${ep.record_count} records)`));
+        console.log(chalk.gray(`    → key_fields: ${ep.key_fields.join(", ")}`));
+        console.log(chalk.gray(`    → fields: ${ep.fields.map((f) => `${f.name}:${f.type}`).join(", ")}`));
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("show <endpoint>")
+  .description("Service-Endpoint Details anzeigen (Format: context.endpoint)")
+  .action(async (endpointArg: string) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+
+    const dotIdx = endpointArg.indexOf(".");
+    if (dotIdx < 0) {
+      console.error(chalk.red("Format: <context>.<endpoint> (z.B. hr.employees)"));
+      process.exit(1);
+    }
+
+    const contextName = endpointArg.slice(0, dotIdx);
+    const endpointName = endpointArg.slice(dotIdx + 1);
+
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      const endpoints = bus.discoverForContext(contextName);
+      const ep = endpoints.find((e) => e.name === endpointName);
+
+      if (!ep) {
+        console.error(chalk.red(`Endpoint "${endpointName}" nicht im Kontext "${contextName}" gefunden.`));
+        const available = endpoints.map((e) => `${contextName}.${e.name}`).join(", ");
+        if (available) console.error(chalk.gray(`Verfügbar: ${available}`));
+        process.exit(1);
+      }
+
+      console.log(chalk.bold(`\nEndpoint: ${ep.context}.${ep.name}`));
+      console.log(`Beschreibung: ${ep.description}`);
+      console.log(`Datendatei: ${ep.data_file}`);
+      console.log(`Datensätze: ${ep.record_count}`);
+      console.log(`Key-Fields: ${ep.key_fields.join(", ")}`);
+      console.log(chalk.bold("\nSchema:"));
+      for (const field of ep.fields) {
+        console.log(`  ${field.name}: ${field.type}${field.sample ? chalk.gray(` (z.B. "${field.sample}")`) : ""}`);
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("call <endpoint> [input]")
+  .description("Service-Endpoint aufrufen (Format: context.endpoint)")
+  .option("--provider <name>", "Provider für LLM-Fallback überschreiben")
+  .action(async (endpointArg: string, inputArg: string | undefined) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const { randomUUID } = await import("crypto");
+
+    const dotIdx = endpointArg.indexOf(".");
+    if (dotIdx < 0) {
+      console.error(chalk.red("Format: <context>.<endpoint> (z.B. hr.employees)"));
+      process.exit(1);
+    }
+
+    const contextName = endpointArg.slice(0, dotIdx);
+    const endpointName = endpointArg.slice(dotIdx + 1);
+
+    // Read input from argument or stdin
+    let inputStr = inputArg;
+    if (!inputStr) {
+      inputStr = await readStdin();
+    }
+    if (!inputStr) {
+      console.error(chalk.red("Kein Input angegeben. Nutze: aios service call ctx.endpoint '{\"key\": \"value\"}'"));
+      process.exit(1);
+    }
+
+    let query: Record<string, unknown>;
+    try {
+      query = JSON.parse(inputStr) as Record<string, unknown>;
+    } catch {
+      console.error(chalk.red("Input muss gültiges JSON sein."));
+      process.exit(1);
+    }
+
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    const ctx = {
+      trace_id: randomUUID(),
+      context_id: "cli",
+      started_at: Date.now(),
+    };
+
+    try {
+      const result = await bus.call(contextName, endpointName, query, ctx);
+      console.error(chalk.gray(`[${result.method}] ${result.results.length} Treffer (${result.durationMs}ms)`));
+      console.log(JSON.stringify(result.results, null, 2));
+    } catch (err) {
+      console.error(chalk.red(`Fehler: ${err instanceof Error ? err.message : err}`));
+      process.exit(1);
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("refresh [context]")
+  .description("Service-Cache neu generieren")
+  .action(async (contextName?: string) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      if (contextName) {
+        const endpoints = bus.discoverForContext(contextName);
+        console.log(chalk.green(`✅ ${endpoints.length} Endpoints für "${contextName}" neu generiert.`));
+      } else {
+        const endpoints = bus.discoverAll();
+        console.log(chalk.green(`✅ ${endpoints.length} Endpoints insgesamt neu generiert.`));
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 
