@@ -12,6 +12,7 @@ input_format: txt
 output_type: file
 output_format: [pdf]
 tags: [pdf, merge, combine, document]
+can_follow: [pdf_split]
 ---
 
 # PDF Merge

@@ -7,11 +7,12 @@ category: pdf
 type: tool
 tool: tsx
 tool_args: ["tools/pdf-tools.ts", "split", "$INPUT", "$OUTPUT"]
-input_type: file_with_spec
+input_type: file_path
 input_format: txt
 output_type: file
 output_format: [pdf]
 tags: [pdf, split, pages, document]
+can_precede: [pdf_merge, pdf_extract_text]
 ---
 
 # PDF Split

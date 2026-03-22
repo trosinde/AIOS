@@ -12,6 +12,8 @@ input_format: txt
 output_type: file
 output_format: [pdf]
 tags: [pdf, convert, image, png, jpg, document]
+can_follow: [extract_images]
+can_precede: [pdf_merge]
 ---
 
 # PDF Convert (Image → PDF)
