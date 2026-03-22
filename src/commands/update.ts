@@ -71,6 +71,9 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     return;
   }
 
+  // Save current commit for rollback
+  const rollbackRef = run("git rev-parse HEAD", repoPath);
+
   // Pull changes
   const pullSpinner = ora({ text: "Lade Updates...", stream: process.stderr }).start();
   try {
@@ -88,7 +91,9 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     run("npm install --silent", repoPath);
     depsSpinner.succeed("Dependencies installiert");
   } catch {
-    depsSpinner.fail("npm install fehlgeschlagen");
+    depsSpinner.fail("npm install fehlgeschlagen — Rollback...");
+    run(`git reset --hard ${rollbackRef}`, repoPath);
+    console.error(chalk.yellow("  Rollback auf vorherige Version durchgeführt"));
     process.exit(1);
   }
 
@@ -98,7 +103,10 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     run("npm run build --silent", repoPath);
     buildSpinner.succeed("Build erfolgreich");
   } catch {
-    buildSpinner.fail("Build fehlgeschlagen");
+    buildSpinner.fail("Build fehlgeschlagen — Rollback...");
+    run(`git reset --hard ${rollbackRef}`, repoPath);
+    run("npm run build --silent", repoPath);
+    console.error(chalk.yellow("  Rollback auf vorherige Version durchgeführt"));
     process.exit(1);
   }
 
