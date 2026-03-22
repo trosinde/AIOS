@@ -1103,6 +1103,16 @@ program
     await runConfigure();
   });
 
+// ─── aios update ────────────────────────────────────────
+program
+  .command("update")
+  .description("AIOS auf die neueste Version aktualisieren")
+  .option("--check", "Nur prüfen ob Updates verfügbar sind")
+  .action(async (opts) => {
+    const { runUpdate } = await import("./commands/update.js");
+    await runUpdate(opts);
+  });
+
 // ─── aios mcp-server ─────────────────────────────────────
 program
   .command("mcp-server")
