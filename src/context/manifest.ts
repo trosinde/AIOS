@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { stringify, parse } from "yaml";
 import type { ContextManifest } from "../types.js";
 
@@ -76,7 +76,6 @@ export function validateManifest(manifest: ContextManifest): void {
  * Verhindert Path-Traversal-Angriffe über patterns_dir/personas_dir.
  */
 export function assertPathWithinBase(resolvedPath: string, basePath: string): void {
-  const { resolve } = require("node:path") as typeof import("node:path");
   const normalizedBase = resolve(basePath);
   const normalizedTarget = resolve(resolvedPath);
   if (!normalizedTarget.startsWith(normalizedBase)) {

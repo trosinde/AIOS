@@ -11,7 +11,8 @@ vi.mock("../utils/config.js", () => ({
   getAiosHome: () => mockHome,
 }));
 
-// Import after mock
+// Import after mock – types can be imported statically (not affected by vi.mock)
+import type { RegistryEntry } from "./registry.js";
 const { readRegistry, writeRegistry, registerContext, unregisterContext, buildContextCatalog } =
   await import("./registry.js");
 
@@ -40,6 +41,7 @@ describe("registry", () => {
         type: "project",
         description: "Test context",
         capabilities: ["code_generation"],
+        links: [],
         last_updated: "2026-03-20T00:00:00.000Z",
       }],
     });
@@ -148,5 +150,126 @@ describe("registry", () => {
     expect(catalog).toContain("team");
     expect(catalog).toContain("Katalog-Test");
     expect(catalog).toContain("review");
+  });
+
+  // ─── Links in Registry ──────────────────────────────────
+
+  it("speichert Links bei registerContext", () => {
+    const manifest: ContextManifest = {
+      schema_version: "1.0",
+      name: "securitas",
+      description: "Security-Team",
+      type: "team",
+      capabilities: [{ id: "security_audit", description: "Audits", input_types: ["code"], output_type: "report" }],
+      exports: [],
+      accepts: [],
+      config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      links: [
+        { name: "network", path: "/tmp/network", relationship: "consults" },
+      ],
+    };
+
+    registerContext(manifest, "/tmp/securitas");
+
+    const registry = readRegistry();
+    expect(registry.contexts).toHaveLength(1);
+    expect(registry.contexts[0].links).toHaveLength(1);
+    expect(registry.contexts[0].links![0].name).toBe("network");
+    expect(registry.contexts[0].links![0].relationship).toBe("consults");
+  });
+
+  it("zeigt Links im Katalog-Text", () => {
+    const securitas: ContextManifest = {
+      schema_version: "1.0",
+      name: "securitas",
+      description: "Security-Team",
+      type: "team",
+      capabilities: [{ id: "security_audit", description: "Audits", input_types: ["code"], output_type: "report" }],
+      exports: [],
+      accepts: [],
+      config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      links: [{ name: "network", path: "/tmp/network", relationship: "consults" }],
+    };
+
+    const network: ContextManifest = {
+      schema_version: "1.0",
+      name: "network",
+      description: "Network-Team",
+      type: "team",
+      capabilities: [{ id: "network_design", description: "Netzwerk-Design", input_types: ["requirements"], output_type: "design" }],
+      exports: [],
+      accepts: [],
+      config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      links: [{ name: "securitas", path: "/tmp/securitas", relationship: "consults" }],
+    };
+
+    registerContext(securitas, "/tmp/securitas");
+    registerContext(network, "/tmp/network");
+
+    const catalog = buildContextCatalog();
+    expect(catalog).toContain("securitas");
+    expect(catalog).toContain("network");
+    expect(catalog).toContain("network (consults)");
+    expect(catalog).toContain("securitas (consults)");
+  });
+
+  it("aktualisiert Links bei erneutem registerContext", () => {
+    const manifest: ContextManifest = {
+      schema_version: "1.0",
+      name: "team-a",
+      description: "Team A",
+      type: "team",
+      capabilities: [],
+      exports: [],
+      accepts: [],
+      config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      links: [],
+    };
+
+    registerContext(manifest, "/tmp/team-a");
+    expect(readRegistry().contexts[0].links).toEqual([]);
+
+    manifest.links = [{ name: "team-b", path: "/tmp/team-b", relationship: "audits" }];
+    registerContext(manifest, "/tmp/team-a");
+
+    const registry = readRegistry();
+    expect(registry.contexts).toHaveLength(1);
+    expect(registry.contexts[0].links).toHaveLength(1);
+    expect(registry.contexts[0].links![0].relationship).toBe("audits");
+  });
+
+  it("liest Registry-Einträge ohne links-Feld (Rückwärtskompatibilität)", () => {
+    writeRegistry({
+      contexts: [{
+        name: "legacy",
+        path: "/tmp/legacy",
+        type: "project",
+        description: "Legacy entry ohne links",
+        capabilities: ["code_generation"],
+        last_updated: "2026-01-01T00:00:00.000Z",
+      } as RegistryEntry],
+    });
+
+    const catalog = buildContextCatalog();
+    expect(catalog).toContain("legacy");
+    expect(catalog).toContain("keine");
+  });
+
+  it("Katalog zeigt 'keine' wenn Kontext ohne Links", () => {
+    const manifest: ContextManifest = {
+      schema_version: "1.0",
+      name: "lone-wolf",
+      description: "Alleinstehender Kontext",
+      type: "project",
+      capabilities: [],
+      exports: [],
+      accepts: [],
+      config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      links: [],
+    };
+
+    registerContext(manifest, "/tmp/lone-wolf");
+    const catalog = buildContextCatalog();
+    expect(catalog).toContain("keine");
   });
 });

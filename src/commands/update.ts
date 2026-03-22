@@ -121,6 +121,22 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   syncNewFiles(join(repoPath, "personas"), join(aiosHome, "personas"));
   syncSpinner.succeed("Patterns & Personas synchronisiert");
 
+  // Scan and refresh context registry
+  const scanSpinner = ora({ text: "Aktualisiere Kontext-Registry...", stream: process.stderr }).start();
+  try {
+    const { scanContexts } = await import("../context/scanner.js");
+    const scanPaths = [process.cwd(), aiosHome];
+    const scanResult = scanContexts(scanPaths);
+    const total = scanResult.discovered.length + scanResult.updated.length;
+    const parts: string[] = [`${total} Kontext(e)`];
+    if (scanResult.discovered.length > 0) parts.push(`${scanResult.discovered.length} neu`);
+    if (scanResult.stale.length > 0) parts.push(`${scanResult.stale.length} entfernt`);
+    if (scanResult.brokenLinks.length > 0) parts.push(`${scanResult.brokenLinks.length} defekte Links`);
+    scanSpinner.succeed(`Kontext-Registry: ${parts.join(", ")}`);
+  } catch {
+    scanSpinner.warn("Kontext-Scan übersprungen");
+  }
+
   // Summary
   const newVersion = readVersion(repoPath);
   console.error();

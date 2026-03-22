@@ -13,12 +13,18 @@ import type { ContextManifest } from "../types.js";
 
 const REGISTRY_FILE = "registry.yaml";
 
+export interface RegistryLink {
+  name: string;
+  relationship: string;
+}
+
 export interface RegistryEntry {
   name: string;
   path: string;
   type: ContextManifest["type"];
   description: string;
   capabilities: string[];
+  links?: RegistryLink[];
   last_updated: string;
 }
 
@@ -54,6 +60,7 @@ export function registerContext(manifest: ContextManifest, contextPath: string):
     type: manifest.type,
     description: manifest.description,
     capabilities: manifest.capabilities.map((c) => c.id),
+    links: (manifest.links ?? []).map((l) => ({ name: l.name, relationship: l.relationship })),
     last_updated: new Date().toISOString(),
   };
 
@@ -85,6 +92,7 @@ export function buildContextCatalog(): string {
       `Pfad: ${c.path}`,
       `Beschreibung: ${c.description}`,
       `Fähigkeiten: ${c.capabilities.join(", ")}`,
+      `Verknüpfungen: ${c.links?.length ? c.links.map((l) => `${l.name} (${l.relationship})`).join(", ") : "keine"}`,
     ].join("\n"))
     .join("\n\n");
 }

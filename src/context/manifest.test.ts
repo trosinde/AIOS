@@ -189,6 +189,52 @@ describe("manifest", () => {
     expect(merged.config.standards).toEqual(["IEC 62443"]);
   });
 
+  // ─── Links Roundtrip ─────────────────────────────────────
+
+  it("persistiert Links korrekt (write → read roundtrip)", () => {
+    const manifest = createDefaultManifest("linked-ctx", "team");
+    manifest.description = "Kontext mit Links";
+    manifest.links = [
+      { name: "securitas", path: "/tmp/securitas", relationship: "consults" },
+      { name: "devops", path: "/tmp/devops", relationship: "feeds" },
+    ];
+
+    writeManifest(tmpDir, manifest);
+    const loaded = readManifest(tmpDir);
+
+    expect(loaded.links).toHaveLength(2);
+    expect(loaded.links[0].name).toBe("securitas");
+    expect(loaded.links[0].relationship).toBe("consults");
+    expect(loaded.links[1].name).toBe("devops");
+    expect(loaded.links[1].relationship).toBe("feeds");
+  });
+
+  it("persistiert bidirektionale Links zwischen zwei Kontexten", () => {
+    const dir1 = join(tmpDir, "securitas");
+    const dir2 = join(tmpDir, "network");
+    mkdirSync(dir1, { recursive: true });
+    mkdirSync(dir2, { recursive: true });
+
+    const securitas = createDefaultManifest("securitas", "team");
+    securitas.description = "Security-Team";
+    securitas.links = [{ name: "network", path: dir2, relationship: "consults" }];
+
+    const network = createDefaultManifest("network", "team");
+    network.description = "Network-Team";
+    network.links = [{ name: "securitas", path: dir1, relationship: "consults" }];
+
+    writeManifest(dir1, securitas);
+    writeManifest(dir2, network);
+
+    const loadedSec = readManifest(dir1);
+    const loadedNet = readManifest(dir2);
+
+    expect(loadedSec.links[0].name).toBe("network");
+    expect(loadedNet.links[0].name).toBe("securitas");
+    expect(loadedSec.links[0].path).toBe(dir2);
+    expect(loadedNet.links[0].path).toBe(dir1);
+  });
+
   // ─── assertPathWithinBase ───────────────────────────────
 
   it("akzeptiert Pfad innerhalb der Basis", () => {

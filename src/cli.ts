@@ -528,6 +528,19 @@ contextCmd
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
     }
+
+    // Show federation links if manifest exists
+    try {
+      const { readManifest, hasContext } = await import("./context/manifest.js");
+      if (hasContext(active.path)) {
+        const manifest = readManifest(active.path);
+        if (manifest.links?.length) {
+          console.log(chalk.gray(`Links: ${manifest.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+      }
+    } catch {
+      // No manifest available – skip links display
+    }
   });
 
 // ─── aios context info [name] ────────────────────────────
@@ -572,7 +585,7 @@ contextCmd
     }
 
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
-    const { readRegistry } = await import("./context/registry.js");
+    const { readRegistry, registerContext } = await import("./context/registry.js");
     const { resolve } = await import("node:path");
 
     if (!hasContext(process.cwd())) {
@@ -611,6 +624,7 @@ contextCmd
     });
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpft: ${manifest.name} → ${targetName} (${opts.relationship})`));
   });
 
@@ -620,6 +634,7 @@ contextCmd
   .description("Verknüpfung zu anderem Kontext entfernen")
   .action(async (target: string) => {
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
+    const { registerContext } = await import("./context/registry.js");
     if (!hasContext(process.cwd())) {
       console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
       process.exit(1);
@@ -637,6 +652,7 @@ contextCmd
     }
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpfung zu "${target}" entfernt.`));
   });
 
@@ -660,8 +676,63 @@ contextCmd
       if (c.capabilities.length > 0) {
         console.log(chalk.gray(`  Capabilities: ${c.capabilities.join(", ")}`));
       }
+      if (c.links?.length) {
+        console.log(chalk.gray(`  Links: ${c.links.map((l: { name: string; relationship: string }) => `${l.name} (${l.relationship})`).join(", ")}`));
+      }
       console.log();
     }
+  });
+
+// ─── aios context scan ──────────────────────────────────
+contextCmd
+  .command("scan [paths...]")
+  .description("Dateisystem nach Kontexten durchsuchen und Registry aktualisieren")
+  .option("--depth <n>", "Maximale Suchtiefe", "3")
+  .action(async (paths: string[], opts) => {
+    const { scanContexts } = await import("./context/scanner.js");
+    const { getAiosHome } = await import("./utils/config.js");
+
+    const searchPaths = paths.length > 0
+      ? paths
+      : [process.cwd(), getAiosHome()];
+
+    const depth = parseInt(opts.depth, 10);
+    console.error(chalk.gray("Scanne nach Kontexten..."));
+
+    const result = scanContexts(searchPaths, Number.isNaN(depth) ? 3 : depth);
+
+    console.error(chalk.green("✓ Scan abgeschlossen"));
+
+    if (result.discovered.length > 0) {
+      console.error(chalk.green(`\n  Neu entdeckt (${result.discovered.length}):`));
+      for (const p of result.discovered) {
+        console.error(chalk.green(`    + ${p}`));
+      }
+    }
+
+    if (result.updated.length > 0) {
+      console.error(chalk.blue(`\n  Aktualisiert (${result.updated.length}):`));
+      for (const p of result.updated) {
+        console.error(chalk.gray(`    ~ ${p}`));
+      }
+    }
+
+    if (result.stale.length > 0) {
+      console.error(chalk.yellow(`\n  Entfernt (nicht mehr vorhanden) (${result.stale.length}):`));
+      for (const p of result.stale) {
+        console.error(chalk.yellow(`    - ${p}`));
+      }
+    }
+
+    if (result.brokenLinks.length > 0) {
+      console.error(chalk.red(`\n  Defekte Links (${result.brokenLinks.length}):`));
+      for (const bl of result.brokenLinks) {
+        console.error(chalk.red(`    ✗ ${bl.context} → ${bl.linkName} (${bl.path})`));
+      }
+    }
+
+    const total = result.discovered.length + result.updated.length;
+    console.error(chalk.gray(`\n  ${total} Kontext(e) in Registry, ${result.stale.length} entfernt, ${result.brokenLinks.length} defekte Links`));
   });
 
 // ─── aios persona ───────────────────────────────────────
