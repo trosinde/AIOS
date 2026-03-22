@@ -80,8 +80,15 @@ export function parseContextYaml(raw: string): ContextConfig {
 
 /**
  * Serialize a ContextConfig to clean YAML.
+ * Validates required fields before serializing.
  */
 export function serializeContext(ctx: ContextConfig): string {
+  if (!ctx.name || typeof ctx.name !== "string") {
+    throw new Error("serializeContext: 'name' is required");
+  }
+  if (ctx.type && !["project", "team", "library"].includes(ctx.type)) {
+    throw new Error(`serializeContext: invalid type '${ctx.type}'`);
+  }
   return yamlStringify(ctx, { lineWidth: 120 });
 }
 

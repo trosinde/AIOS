@@ -111,31 +111,52 @@ Bei Namenskollision gewinnt die spezifischere Ebene. Der Kernel loggt eine Warni
 ## 4. context.yaml Format
 
 ```yaml
-# Pflichtfelder
+# Unified ContextConfig Format (schema_version 1.0)
+# EIN Format für alle context.yaml Dateien
+
+# ─── Pflichtfelder ────────────────────────────────
+schema_version: "1.0"
 name: dvoi-engineering           # Eindeutig, kebab-case
-version: 1                       # Schema-Version
-
-# Beschreibung
 description: "CRA-Compliance und Requirements Engineering für DVOI"
-domain: "regulated-software"
+type: project                    # project | team | library
 
-# Trait-Requirements (Phase 2)
+# ─── Federation ───────────────────────────────────
+capabilities: []                 # Was dieser Kontext kann
+exports: []                      # Was er anderen zur Verfügung stellt
+accepts: []                      # Was er als Input akzeptiert
+links: []                        # Verknüpfungen zu anderen Kontexten
+
+# ─── Verzeichnisse & Provider ─────────────────────
+config:
+  default_provider: claude
+  patterns_dir: ./patterns
+  personas_dir: ./personas
+  knowledge_dir: ./knowledge
+
+# ─── Projekt-Details (optional) ───────────────────
+project:
+  domain: regulated-software
+  language: typescript
+  repo: https://github.com/org/dvoi
+
+# ─── Trait-Requirements (optional) ────────────────
 required_traits:
   - compliance_references
   - regulatory_classification
 
-# Provider-Overrides (optional)
-provider_defaults:
-  preferred: anthropic           # Bevorzugter Provider in diesem Context
-  fallback: ollama               # Fallback bei Nichtverfügbarkeit
+# ─── Provider-Routing (optional) ──────────────────
+providers:
+  routing:
+    complex: anthropic
+    quick: ollama
 
-# Knowledge-Konfiguration
+# ─── Knowledge (optional) ─────────────────────────
 knowledge:
-  backend: sqlite                # sqlite | chromadb
+  backend: sqlite                # sqlite
   isolation: strict              # strict = kein cross-context Zugriff
   retention_days: 90             # Auto-Cleanup nach N Tagen (0 = nie)
 
-# Berechtigungen
+# ─── Berechtigungen (optional) ────────────────────
 permissions:
   allow_ipc: true                # Darf Nachrichten über Knowledge Bus senden
   allow_tool_execution: true     # Darf CLI-Tools ausführen
