@@ -42,7 +42,7 @@ aios "Erstelle Requirements" --context dvoi-engineering
 | Option | Beschreibung |
 |--------|-------------|
 | `--dry-run` | Nur planen, nicht ausführen. Zeigt den Execution Plan als JSON |
-| `--provider <name>` | LLM-Provider überschreiben (`claude`, `ollama`, `gemini`) |
+| `--provider <name>` | LLM-Provider überschreiben (`anthropic`, `ollama`, `gemini`, `openai`, `opencode`) |
 | `--cross` | Cross-Context-Modus: orchestriert über mehrere Contexts hinweg |
 | `--context <name>` | Aufgabe an einen bestimmten Context delegieren |
 
@@ -52,12 +52,21 @@ aios "Erstelle Requirements" --context dvoi-engineering
 
 Führt ein einzelnes Pattern im Fabric-Style aus: stdin → LLM → stdout. Ideal für Pipes und Skripte.
 
+> **Hinweis:** Input via stdin ist **Pflicht**. Ohne stdin-Input bricht der Befehl mit Fehler ab.
+
 ```bash
 echo "Mein Code" | aios run analyze_code
 cat report.md | aios run summarize
 aios run extract_requirements --type=functional < spec.md
 aios run improve_writing --provider ollama < draft.txt
 ```
+
+Spezielle Pattern-Typen werden automatisch erkannt und unterschiedlich verarbeitet:
+- **`rag`** — Nutzt das RAG-Backend für semantische Suche
+- **`mcp`** — Delegiert an einen MCP-Server
+- **`tool`** — Führt ein CLI-Tool aus statt LLM-Aufruf
+- **`image_generation`** — Generiert Bilder
+- **Vision-Patterns** (`input_type: image`) — Verarbeiten Bilder als Input
 
 | Argument | Beschreibung |
 |----------|-------------|
@@ -66,7 +75,7 @@ aios run improve_writing --provider ollama < draft.txt
 | Option | Beschreibung |
 |--------|-------------|
 | `--provider <name>` | LLM-Provider überschreiben |
-| `--key=value` | Pattern-Parameter als Key-Value-Paare übergeben |
+| `--key=value` / `--key value` | Pattern-Parameter als Key-Value-Paare übergeben |
 
 ---
 
@@ -104,16 +113,23 @@ aios chat --provider ollama
 
 Initialisiert ein `.aios/`-Verzeichnis im aktuellen Projekt. Erstellt `context.yaml`, erkennt Technologien und generiert passende Agent-Instructions.
 
+**Re-Init-Verhalten:** Wenn `.aios/` bereits existiert, zeigt `aios init` ein interaktives Menü mit drei Optionen:
+1. **Refresh** — `agent-instructions.md` neu generieren aus bestehender `context.yaml`
+2. **Reconfigure** — Konfiguration neu durchlaufen
+3. **Abort** — Abbrechen
+
+Mit `--quick` wird bei bestehendem `.aios/` automatisch ein Refresh durchgeführt (keine Rückfrage).
+
 ```bash
-aios init                    # Interaktiver Wizard
-aios init --quick            # Auto-Detect, keine Fragen
+aios init                    # Interaktiver Wizard (oder Re-Init-Menü)
+aios init --quick            # Auto-Detect, keine Fragen (bei Re-Init: silent Refresh)
 aios init --yes              # Zeigt Plan, bestätigt automatisch
-aios init --refresh          # agent-instructions.md neu generieren
+aios init --refresh          # agent-instructions.md explizit neu generieren
 ```
 
 | Option | Beschreibung |
 |--------|-------------|
-| `--quick` | Automatische Erkennung ohne Rückfragen |
+| `--quick` | Automatische Erkennung ohne Rückfragen. Bei bestehendem `.aios/`: stiller Refresh |
 | `--yes` | Plan anzeigen und automatisch bestätigen |
 | `--refresh` | `agent-instructions.md` aus bestehender `context.yaml` neu generieren |
 | `--aios-path <path>` | AIOS-Installationspfad vorgeben |
@@ -357,6 +373,8 @@ aios patterns show extract_requirements
 
 Erstellt ein neues Pattern aus einem Template.
 
+> **Hinweis:** Das generierte Template enthält noch kein `kernel_abi: 1` im Frontmatter. Dieses Feld sollte manuell ergänzt werden, damit der Pattern-Loader keine Warnung ausgibt.
+
 ```bash
 aios patterns create my_custom_pattern
 aios patterns create compliance_check --category security --description "Prüft Compliance-Anforderungen"
@@ -373,5 +391,5 @@ aios patterns create compliance_check --category security --description "Prüft 
 
 - **Logging:** stderr (Statusmeldungen, Fehler) — **Output:** stdout (Ergebnisse, JSON)
 - **Stdin:** Viele Befehle lesen Input von stdin (Unix-Pipe-kompatibel)
-- **Provider:** Alle LLM-Befehle unterstützen `--provider` zur Provider-Auswahl
+- **Provider:** Alle LLM-Befehle unterstützen `--provider` zur Provider-Auswahl (`anthropic`, `ollama`, `gemini`, `openai`, `opencode`)
 - **Exit-Codes:** `0` = Erfolg, `1` = Fehler
