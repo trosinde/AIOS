@@ -237,7 +237,7 @@ export class ContextManager {
   }
 
   /**
-   * Rename a context (updates context.yaml, directory, active_context, registry).
+   * Rename a context (updates context.yaml, directory, active_context, links).
    * Works for both project-local and global contexts.
    */
   rename(oldName: string, newName: string, cwd: string = process.cwd()): { path: string; source: "project" | "global" } {
@@ -253,9 +253,14 @@ export class ContextManager {
       throw new Error(`Alter und neuer Name sind identisch: "${oldName}".`);
     }
 
-    // Find the context to rename
+    // Find the context to rename (cache config to avoid double read)
     const localContextPath = join(cwd, ".aios", "context.yaml");
-    const isLocal = existsSync(localContextPath) && this.loadContextYaml(localContextPath)?.name === oldName;
+    let cachedConfig: ContextConfig | null = null;
+    let isLocal = false;
+    if (existsSync(localContextPath)) {
+      cachedConfig = this.loadContextYaml(localContextPath);
+      isLocal = cachedConfig?.name === oldName;
+    }
 
     const globalDir = join(CONTEXTS_DIR, oldName);
     const isGlobal = !isLocal && existsSync(join(globalDir, "context.yaml"));
@@ -264,32 +269,32 @@ export class ContextManager {
       throw new Error(`Context "${oldName}" nicht gefunden.`);
     }
 
-    // Check target name doesn't already exist
-    if (isGlobal) {
-      const newGlobalDir = join(CONTEXTS_DIR, newName);
-      if (existsSync(join(newGlobalDir, "context.yaml"))) {
-        throw new Error(`Context "${newName}" existiert bereits.`);
-      }
+    // Check target name doesn't already exist (both local and global)
+    const newGlobalDir = join(CONTEXTS_DIR, newName);
+    if (existsSync(join(newGlobalDir, "context.yaml"))) {
+      throw new Error(`Context "${newName}" existiert bereits (global).`);
     }
 
-    // 1. Update context.yaml
+    // Load config for global (local already cached above)
     const contextYamlPath = isLocal ? localContextPath : join(globalDir, "context.yaml");
-    const config = this.loadContextYaml(contextYamlPath);
+    const config = isLocal ? cachedConfig : this.loadContextYaml(contextYamlPath);
     if (!config) {
       throw new Error(`Konnte context.yaml nicht laden: ${contextYamlPath}`);
     }
-    config.name = newName;
-    writeFileSync(contextYamlPath, stringify(config, { lineWidth: 120 }), "utf-8");
 
-    // 2. For global contexts: rename the directory
+    // 1. For global contexts: rename the directory first (most likely to fail)
     let finalPath: string;
     if (isGlobal) {
-      const newGlobalDir = join(CONTEXTS_DIR, newName);
       renameSync(globalDir, newGlobalDir);
       finalPath = newGlobalDir;
     } else {
       finalPath = join(cwd, ".aios");
     }
+
+    // 2. Update context.yaml name field (path changed for global after renameSync)
+    const updatedYamlPath = isGlobal ? join(newGlobalDir, "context.yaml") : contextYamlPath;
+    config.name = newName;
+    writeFileSync(updatedYamlPath, stringify(config, { lineWidth: 120 }), "utf-8");
 
     // 3. Update active_context if it pointed to the old name
     if (existsSync(ACTIVE_CONTEXT_FILE)) {
@@ -301,6 +306,7 @@ export class ContextManager {
 
     // 4. Update links in other contexts that reference the old name
     if (existsSync(CONTEXTS_DIR)) {
+      const resolvedOldDir = resolve(globalDir);
       for (const entry of readdirSync(CONTEXTS_DIR, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
         const otherYaml = join(CONTEXTS_DIR, entry.name, "context.yaml");
@@ -312,8 +318,8 @@ export class ContextManager {
         for (const link of otherConfig.links) {
           if (link.name === oldName) {
             link.name = newName;
-            if (isGlobal && link.path === globalDir) {
-              link.path = join(CONTEXTS_DIR, newName);
+            if (isGlobal && resolve(link.path) === resolvedOldDir) {
+              link.path = newGlobalDir;
             }
             changed = true;
           }

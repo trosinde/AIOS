@@ -531,25 +531,28 @@ contextCmd
     try {
       const result = cm.rename(active.name, newName);
 
-      // Update global registry
-      const registry = readRegistry();
-      const entry = registry.contexts.find((c) => c.name === active.name);
-      if (entry) {
-        entry.name = newName;
-        entry.path = result.path;
-        entry.last_updated = new Date().toISOString();
-        // Update links in other registry entries
-        for (const other of registry.contexts) {
-          if (other.links) {
-            for (const link of other.links) {
-              if (link.name === active.name) link.name = newName;
+      // Update global registry (best-effort, rename already succeeded)
+      try {
+        const registry = readRegistry();
+        const entry = registry.contexts.find((c) => c.name === active.name);
+        if (entry) {
+          entry.name = newName;
+          entry.path = result.path;
+          entry.last_updated = new Date().toISOString();
+          for (const other of registry.contexts) {
+            if (other.links) {
+              for (const link of other.links) {
+                if (link.name === active.name) link.name = newName;
+              }
             }
           }
+          writeRegistry(registry);
         }
-        writeRegistry(registry);
+      } catch {
+        console.error(chalk.yellow("Context umbenannt, aber Registry-Update fehlgeschlagen. Führe 'aios context scan' aus."));
       }
 
-      console.log(chalk.green(`Context umbenannt: ${active.name} → ${newName}`));
+      console.error(chalk.green(`Context umbenannt: ${active.name} → ${newName}`));
     } catch (err) {
       console.error(chalk.red(err instanceof Error ? err.message : String(err)));
       process.exit(1);
