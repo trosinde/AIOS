@@ -97,6 +97,7 @@ AIOS plans the workflow automatically — parallel where possible, sequential wh
 | Document | Content |
 |----------|---------|
 | [Getting Started](docs/getting-started.md) | Installation, first commands, verification |
+| [**CLI Commands**](docs/CLI_COMMANDS.md) | Complete reference of all `aios` commands, options, and examples |
 | [User Guide](docs/user-guide.md) | CLI reference, patterns, chat, pipes, MCP, RAG, vision |
 | [Configuration](docs/configuration.md) | aios.yaml, providers, MCP, RAG, environment variables |
 | [Architecture](docs/architecture.md) | Components, data flow, dynamic orchestration |
