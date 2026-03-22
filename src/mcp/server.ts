@@ -24,6 +24,7 @@ import { Engine } from "../core/engine.js";
 import { createProvider } from "../agents/provider.js";
 import { ProviderSelector } from "../agents/provider-selector.js";
 import { loadConfig } from "../utils/config.js";
+import { buildContextAwareRegistry } from "../utils/registry-factory.js";
 import { McpManager } from "../core/mcp.js";
 import type { McpToolInfo } from "../core/mcp.js";
 import type { AiosConfig } from "../types.js";
@@ -114,7 +115,7 @@ export async function startMCPServer(): Promise<void> {
 
   silenceStderr();
 
-  const registry = new PatternRegistry(config.paths.patterns);
+  const registry = buildContextAwareRegistry(config.paths.patterns);
   const providerName = config.defaults.provider;
   const providerCfg = config.providers[providerName];
   if (!providerCfg) {

@@ -14,10 +14,16 @@ export class PatternRegistry {
   private patterns = new Map<string, Pattern>();
   private toolAvailability = new Map<string, boolean>();
   readonly patternsDir: string;
+  readonly patternsDirs: readonly string[];
 
-  constructor(patternsDir: string) {
-    this.patternsDir = patternsDir;
-    this.loadAll(patternsDir);
+  constructor(patternsDir: string | string[]) {
+    const dirs = Array.isArray(patternsDir) ? patternsDir : [patternsDir];
+    this.patternsDirs = dirs;
+    this.patternsDir = dirs[0] ?? "";
+    // Load in reverse order: lowest priority first, highest priority overwrites
+    for (const dir of [...dirs].reverse()) {
+      this.loadAll(dir);
+    }
   }
 
   /** Ein Pattern laden und parsen */
