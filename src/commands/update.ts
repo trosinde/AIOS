@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 import { existsSync, readFileSync, cpSync, mkdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import chalk from "chalk";
 import ora from "ora";
 import { getAiosHome } from "../utils/config.js";
@@ -30,15 +30,40 @@ export function syncNewFiles(source: string, target: string): void {
   cpSync(source, target, { recursive: true, force: false });
 }
 
+export function detectRepoPath(): string {
+  // 1. Dev-Modus: Prüfe ob die CLI selbst in einem AIOS-Repo läuft
+  let dir = import.meta.dirname;
+  while (dir !== dirname(dir)) {
+    if (existsSync(join(dir, ".git")) && existsSync(join(dir, "package.json"))) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+        if (pkg.name === "aios") return dir;
+      } catch { /* weiter suchen */ }
+    }
+    dir = dirname(dir);
+  }
+
+  // 2. Standard: ~/.aios/repo
+  const installed = join(getAiosHome(), "repo");
+  if (existsSync(join(installed, ".git"))) return installed;
+
+  throw new Error("AIOS Repository nicht gefunden");
+}
+
 export async function runUpdate(options: UpdateOptions): Promise<void> {
   const aiosHome = getAiosHome();
-  const repoPath = join(aiosHome, "repo");
-
-  // Verify git repo exists
-  if (!existsSync(join(repoPath, ".git"))) {
-    console.error(chalk.red("AIOS Repository nicht gefunden unter: " + repoPath));
+  let repoPath: string;
+  try {
+    repoPath = detectRepoPath();
+  } catch {
+    console.error(chalk.red("AIOS Repository nicht gefunden"));
     console.error(chalk.gray("Installiere AIOS zuerst mit install.sh"));
     process.exit(1);
+  }
+
+  const isDevMode = repoPath !== join(aiosHome, "repo");
+  if (isDevMode) {
+    console.error(chalk.cyan("Dev-Modus: aktualisiere lokales Repository ") + chalk.gray(`(${repoPath})`));
   }
 
   const oldVersion = readVersion(repoPath);
