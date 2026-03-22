@@ -20,12 +20,12 @@ import {
   mergeWithDefaults,
 } from "./manifest.js";
 import { registerContext } from "./registry.js";
-import type { ContextManifest } from "../types.js";
+import type { ContextConfig } from "../types.js";
 
 export interface InitOptions {
   name?: string;
   description?: string;
-  type?: ContextManifest["type"];
+  type?: ContextConfig["type"];
   template?: "project" | "team" | "library";
   upgrade?: boolean;
   nonInteractive?: boolean;
@@ -143,7 +143,7 @@ async function migrateFromLegacy(dir: string, opts: InitOptions): Promise<void> 
 }
 
 /** Wendet Template-spezifische Defaults an */
-function applyTemplate(manifest: ContextManifest, template: string): void {
+function applyTemplate(manifest: ContextConfig, template: string): void {
   switch (template) {
     case "team":
       manifest.config.team = {

@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stringify, parse } from "yaml";
-import type { ContextManifest } from "../types.js";
+import type { ContextConfig } from "../types.js";
 
 export const CURRENT_SCHEMA_VERSION = "1.0";
 export const CONTEXT_DIR = ".aios";
@@ -25,19 +25,19 @@ export function hasLegacyConfig(dir: string): boolean {
 }
 
 /** Liest das Context Manifest aus einem Verzeichnis */
-export function readManifest(dir: string): ContextManifest {
+export function readManifest(dir: string): ContextConfig {
   const path = join(dir, CONTEXT_DIR, MANIFEST_FILE);
   if (!existsSync(path)) {
     throw new Error(`Kein AIOS-Kontext in ${dir}. Führe 'aios init' aus.`);
   }
   const raw = readFileSync(path, "utf-8");
-  const manifest = parse(raw) as ContextManifest;
+  const manifest = parse(raw) as ContextConfig;
   validateManifest(manifest);
   return manifest;
 }
 
 /** Schreibt das Context Manifest */
-export function writeManifest(dir: string, manifest: ContextManifest): void {
+export function writeManifest(dir: string, manifest: ContextConfig): void {
   const contextDir = join(dir, CONTEXT_DIR);
   if (!existsSync(contextDir)) {
     mkdirSync(contextDir, { recursive: true });
@@ -47,7 +47,7 @@ export function writeManifest(dir: string, manifest: ContextManifest): void {
 }
 
 /** Validiert ein Manifest gegen das Schema */
-export function validateManifest(manifest: ContextManifest): void {
+export function validateManifest(manifest: ContextConfig): void {
   if (!manifest || typeof manifest !== "object") {
     throw new Error("context.yaml: Kein gültiges Manifest (kein Objekt)");
   }
@@ -88,9 +88,9 @@ export function assertPathWithinBase(resolvedPath: string, basePath: string): vo
  * Bestehende Werte bleiben erhalten, fehlende werden mit Defaults ergänzt.
  */
 export function mergeWithDefaults(
-  existing: Partial<ContextManifest>,
-  defaults: ContextManifest
-): ContextManifest {
+  existing: Partial<ContextConfig>,
+  defaults: ContextConfig
+): ContextConfig {
   return {
     schema_version: CURRENT_SCHEMA_VERSION,
     name: existing.name ?? defaults.name,
@@ -108,7 +108,7 @@ export function mergeWithDefaults(
 }
 
 /** Erzeugt ein leeres Default-Manifest */
-export function createDefaultManifest(name: string, type: ContextManifest["type"]): ContextManifest {
+export function createDefaultManifest(name: string, type: ContextConfig["type"]): ContextConfig {
   return {
     schema_version: CURRENT_SCHEMA_VERSION,
     name,

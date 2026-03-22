@@ -30,11 +30,12 @@ describe("ContextManager", () => {
     expect(existsSync(join(path, "knowledge"))).toBe(true);
   });
 
-  it("context.yaml enthält korrektes Format", () => {
+  it("context.yaml enthält unified format", () => {
     cm.init("my-project", true, tmpDir);
     const raw = readFileSync(join(tmpDir, ".aios", "context.yaml"), "utf-8");
     expect(raw).toContain("name: my-project");
-    expect(raw).toContain("version: 1");
+    expect(raw).toContain("schema_version");
+    expect(raw).toContain("type: project");
   });
 
   it("wirft Fehler wenn Context schon existiert", () => {
@@ -98,16 +99,27 @@ describe("ContextManager", () => {
     // Actual dirs are in ~/.aios/kernel/ which we don't want to test destructively
   });
 
-  // ─── ContextConfig Format ────────────────────────────
+  // ─── Unified ContextConfig Format ─────────────────────
 
-  it("lädt alle Felder aus context.yaml", () => {
+  it("lädt alle Felder aus unified context.yaml", () => {
     const config: ContextConfig = {
+      schema_version: "1.0",
       name: "full-test",
-      version: 1,
       description: "Test context",
-      domain: "testing",
+      type: "project",
+      capabilities: [],
+      exports: [],
+      accepts: [],
+      links: [],
+      config: {
+        default_provider: "claude",
+        patterns_dir: "./patterns",
+        personas_dir: "./personas",
+        knowledge_dir: "./knowledge",
+      },
+      project: { domain: "testing", language: "typescript" },
       required_traits: ["compliance_references"],
-      provider_defaults: { preferred: "anthropic", fallback: "ollama" },
+      providers: { routing: { complex: "anthropic" } },
       knowledge: { backend: "sqlite", isolation: "strict", retention_days: 90 },
       permissions: { allow_ipc: true, allow_tool_execution: true, allowed_tools: ["mmdc"] },
     };
@@ -118,10 +130,29 @@ describe("ContextManager", () => {
 
     const active = cm.resolveActive(tmpDir);
     expect(active.name).toBe("full-test");
-    expect(active.config.domain).toBe("testing");
+    expect(active.config.project?.domain).toBe("testing");
     expect(active.config.required_traits).toEqual(["compliance_references"]);
-    expect(active.config.provider_defaults?.preferred).toBe("anthropic");
+    expect(active.config.providers?.routing?.complex).toBe("anthropic");
     expect(active.config.knowledge?.retention_days).toBe(90);
     expect(active.config.permissions?.allowed_tools).toEqual(["mmdc"]);
+    expect(active.config.type).toBe("project");
+    expect(active.config.schema_version).toBe("1.0");
+  });
+
+  it("normalisiert altes lightweight format beim Laden", () => {
+    // Simulate a minimal old-format context.yaml (just name + version)
+    const contextDir = join(tmpDir, ".aios");
+    mkdirSync(contextDir, { recursive: true });
+    writeFileSync(join(contextDir, "context.yaml"), stringify({
+      name: "old-format",
+      version: 1,
+      description: "Legacy context",
+    }), "utf-8");
+
+    const active = cm.resolveActive(tmpDir);
+    expect(active.name).toBe("old-format");
+    expect(active.config.schema_version).toBe("1.0"); // Normalized
+    expect(active.config.type).toBe("project"); // Default
+    expect(active.config.capabilities).toEqual([]); // Default
   });
 });

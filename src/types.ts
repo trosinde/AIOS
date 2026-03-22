@@ -231,7 +231,13 @@ export interface McpConfig {
   servers: Record<string, McpServerConfig>;
 }
 
-// ─── Context Federation ──────────────────────────────────
+// ─── Context (Unified Schema) ────────────────────────────
+//
+// EIN Format, EIN Schema für .aios/context.yaml.
+// Ersetzt die drei vorherigen inkompatiblen Formate:
+//   - ContextManifest (Federation)
+//   - ContextConfig (Lightweight/Runtime)
+//   - AiosContext (Init-Wizard)
 
 export interface ContextCapability {
   id: string;
@@ -257,14 +263,28 @@ export interface ContextLink {
   relationship: "audits" | "consults" | "feeds" | "depends_on";
 }
 
-export interface ContextManifest {
+export interface ComplianceStandard {
+  id: string;
+  level?: string;
+}
+
+/**
+ * Unified context.yaml schema.
+ * Jede .aios/context.yaml MUSS dieses Format verwenden.
+ */
+export interface ContextConfig {
   schema_version: string;
   name: string;
   description: string;
   type: "project" | "team" | "library";
+
+  // ─── Federation ────────────────────────────────────
   capabilities: ContextCapability[];
   exports: ContextExport[];
   accepts: ContextAccept[];
+  links: ContextLink[];
+
+  // ─── Directory & Provider Config ───────────────────
   config: {
     default_provider: string;
     patterns_dir: string;
@@ -277,8 +297,61 @@ export interface ContextManifest {
       default_persona?: string;
     };
   };
-  links: ContextLink[];
+
+  // ─── Project Details (optional, from init wizard) ──
+  project?: {
+    domain?: string;
+    language?: string;
+    repo?: string | null;
+  };
+
+  // ─── AIOS Installation Reference (optional) ───────
+  aios?: {
+    path?: string;
+    readOnly?: boolean;
+  };
+
+  // ─── Compliance (optional) ─────────────────────────
+  compliance?: {
+    standards: ComplianceStandard[];
+    requireTraceability?: boolean;
+    requireTestCoverage?: boolean;
+    minimumCoverage?: number;
+  };
+
+  // ─── Personas (optional) ───────────────────────────
+  personas?: {
+    active: string[];
+    inactive?: string[];
+  };
+
+  // ─── Provider Routing (optional) ───────────────────
+  providers?: {
+    routing?: Record<string, string>;
+  };
+
+  // ─── Knowledge (optional) ──────────────────────────
+  knowledge?: {
+    autoIndex?: string[];
+    autoExtract?: boolean;
+    backend?: "sqlite";
+    isolation?: "strict" | "relaxed";
+    retention_days?: number;
+  };
+
+  // ─── Runtime Permissions (optional) ────────────────
+  permissions?: {
+    allow_ipc?: boolean;
+    allow_tool_execution?: boolean;
+    allowed_tools?: string[];
+  };
+
+  // ─── Required Traits (optional) ────────────────────
+  required_traits?: string[];
 }
+
+/** @deprecated Use ContextConfig instead */
+export type ContextManifest = ContextConfig;
 
 // ─── Cross-Context Execution ─────────────────────────────
 

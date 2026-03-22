@@ -441,63 +441,8 @@ program
     await mcpManager?.shutdown();
   });
 
-// ─── aios federation init ───────────────────────────────
-program
-  .command("federation-init")
-  .description("AIOS-Kontext für Cross-Context Federation initialisieren oder erweitern")
-  .option("--name <name>", "Kontext-Name")
-  .option("--description <desc>", "Beschreibung")
-  .option("--type <type>", "Typ: project | team | library", "project")
-  .option("--template <tpl>", "Template: project | team | library")
-  .option("--upgrade", "Nur fehlende Felder ergänzen")
-  .action(async (opts) => {
-    const { initContext } = await import("./context/init.js");
-    await initContext(process.cwd(), opts);
-  });
-
 // ─── aios context ───────────────────────────────────────
 const contextCmd = program.command("context").description("Context-Verwaltung");
-
-contextCmd
-  .command("init <name>")
-  .description("Neuen Context erstellen")
-  .option("--local", "Context im aktuellen Verzeichnis (.aios/) erstellen")
-  .option("--type <type>", "Context-Typ: project, team, library", "project")
-  .option("--description <text>", "Beschreibung des Kontexts")
-  .action(async (name: string, opts) => {
-    const { ContextManager } = await import("./core/context.js");
-    const cm = new ContextManager();
-    try {
-      const contextDir = cm.init(name, opts.local);
-
-      // For --local contexts: write a ContextManifest (federation format) and
-      // register in the global registry. ContextManager writes ContextConfig
-      // (lightweight), but the scanner/federation system needs ContextManifest.
-      // The manifest overwrites the ContextConfig — ContextManifest is a superset.
-      if (opts.local) {
-        try {
-          const { createDefaultManifest, writeManifest } = await import("./context/manifest.js");
-          const { registerContext } = await import("./context/registry.js");
-          const type = (opts.type ?? "project") as "project" | "team" | "library";
-          const manifest = createDefaultManifest(name, type);
-          manifest.description = opts.description ?? `AIOS-Kontext: ${name}`;
-          writeManifest(process.cwd(), manifest);
-          registerContext(manifest, process.cwd());
-          console.error(chalk.gray(`   Registriert in Kontext-Registry (${type})`));
-          if (manifest.capabilities.length > 0) {
-            console.error(chalk.cyan(`   Fähigkeiten: ${manifest.capabilities.map((c) => c.id).join(", ")}`));
-          }
-        } catch {
-          // Registry registration is best-effort
-        }
-      }
-
-      console.log(chalk.green(`Context "${name}" erstellt: ${contextDir}`));
-    } catch (err) {
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
 
 contextCmd
   .command("switch <name>")
@@ -525,7 +470,7 @@ contextCmd
 
     if (contexts.length === 0) {
       console.log(chalk.gray("  Keine Contexts. Standard: default"));
-      console.log(chalk.gray("  Erstelle mit: aios context init <name>"));
+      console.log(chalk.gray("  Erstelle mit: aios init"));
       return;
     }
 
@@ -549,7 +494,7 @@ contextCmd
     console.log(chalk.gray(`Quelle: ${active.source === "project" ? "Projekt-lokal (.aios/)" : "Global (~/.aios/contexts/)"}`));
     console.log(chalk.gray(`Pfad: ${active.path}`));
     if (active.config.description) console.log(chalk.gray(`Beschreibung: ${active.config.description}`));
-    if (active.config.domain) console.log(chalk.gray(`Domain: ${active.config.domain}`));
+    if (active.config.project?.domain) console.log(chalk.gray(`Domain: ${active.config.project.domain}`));
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
     }
@@ -589,7 +534,7 @@ contextCmd
       const { readManifest, hasContext } = await import("./context/manifest.js");
       if (!hasContext(process.cwd())) {
         console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
-        console.error(chalk.gray("Erstelle mit: aios federation-init"));
+        console.error(chalk.gray("Erstelle mit: aios init"));
         process.exit(1);
       }
       const manifest = readManifest(process.cwd());
@@ -1181,6 +1126,14 @@ program
       skipClaudeMdPrompt: false,
       patchClaudeMd: true,
     });
+
+    // ─── Register in federation registry (best-effort) ──────
+    try {
+      const { registerContext } = await import("./context/registry.js");
+      registerContext(context, cwd);
+    } catch {
+      // Registry registration is best-effort
+    }
 
     // ─── Summary ────────────────────────────────────────────
     console.error();

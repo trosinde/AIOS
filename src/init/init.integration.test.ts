@@ -71,9 +71,9 @@ describe("aios init integration", () => {
     // 5. Validate context.yaml
     const contextContent = readFileSync(join(testDir, ".aios", "context.yaml"), "utf-8");
     const parsed = parseContextYaml(contextContent);
-    expect(parsed.project.name).toBe("integration-test");
-    expect(parsed.project.language).toBe("typescript");
-    expect(parsed.aios.readOnly).toBe(true);
+    expect(parsed.name).toBe("integration-test");
+    expect(parsed.project?.language).toBe("typescript");
+    expect(parsed.aios?.readOnly).toBe(true);
 
     // 6. Check agent-instructions.md
     const instructions = readFileSync(join(testDir, ".aios", "agent-instructions.md"), "utf-8");
