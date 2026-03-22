@@ -241,8 +241,16 @@ export class ContextManager {
    * Works for both project-local and global contexts.
    */
   rename(oldName: string, newName: string, cwd: string = process.cwd()): { path: string; source: "project" | "global" } {
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(newName)) {
+    // Validate both names to prevent path traversal
+    const kebabPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+    if (!kebabPattern.test(oldName)) {
+      throw new Error(`Ungültiger Name "${oldName}". Erlaubt: kebab-case (z.B. my-context).`);
+    }
+    if (!kebabPattern.test(newName)) {
       throw new Error(`Ungültiger Name "${newName}". Erlaubt: kebab-case (z.B. my-context).`);
+    }
+    if (oldName === newName) {
+      throw new Error(`Alter und neuer Name sind identisch: "${oldName}".`);
     }
 
     // Find the context to rename
