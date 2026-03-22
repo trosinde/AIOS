@@ -79,6 +79,9 @@ async function createNewContext(dir: string, opts: InitOptions): Promise<void> {
   console.error(chalk.green(`✅ Kontext "${name}" initialisiert in ${dir}`));
   console.error(chalk.gray(`   Manifest: .aios/context.yaml`));
   console.error(chalk.gray(`   Typ: ${type}`));
+  if (manifest.capabilities.length > 0) {
+    console.error(chalk.cyan(`   Fähigkeiten: ${manifest.capabilities.map((c) => c.id).join(", ")}`));
+  }
   console.error(chalk.gray(`\n   Nächste Schritte:`));
   console.error(chalk.gray(`   1. Editiere .aios/context.yaml – beschreibe Fähigkeiten und Exports`));
   console.error(chalk.gray(`   2. Lege Patterns in .aios/patterns/ ab`));

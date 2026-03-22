@@ -462,12 +462,37 @@ contextCmd
   .command("init <name>")
   .description("Neuen Context erstellen")
   .option("--local", "Context im aktuellen Verzeichnis (.aios/) erstellen")
+  .option("--type <type>", "Context-Typ: project, team, library", "project")
+  .option("--description <text>", "Beschreibung des Kontexts")
   .action(async (name: string, opts) => {
     const { ContextManager } = await import("./core/context.js");
     const cm = new ContextManager();
     try {
-      const path = cm.init(name, opts.local);
-      console.log(chalk.green(`Context "${name}" erstellt: ${path}`));
+      const contextDir = cm.init(name, opts.local);
+
+      // For --local contexts: write a ContextManifest (federation format) and
+      // register in the global registry. ContextManager writes ContextConfig
+      // (lightweight), but the scanner/federation system needs ContextManifest.
+      // The manifest overwrites the ContextConfig — ContextManifest is a superset.
+      if (opts.local) {
+        try {
+          const { createDefaultManifest, writeManifest } = await import("./context/manifest.js");
+          const { registerContext } = await import("./context/registry.js");
+          const type = (opts.type ?? "project") as "project" | "team" | "library";
+          const manifest = createDefaultManifest(name, type);
+          manifest.description = opts.description ?? `AIOS-Kontext: ${name}`;
+          writeManifest(process.cwd(), manifest);
+          registerContext(manifest, process.cwd());
+          console.error(chalk.gray(`   Registriert in Kontext-Registry (${type})`));
+          if (manifest.capabilities.length > 0) {
+            console.error(chalk.cyan(`   Fähigkeiten: ${manifest.capabilities.map((c) => c.id).join(", ")}`));
+          }
+        } catch {
+          // Registry registration is best-effort
+        }
+      }
+
+      console.log(chalk.green(`Context "${name}" erstellt: ${contextDir}`));
     } catch (err) {
       console.error(chalk.red(err instanceof Error ? err.message : String(err)));
       process.exit(1);
