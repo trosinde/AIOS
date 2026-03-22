@@ -13,6 +13,7 @@ import { createProvider } from "./agents/provider.js";
 import { ProviderSelector } from "./agents/provider-selector.js";
 import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
+import { buildContextAwareRegistry } from "./utils/registry-factory.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
 import type { AiosConfig, Pattern } from "./types.js";
@@ -94,7 +95,7 @@ program
       const catalog = buildContextCatalog();
 
       // Load cross-router pattern
-      const pRegistry = new PatternRegistry(config.paths.patterns);
+      const pRegistry = buildContextAwareRegistry(config.paths.patterns);
       const crossRouter = pRegistry.get("_cross_router");
       if (!crossRouter) {
         console.error(chalk.red("Cross-Router-Pattern nicht gefunden."));
@@ -197,7 +198,7 @@ program
     }
 
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -255,7 +256,7 @@ program
     }
 
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const pattern = registry.get(patternName);
     if (!pattern) {
@@ -398,7 +399,7 @@ program
   .option("--provider <name>", "LLM Provider überschreiben")
   .action(async (taskParts: string[], opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -420,7 +421,7 @@ program
   .option("--provider <name>", "LLM Provider überschreiben")
   .action(async (opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -823,7 +824,7 @@ patternsCmd
   .option("--category <cat>", "Nach Kategorie filtern")
   .action(async (opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const patterns = opts.category
       ? registry.byCategory(opts.category)
@@ -866,7 +867,7 @@ patternsCmd
   .description("Patterns durchsuchen (Name, Beschreibung, Tags)")
   .action(async (queryParts: string[]) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const results = registry.search(queryParts.join(" "));
 
@@ -890,7 +891,7 @@ patternsCmd
   .description("Pattern-Details anzeigen")
   .action(async (name: string) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const p = registry.get(name);
     if (!p) { console.error(chalk.red("Nicht gefunden.")); await mcpManager?.shutdown(); process.exit(1); }
