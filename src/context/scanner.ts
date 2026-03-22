@@ -9,13 +9,17 @@
 import { existsSync, readdirSync, lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { readManifest, hasContext } from "./manifest.js";
-import { readRegistry, registerContext, writeRegistry } from "./registry.js";
-import { getAiosHome } from "../utils/config.js";
+import { readRegistry, registerContext, writeRegistry, type RegistryEntry } from "./registry.js";
+
+export interface ContextInfo {
+  path: string;
+  entry: RegistryEntry;
+}
 
 export interface ScanResult {
-  discovered: string[];
-  updated: string[];
-  stale: string[];
+  discovered: ContextInfo[];
+  updated: ContextInfo[];
+  stale: RegistryEntry[];
   brokenLinks: { context: string; linkName: string; path: string }[];
 }
 
@@ -50,10 +54,16 @@ export function scanContexts(searchPaths: string[], maxDepth = 3): ScanResult {
       const manifest = readManifest(contextPath);
       registerContext(manifest, contextPath);
 
+      // Re-read the entry to get the full RegistryEntry
+      const reg = readRegistry();
+      const entry = reg.contexts.find((c) => c.path === resolve(contextPath));
+      if (!entry) continue;
+
+      const info: ContextInfo = { path: contextPath, entry };
       if (knownPaths.has(resolve(contextPath))) {
-        result.updated.push(contextPath);
+        result.updated.push(info);
       } else {
-        result.discovered.push(contextPath);
+        result.discovered.push(info);
       }
     } catch (err) {
       console.error(`  Warnung: Manifest in ${contextPath} nicht lesbar: ${err instanceof Error ? err.message : err}`);
@@ -66,13 +76,13 @@ export function scanContexts(searchPaths: string[], maxDepth = 3): ScanResult {
     (c) => !existsSync(join(c.path, ".aios", "context.yaml"))
   );
   for (const stale of staleEntries) {
-    result.stale.push(stale.path);
+    result.stale.push(stale);
   }
 
   // Remove stale entries from registry
   if (staleEntries.length > 0) {
     updatedRegistry.contexts = updatedRegistry.contexts.filter(
-      (c) => !result.stale.includes(c.path)
+      (c) => !staleEntries.some((s) => s.path === c.path)
     );
     writeRegistry(updatedRegistry);
   }

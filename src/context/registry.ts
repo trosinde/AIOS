@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stringify, parse } from "yaml";
 import { getAiosHome } from "../utils/config.js";
-import type { ContextManifest } from "../types.js";
+import type { ContextConfig } from "../types.js";
 
 const REGISTRY_FILE = "registry.yaml";
 
@@ -21,7 +21,7 @@ export interface RegistryLink {
 export interface RegistryEntry {
   name: string;
   path: string;
-  type: ContextManifest["type"];
+  type: ContextConfig["type"];
   description: string;
   capabilities: string[];
   links?: RegistryLink[];
@@ -49,7 +49,7 @@ export function writeRegistry(registry: Registry): void {
 }
 
 /** Registriert oder aktualisiert einen Kontext in der Registry */
-export function registerContext(manifest: ContextManifest, contextPath: string): void {
+export function registerContext(manifest: ContextConfig, contextPath: string): void {
   const registry = readRegistry();
   const absPath = resolve(contextPath);
   const idx = registry.contexts.findIndex((c) => c.path === absPath);

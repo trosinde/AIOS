@@ -5,7 +5,7 @@ import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import chalk from "chalk";
-import type { AiosContext } from "./schema.js";
+import type { ContextConfig } from "../types.js";
 import { serializeContext, parseContextYaml } from "./schema.js";
 
 // ─── Types ───────────────────────────────────────────────
@@ -26,11 +26,11 @@ export interface GenerateOptions {
 // ─── Generator ───────────────────────────────────────────
 
 /**
- * Generate the .aios/ directory tree from a validated AiosContext.
+ * Generate the .aios/ directory tree from a validated ContextConfig.
  * Returns a summary of what was created/modified/skipped.
  */
 export function generate(
-  context: AiosContext,
+  context: ContextConfig,
   options: GenerateOptions = {},
 ): GenerateResult {
   const cwd = options.cwd ?? process.cwd();
@@ -137,7 +137,7 @@ function refreshFromExisting(cwd: string, result: GenerateResult): GenerateResul
 
 // ─── Template Rendering ──────────────────────────────────
 
-function renderAgentInstructions(ctx: AiosContext): string {
+function renderAgentInstructions(ctx: ContextConfig): string {
   const lines: string[] = [];
   const timestamp = new Date().toISOString();
 
@@ -147,54 +147,59 @@ function renderAgentInstructions(ctx: AiosContext): string {
   lines.push("# DO NOT HAND-EDIT — modify .aios/context.yaml and re-run aios init --refresh");
   lines.push("");
 
-  lines.push("## AIOS Location");
-  lines.push(`Path: ${ctx.aios.path}`);
-  lines.push("");
+  if (ctx.aios?.path) {
+    lines.push("## AIOS Location");
+    lines.push(`Path: ${ctx.aios.path}`);
+    lines.push("");
 
-  if (ctx.aios.readOnly) {
-    lines.push("## ⛔ READ-ONLY CONSTRAINT");
-    lines.push(`The AIOS directory (${ctx.aios.path}) is READ-ONLY infrastructure.`);
-    lines.push("");
-    lines.push("NEVER modify, create, or delete files inside AIOS. This includes:");
-    lines.push("- patterns/ — use .aios/patterns/ for project-local overrides instead");
-    lines.push("- personas/ — use .aios/context.yaml to configure active personas");
-    lines.push("- src/ — never touch AIOS source code from a project context");
-    lines.push("- docs/ — reference only");
-    lines.push("");
-    lines.push("If a pattern doesn't fit this project → override it in .aios/patterns/");
-    lines.push("If AIOS has a bug → inform the user, do not attempt to fix it");
-    lines.push("");
+    if (ctx.aios.readOnly) {
+      lines.push("## ⛔ READ-ONLY CONSTRAINT");
+      lines.push(`The AIOS directory (${ctx.aios.path}) is READ-ONLY infrastructure.`);
+      lines.push("");
+      lines.push("NEVER modify, create, or delete files inside AIOS. This includes:");
+      lines.push("- patterns/ — use .aios/patterns/ for project-local overrides instead");
+      lines.push("- personas/ — use .aios/context.yaml to configure active personas");
+      lines.push("- src/ — never touch AIOS source code from a project context");
+      lines.push("- docs/ — reference only");
+      lines.push("");
+      lines.push("If a pattern doesn't fit this project → override it in .aios/patterns/");
+      lines.push("If AIOS has a bug → inform the user, do not attempt to fix it");
+      lines.push("");
+    }
   }
 
   lines.push("## Project Context");
-  lines.push(`Name: ${ctx.project.name}`);
-  lines.push(`Domain: ${ctx.project.domain}`);
-  lines.push(`Language: ${ctx.project.language}`);
-  if (ctx.project.repo) {
-    lines.push(`Repository: ${ctx.project.repo}`);
-  }
+  lines.push(`Name: ${ctx.name}`);
+  if (ctx.project?.domain) lines.push(`Domain: ${ctx.project.domain}`);
+  if (ctx.project?.language) lines.push(`Language: ${ctx.project.language}`);
+  if (ctx.project?.repo) lines.push(`Repository: ${ctx.project.repo}`);
+  lines.push(`Type: ${ctx.type}`);
   lines.push("");
 
   lines.push("## Compliance");
-  if (ctx.compliance.standards.length > 0) {
+  if (ctx.compliance?.standards && ctx.compliance.standards.length > 0) {
     for (const std of ctx.compliance.standards) {
       lines.push(`- ${std.id}${std.level ? ` (${std.level})` : ""}`);
     }
   } else {
     lines.push("No compliance standards configured.");
   }
-  lines.push(`Traceability required: ${ctx.compliance.requireTraceability}`);
+  if (ctx.compliance?.requireTraceability) {
+    lines.push(`Traceability required: ${ctx.compliance.requireTraceability}`);
+  }
   lines.push("");
 
   lines.push("## Available Personas");
   lines.push("Team wird dynamisch pro Task zusammengestellt.");
-  for (const persona of ctx.personas.active) {
-    lines.push(`- ${persona}`);
+  if (ctx.personas?.active) {
+    for (const persona of ctx.personas.active) {
+      lines.push(`- ${persona}`);
+    }
   }
   lines.push("");
 
   lines.push("## Provider Routing");
-  const routingEntries = Object.entries(ctx.providers.routing);
+  const routingEntries = Object.entries(ctx.providers?.routing ?? {});
   if (routingEntries.length > 0) {
     for (const [key, value] of routingEntries) {
       lines.push(`- ${key}: ${value}`);
@@ -205,14 +210,27 @@ function renderAgentInstructions(ctx: AiosContext): string {
   lines.push("");
 
   lines.push("## Pattern Resolution Order");
-  lines.push("1. .aios/patterns/<name>/system.md  (project override, wins)");
-  lines.push(`2. ${ctx.aios.path}/patterns/<name>/system.md  (default, fallback)`);
+  if (ctx.aios?.path) {
+    lines.push("1. .aios/patterns/<name>/system.md  (project override, wins)");
+    lines.push(`2. ${ctx.aios.path}/patterns/<name>/system.md  (default, fallback)`);
+    lines.push("");
+    lines.push("To override a pattern:");
+    lines.push("  mkdir -p .aios/patterns/<pattern-name>");
+    lines.push(`  cp ${ctx.aios.path}/patterns/<pattern-name>/system.md .aios/patterns/<pattern-name>/`);
+    lines.push("  # Edit the local copy — AIOS will use it instead of the default");
+  } else {
+    lines.push("1. .aios/patterns/<name>/system.md  (project override, wins)");
+    lines.push("2. patterns/<name>/system.md  (default, fallback)");
+  }
   lines.push("");
-  lines.push("To override a pattern:");
-  lines.push("  mkdir -p .aios/patterns/<pattern-name>");
-  lines.push(`  cp ${ctx.aios.path}/patterns/<pattern-name>/system.md .aios/patterns/<pattern-name>/`);
-  lines.push("  # Edit the local copy — AIOS will use it instead of the default");
-  lines.push("");
+
+  if (ctx.capabilities && ctx.capabilities.length > 0) {
+    lines.push("## Capabilities");
+    for (const cap of ctx.capabilities) {
+      lines.push(`- ${cap.id}: ${cap.description}`);
+    }
+    lines.push("");
+  }
 
   lines.push("## Commands");
   lines.push("  aios init                  # re-run wizard");
@@ -238,7 +256,7 @@ function hasAiosPointer(content: string): boolean {
 
 function handleClaudeMd(
   cwd: string,
-  _context: AiosContext,
+  _context: ContextConfig,
   options: GenerateOptions,
 ): "created" | "modified" | "skipped" | "exists" {
   const claudeMdPath = join(cwd, "CLAUDE.md");
@@ -263,7 +281,7 @@ function handleClaudeMd(
     return "skipped";
   }
 
-  const content = `# ${_context.project.name}\n\n${AIOS_POINTER}\n`;
+  const content = `# ${_context.name}\n\n${AIOS_POINTER}\n`;
   writeFileAtomic(claudeMdPath, content);
   return "created";
 }

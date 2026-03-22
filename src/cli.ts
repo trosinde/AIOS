@@ -441,38 +441,8 @@ program
     await mcpManager?.shutdown();
   });
 
-// ─── aios federation init ───────────────────────────────
-program
-  .command("federation-init")
-  .description("AIOS-Kontext für Cross-Context Federation initialisieren oder erweitern")
-  .option("--name <name>", "Kontext-Name")
-  .option("--description <desc>", "Beschreibung")
-  .option("--type <type>", "Typ: project | team | library", "project")
-  .option("--template <tpl>", "Template: project | team | library")
-  .option("--upgrade", "Nur fehlende Felder ergänzen")
-  .action(async (opts) => {
-    const { initContext } = await import("./context/init.js");
-    await initContext(process.cwd(), opts);
-  });
-
 // ─── aios context ───────────────────────────────────────
 const contextCmd = program.command("context").description("Context-Verwaltung");
-
-contextCmd
-  .command("init <name>")
-  .description("Neuen Context erstellen")
-  .option("--local", "Context im aktuellen Verzeichnis (.aios/) erstellen")
-  .action(async (name: string, opts) => {
-    const { ContextManager } = await import("./core/context.js");
-    const cm = new ContextManager();
-    try {
-      const path = cm.init(name, opts.local);
-      console.log(chalk.green(`Context "${name}" erstellt: ${path}`));
-    } catch (err) {
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
 
 contextCmd
   .command("switch <name>")
@@ -500,7 +470,7 @@ contextCmd
 
     if (contexts.length === 0) {
       console.log(chalk.gray("  Keine Contexts. Standard: default"));
-      console.log(chalk.gray("  Erstelle mit: aios context init <name>"));
+      console.log(chalk.gray("  Erstelle mit: aios init"));
       return;
     }
 
@@ -524,7 +494,7 @@ contextCmd
     console.log(chalk.gray(`Quelle: ${active.source === "project" ? "Projekt-lokal (.aios/)" : "Global (~/.aios/contexts/)"}`));
     console.log(chalk.gray(`Pfad: ${active.path}`));
     if (active.config.description) console.log(chalk.gray(`Beschreibung: ${active.config.description}`));
-    if (active.config.domain) console.log(chalk.gray(`Domain: ${active.config.domain}`));
+    if (active.config.project?.domain) console.log(chalk.gray(`Domain: ${active.config.project.domain}`));
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
     }
@@ -564,7 +534,7 @@ contextCmd
       const { readManifest, hasContext } = await import("./context/manifest.js");
       if (!hasContext(process.cwd())) {
         console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
-        console.error(chalk.gray("Erstelle mit: aios federation-init"));
+        console.error(chalk.gray("Erstelle mit: aios init"));
         process.exit(1);
       }
       const manifest = readManifest(process.cwd());
@@ -705,22 +675,32 @@ contextCmd
 
     if (result.discovered.length > 0) {
       console.error(chalk.green(`\n  Neu entdeckt (${result.discovered.length}):`));
-      for (const p of result.discovered) {
-        console.error(chalk.green(`    + ${p}`));
+      for (const ctx of result.discovered) {
+        console.error(chalk.green(`    + ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
+        if (ctx.entry.links?.length) {
+          console.error(chalk.gray(`      Links: ${ctx.entry.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+        console.error(chalk.gray(`      Pfad: ${ctx.path}`));
       }
     }
 
     if (result.updated.length > 0) {
       console.error(chalk.blue(`\n  Aktualisiert (${result.updated.length}):`));
-      for (const p of result.updated) {
-        console.error(chalk.gray(`    ~ ${p}`));
+      for (const ctx of result.updated) {
+        console.error(chalk.blue(`    ~ ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
       }
     }
 
     if (result.stale.length > 0) {
       console.error(chalk.yellow(`\n  Entfernt (nicht mehr vorhanden) (${result.stale.length}):`));
-      for (const p of result.stale) {
-        console.error(chalk.yellow(`    - ${p}`));
+      for (const ctx of result.stale) {
+        console.error(chalk.yellow(`    - ${ctx.name}`) + chalk.gray(` (${ctx.path})`));
       }
     }
 
@@ -1146,6 +1126,14 @@ program
       skipClaudeMdPrompt: false,
       patchClaudeMd: true,
     });
+
+    // ─── Register in federation registry (best-effort) ──────
+    try {
+      const { registerContext } = await import("./context/registry.js");
+      registerContext(context, cwd);
+    } catch {
+      // Registry registration is best-effort
+    }
 
     // ─── Summary ────────────────────────────────────────────
     console.error();

@@ -5,14 +5,14 @@ import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { generate } from "./generator.js";
 import { createDefaultContext, serializeContext } from "./schema.js";
-import type { AiosContext } from "./schema.js";
+import type { ContextConfig } from "../types.js";
 
-function makeContext(overrides: Partial<AiosContext> = {}): AiosContext {
-  return createDefaultContext({
+function makeContext(overrides: Partial<ContextConfig> = {}): ContextConfig {
+  const base = createDefaultContext({
     project: { name: "test-project", description: "Test", domain: "web-backend", language: "typescript", repo: "https://github.com/test/repo" },
     aios: { path: "/home/user/AIOS", readOnly: true },
-    ...overrides,
   });
+  return { ...base, ...overrides };
 }
 
 describe("generator", () => {
@@ -43,12 +43,14 @@ describe("generator", () => {
       expect(result.created.length).toBeGreaterThan(0);
     });
 
-    it("generates valid context.yaml", () => {
+    it("generates valid unified context.yaml", () => {
       const ctx = makeContext();
       generate(ctx, { cwd: testDir, skipClaudeMdPrompt: true });
 
       const content = readFileSync(join(testDir, ".aios", "context.yaml"), "utf-8");
       expect(content).toContain("test-project");
+      expect(content).toContain("schema_version");
+      expect(content).toContain("type: project");
       expect(content).toContain("web-backend");
       expect(content).toContain("typescript");
     });
@@ -65,7 +67,7 @@ describe("generator", () => {
     });
 
     it("includes read-only constraint when enabled", () => {
-      const ctx = makeContext({ aios: { path: "/home/user/AIOS", readOnly: true } });
+      const ctx = makeContext();
       generate(ctx, { cwd: testDir, skipClaudeMdPrompt: true });
 
       const content = readFileSync(join(testDir, ".aios", "agent-instructions.md"), "utf-8");
@@ -189,9 +191,11 @@ describe("generator", () => {
       const ctx = makeContext();
       generate(ctx, { cwd: testDir, skipClaudeMdPrompt: true });
 
-      // Modify context.yaml
+      // Modify context.yaml — write unified format
       const newCtx = makeContext({
-        project: { name: "updated-project", description: "Updated", domain: "systems", language: "rust", repo: null },
+        name: "updated-project",
+        description: "Updated",
+        project: { domain: "systems", language: "rust", repo: null },
       });
       writeFileSync(
         join(testDir, ".aios", "context.yaml"),

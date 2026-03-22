@@ -5,7 +5,7 @@ import { resolve, join } from "path";
 import { homedir } from "os";
 import { parse as parseYaml } from "yaml";
 import type { ScanResult } from "./scanner.js";
-import type { AiosContext, ComplianceStandard } from "./schema.js";
+import type { ContextConfig, ComplianceStandard } from "../types.js";
 import { createDefaultContext } from "./schema.js";
 
 // ─── Options ─────────────────────────────────────────────
@@ -152,13 +152,13 @@ const DOMAIN_OPTIONS = [
 
 /**
  * Run the interactive wizard.
- * Returns AiosContext on success, null on user cancel.
+ * Returns ContextConfig on success, null on user cancel.
  */
 export async function runWizard(
   scan: ScanResult,
   cwd: string,
   options: WizardOptions = {},
-): Promise<AiosContext | null> {
+): Promise<ContextConfig | null> {
   // Quick mode: no interaction, use scan defaults
   if (options.quick) {
     return buildQuickContext(scan, cwd, options.aiosPath);
@@ -340,7 +340,7 @@ function buildQuickContext(
   scan: ScanResult,
   cwd: string,
   aiosPathOverride?: string,
-): AiosContext {
+): ContextConfig {
   const aiosPath = aiosPathOverride
     ? resolve(cwd, aiosPathOverride)
     : detectAiosPath(cwd) ?? resolve(cwd, "..", "AIOS");
