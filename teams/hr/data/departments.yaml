@@ -1,0 +1,19 @@
+- name: Engineering
+  head: Max Mustermann
+  location: Berlin
+  headcount: 12
+
+- name: HR
+  head: Lisa Schmidt
+  location: Berlin
+  headcount: 4
+
+- name: Security
+  head: Anna Weber
+  location: Berlin
+  headcount: 6
+
+- name: Network
+  head: Stefan Koch
+  location: München
+  headcount: 5

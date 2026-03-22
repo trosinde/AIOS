@@ -18,6 +18,12 @@ export interface RegistryLink {
   relationship: string;
 }
 
+export interface RegistryServiceSummary {
+  name: string;
+  description: string;
+  record_count: number;
+}
+
 export interface RegistryEntry {
   name: string;
   path: string;
@@ -25,6 +31,7 @@ export interface RegistryEntry {
   description: string;
   capabilities: string[];
   links?: RegistryLink[];
+  services?: RegistryServiceSummary[];
   last_updated: string;
 }
 
@@ -49,7 +56,11 @@ export function writeRegistry(registry: Registry): void {
 }
 
 /** Registriert oder aktualisiert einen Kontext in der Registry */
-export function registerContext(manifest: ContextConfig, contextPath: string): void {
+export function registerContext(
+  manifest: ContextConfig,
+  contextPath: string,
+  services?: RegistryServiceSummary[],
+): void {
   const registry = readRegistry();
   const absPath = resolve(contextPath);
   const idx = registry.contexts.findIndex((c) => c.path === absPath);
@@ -61,6 +72,7 @@ export function registerContext(manifest: ContextConfig, contextPath: string): v
     description: manifest.description,
     capabilities: manifest.capabilities.map((c) => c.id),
     links: (manifest.links ?? []).map((l) => ({ name: l.name, relationship: l.relationship })),
+    services,
     last_updated: new Date().toISOString(),
   };
 
@@ -87,12 +99,18 @@ export function buildContextCatalog(): string {
   if (registry.contexts.length === 0) return "Keine Kontexte registriert.";
 
   return registry.contexts
-    .map((c) => [
-      `## ${c.name} (${c.type})`,
-      `Pfad: ${c.path}`,
-      `Beschreibung: ${c.description}`,
-      `Fähigkeiten: ${c.capabilities.join(", ")}`,
-      `Verknüpfungen: ${c.links?.length ? c.links.map((l) => `${l.name} (${l.relationship})`).join(", ") : "keine"}`,
-    ].join("\n"))
+    .map((c) => {
+      const lines = [
+        `## ${c.name} (${c.type})`,
+        `Pfad: ${c.path}`,
+        `Beschreibung: ${c.description}`,
+        `Fähigkeiten: ${c.capabilities.join(", ")}`,
+        `Verknüpfungen: ${c.links?.length ? c.links.map((l) => `${l.name} (${l.relationship})`).join(", ") : "keine"}`,
+      ];
+      if (c.services?.length) {
+        lines.push(`Services: ${c.services.map((s) => `${c.name}.${s.name} (${s.record_count} records)`).join(", ")}`);
+      }
+      return lines.join("\n");
+    })
     .join("\n\n");
 }
