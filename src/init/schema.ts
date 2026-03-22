@@ -216,30 +216,50 @@ function legacyToContextConfig(legacy: AiosContext): ContextConfig {
   };
 }
 
-/** Normalize a parsed YAML object into a ContextConfig with defaults */
+/** Normalize a parsed YAML object into a ContextConfig with defaults.
+ *  Validates structural types at runtime to catch malformed YAML early. */
 function normalizeContextConfig(obj: Record<string, unknown>): ContextConfig {
+  // Runtime type guards for structural integrity
+  const name = obj.name;
+  if (typeof name !== "string" || !name) {
+    throw new Error("Invalid context.yaml:\n  - name: Required and must be a string");
+  }
+
+  const type = obj.type;
+  if (type !== undefined && !["project", "team", "library"].includes(type as string)) {
+    throw new Error(`Invalid context.yaml:\n  - type: Must be project|team|library, got: ${type}`);
+  }
+
+  const safeArray = (val: unknown): unknown[] =>
+    Array.isArray(val) ? val : [];
+
+  const safeObj = (val: unknown, fallback: Record<string, unknown>): Record<string, unknown> =>
+    val && typeof val === "object" && !Array.isArray(val) ? val as Record<string, unknown> : fallback;
+
+  const configDefault = {
+    default_provider: "claude",
+    patterns_dir: "./patterns",
+    personas_dir: "./personas",
+    knowledge_dir: "./knowledge",
+  };
+
   return {
-    schema_version: (obj.schema_version as string) ?? "1.0",
-    name: obj.name as string,
-    description: (obj.description as string) ?? "",
-    type: (obj.type as ContextConfig["type"]) ?? "project",
-    capabilities: (obj.capabilities as ContextConfig["capabilities"]) ?? [],
-    exports: (obj.exports as ContextConfig["exports"]) ?? [],
-    accepts: (obj.accepts as ContextConfig["accepts"]) ?? [],
-    links: (obj.links as ContextConfig["links"]) ?? [],
-    config: (obj.config as ContextConfig["config"]) ?? {
-      default_provider: "claude",
-      patterns_dir: "./patterns",
-      personas_dir: "./personas",
-      knowledge_dir: "./knowledge",
-    },
-    ...(obj.project ? { project: obj.project as ContextConfig["project"] } : {}),
-    ...(obj.aios ? { aios: obj.aios as ContextConfig["aios"] } : {}),
-    ...(obj.compliance ? { compliance: obj.compliance as ContextConfig["compliance"] } : {}),
-    ...(obj.personas ? { personas: obj.personas as ContextConfig["personas"] } : {}),
-    ...(obj.providers ? { providers: obj.providers as ContextConfig["providers"] } : {}),
-    ...(obj.knowledge ? { knowledge: obj.knowledge as ContextConfig["knowledge"] } : {}),
-    ...(obj.permissions ? { permissions: obj.permissions as ContextConfig["permissions"] } : {}),
-    ...(obj.required_traits ? { required_traits: obj.required_traits as string[] } : {}),
+    schema_version: typeof obj.schema_version === "string" ? obj.schema_version : "1.0",
+    name,
+    description: typeof obj.description === "string" ? obj.description : "",
+    type: (type as ContextConfig["type"]) ?? "project",
+    capabilities: safeArray(obj.capabilities) as ContextConfig["capabilities"],
+    exports: safeArray(obj.exports) as ContextConfig["exports"],
+    accepts: safeArray(obj.accepts) as ContextConfig["accepts"],
+    links: safeArray(obj.links) as ContextConfig["links"],
+    config: safeObj(obj.config, configDefault) as ContextConfig["config"],
+    ...(obj.project && typeof obj.project === "object" ? { project: obj.project as ContextConfig["project"] } : {}),
+    ...(obj.aios && typeof obj.aios === "object" ? { aios: obj.aios as ContextConfig["aios"] } : {}),
+    ...(obj.compliance && typeof obj.compliance === "object" ? { compliance: obj.compliance as ContextConfig["compliance"] } : {}),
+    ...(obj.personas && typeof obj.personas === "object" ? { personas: obj.personas as ContextConfig["personas"] } : {}),
+    ...(obj.providers && typeof obj.providers === "object" ? { providers: obj.providers as ContextConfig["providers"] } : {}),
+    ...(obj.knowledge && typeof obj.knowledge === "object" ? { knowledge: obj.knowledge as ContextConfig["knowledge"] } : {}),
+    ...(obj.permissions && typeof obj.permissions === "object" ? { permissions: obj.permissions as ContextConfig["permissions"] } : {}),
+    ...(Array.isArray(obj.required_traits) ? { required_traits: obj.required_traits as string[] } : {}),
   };
 }

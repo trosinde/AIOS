@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
-import { parse, stringify } from "yaml";
+import { stringify } from "yaml";
 import type { ContextConfig } from "../types.js";
+import { parseContextYaml } from "../init/schema.js";
 
 // ─── Re-export for backward compatibility ────────────────
 export type { ContextConfig } from "../types.js";
@@ -240,37 +241,7 @@ export class ContextManager {
   private loadContextYaml(path: string): ContextConfig | null {
     try {
       const raw = readFileSync(path, "utf-8");
-      const parsed = parse(raw) as Record<string, unknown>;
-      if (!parsed || typeof parsed !== "object" || !parsed.name) return null;
-
-      // Normalize: ensure unified format fields exist with defaults
-      const config: ContextConfig = {
-        schema_version: (parsed.schema_version as string) ?? "1.0",
-        name: parsed.name as string,
-        description: (parsed.description as string) ?? "",
-        type: (parsed.type as ContextConfig["type"]) ?? "project",
-        capabilities: (parsed.capabilities as ContextConfig["capabilities"]) ?? [],
-        exports: (parsed.exports as ContextConfig["exports"]) ?? [],
-        accepts: (parsed.accepts as ContextConfig["accepts"]) ?? [],
-        links: (parsed.links as ContextConfig["links"]) ?? [],
-        config: (parsed.config as ContextConfig["config"]) ?? {
-          default_provider: "claude",
-          patterns_dir: "./patterns",
-          personas_dir: "./personas",
-          knowledge_dir: "./knowledge",
-        },
-        // Optional fields — only set if present
-        ...(parsed.project ? { project: parsed.project as ContextConfig["project"] } : {}),
-        ...(parsed.aios ? { aios: parsed.aios as ContextConfig["aios"] } : {}),
-        ...(parsed.compliance ? { compliance: parsed.compliance as ContextConfig["compliance"] } : {}),
-        ...(parsed.personas ? { personas: parsed.personas as ContextConfig["personas"] } : {}),
-        ...(parsed.providers ? { providers: parsed.providers as ContextConfig["providers"] } : {}),
-        ...(parsed.knowledge ? { knowledge: parsed.knowledge as ContextConfig["knowledge"] } : {}),
-        ...(parsed.permissions ? { permissions: parsed.permissions as ContextConfig["permissions"] } : {}),
-        ...(parsed.required_traits ? { required_traits: parsed.required_traits as string[] } : {}),
-      };
-
-      return config;
+      return parseContextYaml(raw);
     } catch {
       return null;
     }

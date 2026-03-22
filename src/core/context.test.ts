@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ContextManager, type ContextConfig } from "./context.js";
+import { parseContextYaml } from "../init/schema.js";
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -154,5 +155,38 @@ describe("ContextManager", () => {
     expect(active.config.schema_version).toBe("1.0"); // Normalized
     expect(active.config.type).toBe("project"); // Default
     expect(active.config.capabilities).toEqual([]); // Default
+  });
+
+  it("fällt auf default zurück bei korrupter context.yaml", () => {
+    const contextDir = join(tmpDir, ".aios");
+    mkdirSync(contextDir, { recursive: true });
+    writeFileSync(join(contextDir, "context.yaml"), "{{invalid yaml: [[[", "utf-8");
+
+    const active = cm.resolveActive(tmpDir);
+    expect(active.name).toBe("default"); // Falls back to default
+    expect(active.source).toBe("global");
+  });
+
+  it("fällt auf default zurück bei context.yaml ohne name", () => {
+    const contextDir = join(tmpDir, ".aios");
+    mkdirSync(contextDir, { recursive: true });
+    writeFileSync(join(contextDir, "context.yaml"), "description: no-name\n", "utf-8");
+
+    const active = cm.resolveActive(tmpDir);
+    expect(active.name).toBe("default");
+  });
+
+  // ─── Cross-module round-trip ──────────────────────────
+
+  it("ContextManager.init() schreibt parseContextYaml-kompatibles Format", () => {
+    cm.init("roundtrip-test", true, tmpDir, { type: "team", description: "Round-trip" });
+    const raw = readFileSync(join(tmpDir, ".aios", "context.yaml"), "utf-8");
+
+    // Must be parseable by the unified parser
+    const parsed = parseContextYaml(raw);
+    expect(parsed.name).toBe("roundtrip-test");
+    expect(parsed.type).toBe("team");
+    expect(parsed.description).toBe("Round-trip");
+    expect(parsed.schema_version).toBe("1.0");
   });
 });

@@ -52,7 +52,7 @@ export function validateManifest(manifest: ContextConfig): void {
     throw new Error("context.yaml: Kein gültiges Manifest (kein Objekt)");
   }
   if (!manifest.name) throw new Error("context.yaml: 'name' ist erforderlich");
-  if (!manifest.description) throw new Error("context.yaml: 'description' ist erforderlich");
+  if (manifest.description === undefined || manifest.description === null) throw new Error("context.yaml: 'description' ist erforderlich");
   if (!["project", "team", "library"].includes(manifest.type)) {
     throw new Error(`context.yaml: 'type' muss project|team|library sein, ist: ${manifest.type}`);
   }

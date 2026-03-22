@@ -103,6 +103,39 @@ describe("schema", () => {
       const parsed = parseContextYaml(legacy);
       expect(parsed.project?.repo).toBeNull();
     });
+
+    it("throws on malformed YAML syntax", () => {
+      expect(() => parseContextYaml("{{invalid yaml: [[[")).toThrow();
+    });
+
+    it("throws when name is non-string", () => {
+      expect(() => parseContextYaml("name: 123\n")).toThrow("name");
+    });
+
+    it("throws on invalid type value", () => {
+      expect(() => parseContextYaml("name: test\ntype: invalid\n")).toThrow("type");
+    });
+
+    it("handles legacy format with missing aios block (falls to unified path)", () => {
+      const yaml = "version: \"1\"\nproject:\n  name: partial\n  description: test\n  domain: x\n  language: ts\n  repo: null\n";
+      // This has version: "1" + project but no aios block → Zod validation fails
+      // → falls through to unified path where project.name is not top-level name
+      // Should not crash — either parses as unified or throws clearly
+      expect(() => parseContextYaml(yaml)).toThrow("name");
+    });
+
+    it("normalizes non-array capabilities to empty array", () => {
+      const yaml = "name: test\ncapabilities: not-an-array\n";
+      const parsed = parseContextYaml(yaml);
+      expect(Array.isArray(parsed.capabilities)).toBe(true);
+      expect(parsed.capabilities).toEqual([]);
+    });
+
+    it("normalizes non-object config to defaults", () => {
+      const yaml = "name: test\nconfig: 42\n";
+      const parsed = parseContextYaml(yaml);
+      expect(parsed.config.default_provider).toBe("claude");
+    });
   });
 
   describe("serializeContext", () => {
