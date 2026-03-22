@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ARCHITEKTUR-SCHULD
+
+Drei inkompatible context.yaml Formate (AiosContext, ContextManifest, ContextConfig) existieren. `aios init` ist der einzige Init-Befehl. `federation-init` und `context init` sind redundant und werden entfernt. EIN Format, EIN Schema. Jedes neue Feature das context.yaml betrifft MUSS das vereinheitlichte Format verwenden. Review-Prozess muss Format-Kompatibilität explizit prüfen.
+
 ## Build & Development Commands
 
 ```bash
