@@ -11,9 +11,30 @@
  *   img-to-pdf     Input = text file with one image path per line → PDF with images
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, extname, basename } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "fs";
+import { join, extname, basename, resolve, normalize } from "path";
 import { PDFDocument } from "pdf-lib";
+
+// ─── Security Helpers ───────────────────────────────────────
+
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
+
+function validateFilePath(filePath: string): string {
+  const resolved = resolve(normalize(filePath));
+  if (!existsSync(resolved)) {
+    throw new Error(`Datei nicht gefunden: ${basename(filePath)}`);
+  }
+  const size = statSync(resolved).size;
+  if (size > MAX_FILE_SIZE) {
+    throw new Error(`Datei zu groß: ${basename(filePath)} (${Math.round(size / 1024 / 1024)}MB, max ${MAX_FILE_SIZE / 1024 / 1024}MB)`);
+  }
+  return resolved;
+}
+
+function safeReadFile(filePath: string): Buffer {
+  const resolved = validateFilePath(filePath);
+  return readFileSync(resolved);
+}
 
 // ─── Merge ──────────────────────────────────────────────────
 
@@ -30,10 +51,7 @@ async function merge(inputFile: string, outputPath: string): Promise<void> {
   const merged = await PDFDocument.create();
 
   for (const pdfPath of lines) {
-    if (!existsSync(pdfPath)) {
-      throw new Error(`Datei nicht gefunden: ${pdfPath}`);
-    }
-    const bytes = readFileSync(pdfPath);
+    const bytes = safeReadFile(pdfPath);
     const doc = await PDFDocument.load(bytes);
     const pages = await merged.copyPages(doc, doc.getPageIndices());
     for (const page of pages) {
@@ -75,12 +93,7 @@ async function split(inputFile: string, outputPath: string): Promise<void> {
     throw new Error("Input: Zeile 1 = PDF-Pfad, Zeile 2 = Seitenangabe (z.B. '1-3,5')");
   }
 
-  const pdfPath = lines[0];
-  if (!existsSync(pdfPath)) {
-    throw new Error(`Datei nicht gefunden: ${pdfPath}`);
-  }
-
-  const bytes = readFileSync(pdfPath);
+  const bytes = safeReadFile(lines[0]);
   const srcDoc = await PDFDocument.load(bytes);
   const totalPages = srcDoc.getPageCount();
 
@@ -123,15 +136,12 @@ async function split(inputFile: string, outputPath: string): Promise<void> {
 
 async function extractText(inputFile: string, outputPath: string): Promise<void> {
   const pdfPath = readFileSync(inputFile, "utf-8").trim().split("\n")[0].trim();
-  const actualPath = existsSync(pdfPath) ? pdfPath : inputFile;
-
-  if (!existsSync(actualPath)) {
-    throw new Error(`Datei nicht gefunden: ${actualPath}`);
-  }
+  const actualPath = existsSync(resolve(normalize(pdfPath))) ? pdfPath : inputFile;
+  const fileBytes = safeReadFile(actualPath);
 
   // Use pdfjs-dist for text extraction
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const fileData = new Uint8Array(readFileSync(actualPath));
+  const fileData = new Uint8Array(fileBytes);
   const doc = await pdfjsLib.getDocument({ data: fileData }).promise;
 
   const textParts: string[] = [];
@@ -139,8 +149,8 @@ async function extractText(inputFile: string, outputPath: string): Promise<void>
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items
-      .filter((item: Record<string, unknown>) => "str" in item)
-      .map((item: Record<string, unknown>) => item.str as string)
+      .filter((item: Record<string, unknown>) => "str" in item && typeof item.str === "string")
+      .map((item: Record<string, unknown>) => String(item.str))
       .join(" ");
     if (pageText.trim()) textParts.push(pageText);
   }
@@ -165,20 +175,18 @@ async function imgToPdf(inputFile: string, outputPath: string): Promise<void> {
   const doc = await PDFDocument.create();
 
   for (const imgPath of lines) {
-    if (!existsSync(imgPath)) {
-      throw new Error(`Bild nicht gefunden: ${imgPath}`);
-    }
-
-    const imgBytes = readFileSync(imgPath);
-    const ext = extname(imgPath).toLowerCase();
+    const imgBytes = safeReadFile(imgPath);
+    // Validate image format via magic bytes, not just extension
+    const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50 && imgBytes[2] === 0x4e && imgBytes[3] === 0x47;
+    const isJpg = imgBytes[0] === 0xff && imgBytes[1] === 0xd8 && imgBytes[2] === 0xff;
 
     let image;
-    if (ext === ".png") {
+    if (isPng) {
       image = await doc.embedPng(imgBytes);
-    } else if (ext === ".jpg" || ext === ".jpeg") {
+    } else if (isJpg) {
       image = await doc.embedJpg(imgBytes);
     } else {
-      console.error(`  ⚠ Überspringe ${basename(imgPath)} (nur PNG/JPG unterstützt)`);
+      console.error(`  ⚠ Überspringe ${basename(imgPath)} (kein gültiges PNG/JPG)`);
       continue;
     }
 
