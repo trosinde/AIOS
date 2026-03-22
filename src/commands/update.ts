@@ -133,6 +133,35 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     if (scanResult.stale.length > 0) parts.push(`${scanResult.stale.length} entfernt`);
     if (scanResult.brokenLinks.length > 0) parts.push(`${scanResult.brokenLinks.length} defekte Links`);
     scanSpinner.succeed(`Kontext-Registry: ${parts.join(", ")}`);
+
+    // Show details for discovered contexts
+    for (const ctx of scanResult.discovered) {
+      console.error(chalk.green(`    + ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type})`));
+      if (ctx.entry.description) {
+        console.error(chalk.gray(`      ${ctx.entry.description}`));
+      }
+      if (ctx.entry.capabilities.length > 0) {
+        console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+      }
+    }
+
+    // Show details for updated contexts
+    for (const ctx of scanResult.updated) {
+      console.error(chalk.blue(`    ~ ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type})`));
+      if (ctx.entry.capabilities.length > 0) {
+        console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+      }
+    }
+
+    // Show stale contexts
+    for (const ctx of scanResult.stale) {
+      console.error(chalk.yellow(`    - ${ctx.name}`) + chalk.gray(` (${ctx.path})`));
+    }
+
+    // Show broken links
+    for (const bl of scanResult.brokenLinks) {
+      console.error(chalk.red(`    ✗ ${bl.context} → ${bl.linkName} (${bl.path})`));
+    }
   } catch {
     scanSpinner.warn("Kontext-Scan übersprungen");
   }

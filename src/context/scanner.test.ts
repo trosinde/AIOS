@@ -61,8 +61,9 @@ describe("scanner", () => {
     const result = scanContexts([join(tmpDir, "projects")]);
 
     expect(result.discovered).toHaveLength(2);
-    expect(result.discovered.map((p) => p)).toContain(teamA);
-    expect(result.discovered.map((p) => p)).toContain(teamB);
+    expect(result.discovered.map((c) => c.path)).toContain(teamA);
+    expect(result.discovered.map((c) => c.path)).toContain(teamB);
+    expect(result.discovered[0].entry.name).toBeDefined();
 
     const registry = readRegistry();
     expect(registry.contexts).toHaveLength(2);
@@ -154,6 +155,30 @@ describe("scanner", () => {
     const b = registry.contexts.find((c) => c.name === "team-b");
     expect(a?.links).toHaveLength(1);
     expect(b?.links).toHaveLength(1);
+  });
+
+  it("liefert Fähigkeiten und Typ der entdeckten Kontexte", () => {
+    const teamDir = join(tmpDir, "ops-team");
+    mkdirSync(teamDir, { recursive: true });
+
+    createContext(teamDir, {
+      name: "ops-team",
+      type: "team",
+      description: "Operations Team",
+      capabilities: [
+        { id: "deploy", description: "Deployment", input_types: ["text"], output_type: "text" },
+        { id: "monitor", description: "Monitoring", input_types: ["text"], output_type: "text" },
+      ],
+    });
+
+    const result = scanContexts([tmpDir]);
+
+    expect(result.discovered).toHaveLength(1);
+    const ctx = result.discovered[0];
+    expect(ctx.entry.name).toBe("ops-team");
+    expect(ctx.entry.type).toBe("team");
+    expect(ctx.entry.description).toBe("Operations Team");
+    expect(ctx.entry.capabilities).toEqual(["deploy", "monitor"]);
   });
 
   it("respektiert maxDepth", () => {

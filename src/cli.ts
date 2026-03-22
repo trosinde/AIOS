@@ -705,22 +705,32 @@ contextCmd
 
     if (result.discovered.length > 0) {
       console.error(chalk.green(`\n  Neu entdeckt (${result.discovered.length}):`));
-      for (const p of result.discovered) {
-        console.error(chalk.green(`    + ${p}`));
+      for (const ctx of result.discovered) {
+        console.error(chalk.green(`    + ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
+        if (ctx.entry.links?.length) {
+          console.error(chalk.gray(`      Links: ${ctx.entry.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+        console.error(chalk.gray(`      Pfad: ${ctx.path}`));
       }
     }
 
     if (result.updated.length > 0) {
       console.error(chalk.blue(`\n  Aktualisiert (${result.updated.length}):`));
-      for (const p of result.updated) {
-        console.error(chalk.gray(`    ~ ${p}`));
+      for (const ctx of result.updated) {
+        console.error(chalk.blue(`    ~ ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
       }
     }
 
     if (result.stale.length > 0) {
       console.error(chalk.yellow(`\n  Entfernt (nicht mehr vorhanden) (${result.stale.length}):`));
-      for (const p of result.stale) {
-        console.error(chalk.yellow(`    - ${p}`));
+      for (const ctx of result.stale) {
+        console.error(chalk.yellow(`    - ${ctx.name}`) + chalk.gray(` (${ctx.path})`));
       }
     }
 
