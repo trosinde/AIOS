@@ -528,6 +528,19 @@ contextCmd
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
     }
+
+    // Show federation links if manifest exists
+    try {
+      const { readManifest, hasContext } = await import("./context/manifest.js");
+      if (hasContext(active.path)) {
+        const manifest = readManifest(active.path);
+        if (manifest.links?.length) {
+          console.log(chalk.gray(`Links: ${manifest.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+      }
+    } catch {
+      // No manifest available – skip links display
+    }
   });
 
 // ─── aios context info [name] ────────────────────────────
@@ -572,7 +585,7 @@ contextCmd
     }
 
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
-    const { readRegistry } = await import("./context/registry.js");
+    const { readRegistry, registerContext } = await import("./context/registry.js");
     const { resolve } = await import("node:path");
 
     if (!hasContext(process.cwd())) {
@@ -611,6 +624,7 @@ contextCmd
     });
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpft: ${manifest.name} → ${targetName} (${opts.relationship})`));
   });
 
@@ -620,6 +634,7 @@ contextCmd
   .description("Verknüpfung zu anderem Kontext entfernen")
   .action(async (target: string) => {
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
+    const { registerContext } = await import("./context/registry.js");
     if (!hasContext(process.cwd())) {
       console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
       process.exit(1);
@@ -637,6 +652,7 @@ contextCmd
     }
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpfung zu "${target}" entfernt.`));
   });
 
@@ -659,6 +675,9 @@ contextCmd
       console.log(chalk.gray(`  ${c.path}`));
       if (c.capabilities.length > 0) {
         console.log(chalk.gray(`  Capabilities: ${c.capabilities.join(", ")}`));
+      }
+      if (c.links?.length) {
+        console.log(chalk.gray(`  Links: ${c.links.map((l: { name: string; relationship: string }) => `${l.name} (${l.relationship})`).join(", ")}`));
       }
       console.log();
     }
