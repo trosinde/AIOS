@@ -915,6 +915,50 @@ knowledgeCmd
 const serviceCmd = program.command("service").description("Service Interface Verwaltung");
 
 serviceCmd
+  .command("init [path]")
+  .description("Service-Interface für bestehenden Kontext einrichten")
+  .action(async (contextPath?: string) => {
+    const { initServiceInterface } = await import("./service/service-init.js");
+    const cwd = contextPath ? join(process.cwd(), contextPath) : process.cwd();
+
+    try {
+      const result = initServiceInterface(cwd);
+
+      if (!result.manifestCreated) {
+        console.error(chalk.yellow(result.message));
+        return;
+      }
+
+      console.error(chalk.green(`✅ ${result.message}`));
+
+      if (result.dataFilesCreated.length > 0) {
+        console.error(chalk.gray("\nErstellt Template-Dateien:"));
+        for (const f of result.dataFilesCreated) {
+          console.error(chalk.gray(`  → data/${f} (bitte mit echten Daten ersetzen)`));
+        }
+      }
+
+      if (result.sourcesDetected.length > 0) {
+        console.error(chalk.gray("\nErkannte Services:"));
+        for (const s of result.sourcesDetected) {
+          console.error(chalk.gray(`  → ${s.name}: ${s.description}`));
+          if (s.key_fields?.length) {
+            console.error(chalk.gray(`    key_fields: ${s.key_fields.join(", ")}`));
+          }
+        }
+      }
+
+      console.error(chalk.gray("\nNächste Schritte:"));
+      console.error(chalk.gray("  1. Template-Daten in data/ mit echten Daten ersetzen"));
+      console.error(chalk.gray("  2. data/manifest.yaml anpassen (key_fields, descriptions)"));
+      console.error(chalk.gray("  3. 'aios service list' um Endpoints zu prüfen"));
+    } catch (err) {
+      console.error(chalk.red(`Fehler: ${err instanceof Error ? err.message : err}`));
+      process.exit(1);
+    }
+  });
+
+serviceCmd
   .command("list")
   .description("Alle verfügbaren Service-Endpoints auflisten")
   .action(async () => {

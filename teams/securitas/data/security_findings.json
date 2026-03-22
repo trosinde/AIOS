@@ -1,0 +1,47 @@
+[
+  {
+    "id": "SEC-001",
+    "title": "SQL Injection in Login-Formular",
+    "severity": "critical",
+    "component": "auth-service",
+    "description": "Parametrisierte Queries nicht verwendet im Login-Endpoint",
+    "status": "open",
+    "found_date": "2026-03-10"
+  },
+  {
+    "id": "SEC-002",
+    "title": "Veraltete TLS-Version auf API-Gateway",
+    "severity": "high",
+    "component": "api-gateway",
+    "description": "TLS 1.1 noch aktiv, muss auf TLS 1.3 migriert werden",
+    "status": "in_progress",
+    "found_date": "2026-03-12"
+  },
+  {
+    "id": "SEC-003",
+    "title": "Fehlende Rate-Limiting auf Public Endpoints",
+    "severity": "medium",
+    "component": "api-gateway",
+    "description": "Kein Rate-Limiting auf /api/v1/public/* Endpoints",
+    "status": "open",
+    "found_date": "2026-03-15"
+  },
+  {
+    "id": "SEC-004",
+    "title": "Unverschlüsselte Secrets in Environment Variables",
+    "severity": "high",
+    "component": "deployment",
+    "description": "API-Keys und DB-Passwörter als Klartext in .env-Dateien",
+    "status": "resolved",
+    "found_date": "2026-02-28"
+  },
+  {
+    "id": "SEC-005",
+    "title": "CORS Wildcard in Production",
+    "severity": "medium",
+    "component": "web-app",
+    "description": "Access-Control-Allow-Origin: * in Produktionsumgebung",
+    "status": "open",
+    "found_date": "2026-03-20"
+  }
+]

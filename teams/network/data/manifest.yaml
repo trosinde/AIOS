@@ -1,0 +1,10 @@
+version: "1.0"
+sources:
+  - file: network_topology.json
+    name: network_topology
+    description: Netzwerk-Topologien und Konfigurationen
+    key_fields:
+      - id
+      - name
+      - type
+      - subnet

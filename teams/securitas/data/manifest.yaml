@@ -1,0 +1,10 @@
+version: "1.0"
+sources:
+  - file: security_findings.json
+    name: security_findings
+    description: Sicherheitsbefunde und Empfehlungen
+    key_fields:
+      - id
+      - title
+      - severity
+      - component
