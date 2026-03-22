@@ -16,8 +16,12 @@ function run(cmd: string, cwd: string): string {
 function readVersion(repoPath: string): string {
   const pkgPath = join(repoPath, "package.json");
   if (!existsSync(pkgPath)) return "unknown";
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-  return pkg.version ?? "unknown";
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 function syncNewFiles(source: string, target: string): void {
@@ -52,6 +56,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   let pendingCount = 0;
   try {
     pendingCount = parseInt(run("git rev-list HEAD..origin/main --count", repoPath), 10);
+    if (Number.isNaN(pendingCount)) pendingCount = 0;
   } catch {
     fetchSpinner.fail("Konnte Update-Status nicht ermitteln");
     process.exit(1);
