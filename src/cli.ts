@@ -683,6 +683,58 @@ contextCmd
     }
   });
 
+// ─── aios context scan ──────────────────────────────────
+contextCmd
+  .command("scan [paths...]")
+  .description("Dateisystem nach Kontexten durchsuchen und Registry aktualisieren")
+  .option("--depth <n>", "Maximale Suchtiefe", "3")
+  .action(async (paths: string[], opts) => {
+    const { scanContexts } = await import("./context/scanner.js");
+    const { getAiosHome } = await import("./utils/config.js");
+
+    const searchPaths = paths.length > 0
+      ? paths
+      : [process.cwd(), getAiosHome()];
+
+    const depth = parseInt(opts.depth, 10);
+    console.error(chalk.gray("Scanne nach Kontexten..."));
+
+    const result = scanContexts(searchPaths, Number.isNaN(depth) ? 3 : depth);
+
+    console.error(chalk.green("✓ Scan abgeschlossen"));
+
+    if (result.discovered.length > 0) {
+      console.error(chalk.green(`\n  Neu entdeckt (${result.discovered.length}):`));
+      for (const p of result.discovered) {
+        console.error(chalk.green(`    + ${p}`));
+      }
+    }
+
+    if (result.updated.length > 0) {
+      console.error(chalk.blue(`\n  Aktualisiert (${result.updated.length}):`));
+      for (const p of result.updated) {
+        console.error(chalk.gray(`    ~ ${p}`));
+      }
+    }
+
+    if (result.stale.length > 0) {
+      console.error(chalk.yellow(`\n  Entfernt (nicht mehr vorhanden) (${result.stale.length}):`));
+      for (const p of result.stale) {
+        console.error(chalk.yellow(`    - ${p}`));
+      }
+    }
+
+    if (result.brokenLinks.length > 0) {
+      console.error(chalk.red(`\n  Defekte Links (${result.brokenLinks.length}):`));
+      for (const bl of result.brokenLinks) {
+        console.error(chalk.red(`    ✗ ${bl.context} → ${bl.linkName} (${bl.path})`));
+      }
+    }
+
+    const total = result.discovered.length + result.updated.length;
+    console.error(chalk.gray(`\n  ${total} Kontext(e) in Registry, ${result.stale.length} entfernt, ${result.brokenLinks.length} defekte Links`));
+  });
+
 // ─── aios persona ───────────────────────────────────────
 const personaCmd = program.command("persona").description("Persona-Verwaltung");
 
