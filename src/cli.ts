@@ -443,11 +443,13 @@ program
 
     try {
       const ttsProvider = createTTSProvider();
+      const { randomUUID } = await import("crypto");
+      const ctx = { trace_id: randomUUID(), context_id: "cli", started_at: Date.now() };
 
       console.error(chalk.gray(`🔊 TTS: Voice=${voice}, Model=${model}, Format=${format}, Speed=${speed}x`));
       console.error(chalk.gray(`   Text: "${text.length > 80 ? text.slice(0, 80) + "..." : text}"`));
 
-      const result = await ttsProvider.synthesize(text, { voice, model, format, speed });
+      const result = await ttsProvider.synthesize(text, { voice, model, format, speed }, ctx);
 
       // Ausgabedatei bestimmen — bei --output Pfad validieren
       let outputPath: string;
