@@ -10,6 +10,7 @@ import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
+import { createTTSProvider } from "./agents/tts-provider.js";
 import { ProviderSelector } from "./agents/provider-selector.js";
 import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
@@ -355,6 +356,25 @@ program
         }
         process.stdout.write(out.output);
       }
+    } else if (pattern.meta.type === "tts") {
+      // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const ttsPlan = {
+        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
+        plan: {
+          type: "pipe" as const,
+          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+        },
+        reasoning: "Direct TTS execution",
+      };
+      const result = await engine.execute(ttsPlan, input);
+      const out = result.results.get("run");
+      if (out) {
+        if (out.outputType === "file" && out.filePath) {
+          console.error(chalk.green(`🔊 Audio erzeugt: ${out.filePath}`));
+        }
+        process.stdout.write(out.output);
+      }
     } else if (pattern.meta.input_type === "image") {
       // Vision-Pattern: Dateipfade aus stdin lesen, als Base64 an Vision-Provider
       const filePaths = input.trim().split(/\n/).map(l => l.trim()).filter(Boolean);
@@ -390,6 +410,69 @@ program
       process.stdout.write(response.content);
     }
     await mcpManager?.shutdown();
+  });
+
+// ─── aios speak (Text-to-Speech Shortcut) ──────────────
+program
+  .command("speak [text...]")
+  .description("Text in Sprache umwandeln (OpenAI TTS)")
+  .option("--voice <voice>", "Stimme: alloy, echo, fable, onyx, nova, shimmer", "alloy")
+  .option("--model <model>", "TTS-Modell: tts-1 oder tts-1-hd", "tts-1")
+  .option("--format <format>", "Audio-Format: mp3, wav, opus, aac", "mp3")
+  .option("--speed <speed>", "Geschwindigkeit (0.25 - 4.0)", "1.0")
+  .option("--output <path>", "Ausgabedatei (Standard: output/speak-<timestamp>.<format>)")
+  .action(async (textParts: string[], opts) => {
+    // Input: CLI-Argument oder stdin
+    let text = textParts.join(" ").trim();
+    if (!text) {
+      text = (await readStdin())?.trim() ?? "";
+    }
+    if (!text) {
+      console.error(chalk.red("Kein Text angegeben. Nutze: aios speak \"Hallo Welt\" oder echo \"Text\" | aios speak"));
+      process.exit(1);
+    }
+
+    const config = loadConfig();
+    const outputDir = config.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    const voice = opts.voice;
+    const model = opts.model;
+    const format = opts.format;
+    const speed = parseFloat(opts.speed);
+
+    try {
+      const ttsProvider = createTTSProvider();
+      const { randomUUID } = await import("crypto");
+      const ctx = { trace_id: randomUUID(), context_id: "cli", started_at: Date.now() };
+
+      console.error(chalk.gray(`🔊 TTS: Voice=${voice}, Model=${model}, Format=${format}, Speed=${speed}x`));
+      console.error(chalk.gray(`   Text: "${text.length > 80 ? text.slice(0, 80) + "..." : text}"`));
+
+      const result = await ttsProvider.synthesize(text, { voice, model, format, speed }, ctx);
+
+      // Ausgabedatei bestimmen — bei --output Pfad validieren
+      let outputPath: string;
+      if (opts.output) {
+        const { resolve } = await import("path");
+        const resolved = resolve(opts.output);
+        const cwd = resolve(".");
+        if (!resolved.startsWith(cwd)) {
+          console.error(chalk.red("Ausgabepfad muss innerhalb des Arbeitsverzeichnisses liegen."));
+          process.exit(1);
+        }
+        outputPath = resolved;
+      } else {
+        outputPath = join(outputDir, `speak-${Date.now()}.${result.format}`);
+      }
+
+      writeFileSync(outputPath, result.audioData);
+      const sizeKB = (result.audioData.length / 1024).toFixed(1);
+      console.error(chalk.green(`✅ Audio gespeichert: ${outputPath} (${sizeKB} KB)`));
+    } catch (error) {
+      console.error(chalk.red(`TTS-Fehler: ${error instanceof Error ? error.message : String(error)}`));
+      process.exit(1);
+    }
   });
 
 // ─── aios plan (nur planen) ──────────────────────────────
