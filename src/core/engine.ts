@@ -4,6 +4,7 @@ import { writeFileSync, mkdirSync, unlinkSync, readFileSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { ProviderSelector } from "../agents/provider-selector.js";
+import { createTTSProvider } from "../agents/tts-provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
@@ -129,6 +130,10 @@ export class Engine {
         // ── Image-Generation-Pattern: Gemini Nano Banana ──
         console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE]`));
         stepResult = await this.executeImageGeneration(step, pattern, input, t0, ctx);
+      } else if (pattern.meta.type === "tts") {
+        // ── TTS-Pattern: Text-to-Speech ──
+        console.error(chalk.gray(`  🔊 ${step.id} → ${step.pattern} [TTS]`));
+        stepResult = await this.executeTTS(step, pattern, input, t0, ctx);
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
@@ -490,6 +495,47 @@ export class Engine {
       outputType: "file",
       filePath: filePaths[0],
       filePaths,
+      durationMs: Date.now() - t0,
+    };
+  }
+
+  // ─── Text-to-Speech ────────────────────────────────────────────
+
+  private async executeTTS(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number,
+    ctx: ExecutionContext
+  ): Promise<StepResult> {
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    // TTS-Optionen aus Pattern-Meta und Step-Parametern
+    const voice = pattern.meta.tts_voice ?? "alloy";
+    const model = pattern.meta.tts_model ?? "tts-1";
+    const format = pattern.meta.tts_format ?? "mp3";
+    const speed = pattern.meta.tts_speed ?? 1.0;
+
+    // Provider erstellen (nutzt OPENAI_API_KEY aus Umgebung)
+    const ttsProvider = createTTSProvider();
+
+    console.error(chalk.gray(`    🎙️  Voice: ${voice}, Model: ${model}, Format: ${format}, Speed: ${speed}x`));
+
+    const result = await ttsProvider.synthesize(input, { voice, model, format, speed }, ctx);
+
+    // Audio-Datei speichern
+    const timestamp = Date.now();
+    const filePath = join(outputDir, `${step.id}-${timestamp}.${result.format}`);
+    writeFileSync(filePath, result.audioData);
+    console.error(chalk.gray(`    📁 ${filePath} (${(result.audioData.length / 1024).toFixed(1)} KB)`));
+
+    return {
+      stepId: step.id,
+      pattern: step.pattern,
+      output: `Audio erzeugt: ${filePath}`,
+      outputType: "file",
+      filePath,
       durationMs: Date.now() - t0,
     };
   }

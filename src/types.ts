@@ -41,11 +41,17 @@ export interface PatternMeta {
   kernel_abi?: number;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
   output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
+
+  // TTS-Pattern Felder
+  tts_voice?: string;              // Stimme (z.B. "alloy", "nova")
+  tts_model?: string;              // Modell (z.B. "tts-1", "tts-1-hd")
+  tts_format?: string;             // Audio-Format (z.B. "mp3", "wav")
+  tts_speed?: number;              // Geschwindigkeit (0.25 - 4.0)
 
   // MCP-Pattern Felder
   mcp_server?: string;             // Server-Name aus Config
