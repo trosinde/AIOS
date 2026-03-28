@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync, unlinkSync, readFileSync } from "fs";
 import { join } from "path";
 import type { LLMProvider } from "../agents/provider.js";
 import type { ProviderSelector } from "../agents/provider-selector.js";
-import { createTTSProvider } from "../agents/tts-provider.js";
+import { createTTSProvider, type TTSProvider } from "../agents/tts-provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
@@ -21,6 +21,7 @@ export class Engine {
   private registry: PatternRegistry;
   private provider: LLMProvider;
   private config?: AiosConfig;
+  private ttsProvider?: TTSProvider;
   private personaRegistry?: PersonaRegistry;
   private mcpManager?: McpManager;
   private ragService?: RAGService;
@@ -511,18 +512,27 @@ export class Engine {
     const outputDir = this.config?.tools?.output_dir ?? "./output";
     mkdirSync(outputDir, { recursive: true });
 
+    // Input-Länge begrenzen (OpenAI TTS max 4096 Zeichen, Kostenschutz)
+    const maxChars = 4096;
+    if (input.length > maxChars) {
+      console.error(chalk.yellow(`    ⚠️  Text auf ${maxChars} Zeichen gekürzt (Original: ${input.length})`));
+      input = input.slice(0, maxChars);
+    }
+
     // TTS-Optionen aus Pattern-Meta und Step-Parametern
     const voice = pattern.meta.tts_voice ?? "alloy";
     const model = pattern.meta.tts_model ?? "tts-1";
     const format = pattern.meta.tts_format ?? "mp3";
     const speed = pattern.meta.tts_speed ?? 1.0;
 
-    // Provider erstellen (nutzt OPENAI_API_KEY aus Umgebung)
-    const ttsProvider = createTTSProvider();
+    // Provider lazy erstellen und cachen
+    if (!this.ttsProvider) {
+      this.ttsProvider = createTTSProvider();
+    }
 
     console.error(chalk.gray(`    🎙️  Voice: ${voice}, Model: ${model}, Format: ${format}, Speed: ${speed}x`));
 
-    const result = await ttsProvider.synthesize(input, { voice, model, format, speed }, ctx);
+    const result = await this.ttsProvider.synthesize(input, { voice, model, format, speed }, ctx);
 
     // Audio-Datei speichern
     const timestamp = Date.now();
