@@ -266,7 +266,7 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] `docs/IPC_PROTOCOL.md` – Agent-zu-Agent-Kommunikation
 
 ### Phase 1 – Kernel-Primitives ✅
-- [x] `kernel_abi: 1` zu allen 36 Patterns hinzugefügt
+- [x] `kernel_abi: 1` zu allen 37 Patterns hinzugefügt
 - [x] `ExecutionContext`-Typ in `src/types.ts` (trace_id, context_id, started_at)
 - [x] `LLMProvider.complete()` + `chat()` mit `ExecutionContext`-Parameter
 - [x] Loader-Warning wenn Pattern `kernel_abi` fehlt, Error wenn inkompatibel

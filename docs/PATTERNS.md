@@ -266,11 +266,12 @@ Image generation patterns declare `type: image_generation` and typically specify
 | `render_diagram` | tool | `mmdc` | Mermaid code (.mmd) | SVG, PNG, PDF |
 | `render_image` | tool | `render-image` | Image prompt (.txt) | PNG, WebP |
 
-### Meta (3 patterns)
+### Meta (4 patterns)
 
 | Pattern | Description | Input | Output |
 |---------|-------------|-------|--------|
 | `_router` | Meta-agent: analyze tasks and create execution plans | Task description | Execution plan (JSON) |
+| `dev_process` | Standard development process: Requirements → Design → Code → Test → Docs with quality gates | Task description | Execution plan (saga JSON) |
 | `evaluate_quality` | Evaluate quality of an agent's output (1-10) | Agent output | Quality score + feedback |
 | `extract_knowledge` | Extract reusable knowledge from agent outputs | Agent output | Knowledge items |
 
