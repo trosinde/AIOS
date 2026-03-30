@@ -17,14 +17,14 @@ Boundary line: "Kernel API · stable · versioned"
 Subtitle: "Stable ABI · no domain knowledge · shared by ALL contexts"
 
 ROW 1 — Three LARGE white-bordered cards, equal width, spanning the full layer width:
-- Puzzle-piece icon: "61+ Patterns" — subtitle "Analysis · Review · Generation · Reporting · RAG · Vision"
+- Puzzle-piece icon: "62+ Patterns" — subtitle "Analysis · Review · Generation · Reporting · RAG · Vision · Dev Process"
 - People icon: "14+ Personas" — subtitle "Architect · Developer · Security · Tech Writer · Product Owner"
 - Shield icon: "Security" — subtitle "Prompt Injection Defense · Taint Tracking · Audit Trail"
 
 ROW 2 — Three cards SAME WIDTH as Row 1, aligned to the same columns, spanning the full layer width:
-- Plug icon: "LLM Providers" — subtitle "Anthropic · Ollama · Gemini · OpenAI"
+- Plug icon: "LLM Providers" — subtitle "Anthropic · Ollama · Gemini · OpenAI · TTS"
 - Broadcast icon: "MCP Servers" — subtitle "Azure DevOps · PDF Tools · Outlook · Intranet · Presentation · Transcript"
-- Lock icon: "Context Isolation" — subtitle "Knowledge Bus · CWD Discovery · Per-project .aios/"
+- Database icon: "Context Isolation + Services" — subtitle "Knowledge Bus · Service Interfaces · Per-project .aios/"
 
 NO hexagon row. NO extra boxes. Just these two rows of three cards each.
 
