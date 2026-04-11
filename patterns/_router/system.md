@@ -6,6 +6,10 @@ category: meta
 input_type: task_description
 output_type: execution_plan
 internal: true
+requires:
+  reasoning: 8
+  instruction_following: 9
+  structured_output: 9
 ---
 
 # IDENTITY and PURPOSE

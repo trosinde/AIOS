@@ -7,6 +7,17 @@ providers:
     model: claude-sonnet-4-20250514
     capabilities: [vision, text, code]
     cost_per_mtok: 3.0
+    model_capabilities:
+      reasoning: 9
+      code_generation: 9
+      instruction_following: 9
+      structured_output: 9
+      language: [de, en]
+      max_context: 200000
+    cost:
+      tier: 3
+      input_per_mtok: 3.0
+      output_per_mtok: 15.0
   ollama-vision:
     type: ollama
     model: minicpm-v
@@ -20,6 +31,17 @@ providers:
     apiKey: ${GEMINI_API_KEY}
     capabilities: [vision, text]
     cost_per_mtok: 0.075
+    model_capabilities:
+      reasoning: 7
+      code_generation: 7
+      instruction_following: 8
+      structured_output: 8
+      language: [de, en]
+      max_context: 1000000
+    cost:
+      tier: 2
+      input_per_mtok: 0.075
+      output_per_mtok: 0.3
   gemini-image:
     type: gemini
     model: gemini-2.5-flash-image
@@ -32,24 +54,80 @@ providers:
     apiKey: ${OPENAI_API_KEY}
     capabilities: [vision, text]
     cost_per_mtok: 0.15
+    model_capabilities:
+      reasoning: 6
+      code_generation: 6
+      instruction_following: 7
+      structured_output: 7
+      language: [de, en]
+      max_context: 128000
+    cost:
+      tier: 2
+      input_per_mtok: 0.15
+      output_per_mtok: 0.6
   ollama-72b:
     type: ollama
     model: qwen2.5:72b
     endpoint: http://172.24.32.82:11435
     apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+    model_capabilities:
+      reasoning: 7
+      code_generation: 7
+      instruction_following: 7
+      structured_output: 6
+      language: [de, en]
+      max_context: 32768
+    cost:
+      tier: 1
+      input_per_mtok: 0
+      output_per_mtok: 0
   ollama-nemo:
     type: ollama
     model: mistral-nemo:12b
     endpoint: http://172.24.32.82:11435
     apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+    model_capabilities:
+      reasoning: 5
+      code_generation: 5
+      instruction_following: 6
+      structured_output: 5
+      language: [de, en]
+      max_context: 128000
+    cost:
+      tier: 1
+      input_per_mtok: 0
+      output_per_mtok: 0
   ollama-coder:
     type: ollama
     model: qwen2.5-coder:7b
     endpoint: http://172.24.32.82:11435
     apiKey: b22eddd826254bce103585863b7140ec1c080b0b9444fc5e691856557b52475f
+    model_capabilities:
+      reasoning: 4
+      code_generation: 8
+      instruction_following: 5
+      structured_output: 5
+      language: [en]
+      max_context: 32768
+    cost:
+      tier: 1
+      input_per_mtok: 0
+      output_per_mtok: 0
 
 defaults:
   provider: claude
+  router_provider: claude         # Router IMMER auf stärkstem Modell
+
+# ─── Capability-Based Escalation ──────────────────────
+# Beim Fehlschlag eines Steps wird je nach Strategy retried / upgraded.
+#   upgrade_on_fail   – bei Fehler zum nächst-teureren Provider eskalieren
+#   same_model_retry  – nur Retry auf demselben Modell
+#   fail_fast         – kein Retry
+escalation:
+  maxRetries: 2
+  strategy: upgrade_on_fail
+  retrySameTierFirst: true
+  cooldownMs: 1000
 
 paths:
   patterns: ./patterns

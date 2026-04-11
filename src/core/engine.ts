@@ -13,6 +13,7 @@ import type { KnowledgeBus } from "./knowledge-bus.js";
 import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
+import type { StepExecutor } from "./executor.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
 import { PromptBuilder } from "../security/prompt-builder.js";
@@ -31,6 +32,7 @@ export class Engine {
   private mcpManager?: McpManager;
   private ragService?: RAGService;
   private providerSelector?: ProviderSelector;
+  private stepExecutor?: StepExecutor;
   private qualityPipeline?: QualityPipeline;
   private knowledgeBus?: KnowledgeBus;
   private contextBuilder: ContextBuilder;
@@ -45,6 +47,7 @@ export class Engine {
     mcpManager?: McpManager,
     ragService?: RAGService,
     providerSelector?: ProviderSelector,
+    stepExecutor?: StepExecutor,
     qualityPipeline?: QualityPipeline,
     knowledgeBus?: KnowledgeBus,
   ) {
@@ -55,6 +58,7 @@ export class Engine {
     this.mcpManager = mcpManager;
     this.ragService = ragService;
     this.providerSelector = providerSelector;
+    this.stepExecutor = stepExecutor;
     this.qualityPipeline = qualityPipeline;
     this.knowledgeBus = knowledgeBus;
     this.contextBuilder = new ContextBuilder(registry);
@@ -164,27 +168,64 @@ export class Engine {
         // Vision: collect images from upstream steps
         const images = this.collectImages(step, results);
         const capability = images.length > 0 ? "vision" : undefined;
-        const providerToUse = this.resolveProvider(pattern, step, capability);
 
-        // Data/Instruction Separation: upstream step outputs + user input
-        // werden als untrusted data getagged, bevor sie ins LLM gehen.
-        const built = this.promptBuilder.build(systemPrompt, input, [], ctx.trace_id);
-        const response = await providerToUse.complete(
-          built.systemPrompt,
-          built.userMessage,
-          images.length > 0 ? images : undefined,
-          ctx,
-        );
+        // Prefer capability-based executor when available for plain LLM calls
+        // (no vision, no explicit preferred_provider, no persona override).
+        // These constraints keep the existing provider-resolution chain
+        // authoritative for legacy paths while still giving new patterns
+        // access to capability-based selection + automatic escalation.
+        const canUseExecutor =
+          this.stepExecutor !== undefined &&
+          !capability &&
+          !pattern.meta.preferred_provider &&
+          !persona?.preferred_provider;
 
-        // Optional: Quality Gate
+        let responseContent: string;
+        let provenance: { provider?: string; model?: string; attempt?: number; escalationPath?: string[] } = {};
+
+        if (canUseExecutor && this.stepExecutor) {
+          // Capability-based path. StepExecutor is responsible for PromptBuilder
+          // wrapping of its own LLM calls (it should do data/instruction
+          // separation internally).
+          const exec = await this.stepExecutor.execute(pattern, input, {
+            stepId: step.id,
+            workflowId: ctx.trace_id,
+            execCtx: ctx,
+            systemPromptOverride: systemPrompt,
+          });
+          responseContent = exec.response.content;
+          provenance = {
+            provider: exec.provider,
+            model: exec.model,
+            attempt: exec.attempt,
+            escalationPath: exec.escalationPath.length > 1 ? exec.escalationPath : undefined,
+          };
+        } else {
+          // Legacy / vision path. Wrap directly via PromptBuilder here to
+          // enforce Data/Instruction Separation (CLAUDE.md Security Guideline).
+          const providerToUse = this.resolveProvider(pattern, step, capability);
+          const built = this.promptBuilder.build(systemPrompt, input, [], ctx.trace_id);
+          const response = await providerToUse.complete(
+            built.systemPrompt,
+            built.userMessage,
+            images.length > 0 ? images : undefined,
+            ctx,
+          );
+          responseContent = response.content;
+        }
+
         if (step.quality_gate) {
-          const score = await this.checkQualityGate(step, response.content, ctx);
+          const score = await this.checkQualityGate(step, responseContent, ctx);
           if (score < step.quality_gate.min_score) {
             throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
           }
         }
 
-        message = this.buildMessage(step, pattern, response.content, t0, "text");
+        message = this.buildMessage(step, pattern, responseContent, t0, "text");
+        // Attach provenance to source header if present
+        if (provenance.provider || provenance.escalationPath?.length) {
+          message.source = { ...message.source, ...provenance };
+        }
       }
 
       // ── Quality Backbone: Check at output boundaries ──

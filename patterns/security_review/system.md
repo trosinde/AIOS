@@ -1,5 +1,5 @@
 ---
-kernel_abi: 1
+kernel_abi: 2
 name: security_review
 description: "Security-fokussiertes Code Review (OWASP, IEC 62443)"
 category: review
@@ -9,6 +9,12 @@ tags: [security, owasp, iec62443, compliance]
 can_follow: [generate_code]
 parallelizable_with: [code_review, architecture_review]
 persona: security_expert
+requires:
+  reasoning: 8
+  instruction_following: 7
+  structured_output: 7
+  language: de
+  min_context: 16000
 output_extraction:
   artifact_pattern: "(?<severity>CRITICAL|HIGH|MEDIUM|LOW)[:\\s]+(?<content>.+)"
   artifact_type: finding

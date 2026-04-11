@@ -5,7 +5,16 @@ import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
 import { validateOutputExtraction } from "./output-extractor.js";
 
-const CURRENT_KERNEL_ABI = 1;
+/**
+ * Kernel ABI version supported by this kernel.
+ *
+ * - v1: baseline (kernel_abi, name, input_type, output_type, persona, ...)
+ * - v2: adds `requires` (TaskRequirements for capability-based provider selection)
+ *
+ * Patterns with `kernel_abi > CURRENT_KERNEL_ABI` are rejected. Patterns
+ * without `kernel_abi` get a warning and default semantics.
+ */
+const CURRENT_KERNEL_ABI = 2;
 
 /**
  * Pattern Registry – lädt alle system.md Dateien,
@@ -58,6 +67,7 @@ export class PatternRegistry {
       tool_args: data.tool_args,
       input_format: data.input_format,
       output_format: data.output_format,
+      requires: data.requires,
       output_extraction: data.output_extraction
         ? {
             artifact_pattern: data.output_extraction.artifact_pattern,

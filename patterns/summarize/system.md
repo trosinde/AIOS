@@ -6,6 +6,9 @@ category: transform
 input_type: text
 output_type: summary
 tags: [summarization, extraction]
+requires:
+  reasoning: 3
+  instruction_following: 5
 ---
 
 # IDENTITY and PURPOSE
