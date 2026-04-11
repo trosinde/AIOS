@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { McpManager, registerMcpTools } from "./mcp.js";
+import { McpManager, registerMcpTools, sanitizeErrorMessage, extractTextContent } from "./mcp.js";
 import type { McpConfig } from "../types.js";
 import type { PatternRegistry } from "./registry.js";
 
@@ -227,5 +227,110 @@ describe("registerMcpTools", () => {
         }),
       }),
     );
+  });
+});
+
+describe("sanitizeErrorMessage", () => {
+  it("returns fallback for empty input", () => {
+    expect(sanitizeErrorMessage("")).toBe("Unbekannter Fehler");
+  });
+
+  it("returns fallback for whitespace-only input", () => {
+    expect(sanitizeErrorMessage("   \n\t  ")).toBe("Unbekannter Fehler");
+  });
+
+  it("passes short plain messages through", () => {
+    expect(sanitizeErrorMessage("Something broke")).toBe("Something broke");
+  });
+
+  it("strips Unix file paths with line numbers", () => {
+    const msg = "Error at /home/user/project/src/app.ts:42:13 failed";
+    const result = sanitizeErrorMessage(msg);
+    expect(result).not.toContain("/home/user");
+    expect(result).toContain("[path]");
+  });
+
+  it("strips Windows file paths", () => {
+    const msg = "Error at C:\\Users\\me\\app.ts:42:13";
+    const result = sanitizeErrorMessage(msg);
+    expect(result).not.toContain("C:\\Users");
+    expect(result).toContain("[path]");
+  });
+
+  it("strips stack trace lines", () => {
+    const msg = "Top-level error\n    at foo (bar.js:1:1)\n    at main (x.js:2:2)";
+    const result = sanitizeErrorMessage(msg);
+    expect(result).not.toContain("at foo");
+    expect(result).not.toContain("at main");
+    expect(result).toContain("Top-level error");
+  });
+
+  it("extracts human message from JSON TFS error format", () => {
+    const msg = JSON.stringify({
+      error: '{"$id":"1","innerException":null,"message":"Work item 123 not found","typeName":"Foo"}',
+    });
+    expect(sanitizeErrorMessage(msg)).toContain("Work item 123 not found");
+  });
+
+  it("handles malformed JSON gracefully", () => {
+    const result = sanitizeErrorMessage('{"error": not valid json');
+    expect(result).toBeTruthy();
+    expect(result).not.toBe("Unbekannter Fehler");
+  });
+
+  it("handles JSON with non-string error field", () => {
+    const msg = JSON.stringify({ error: { code: 500 } });
+    // Falls through to path-stripping path since error isn't a string
+    expect(sanitizeErrorMessage(msg)).toBeTruthy();
+  });
+});
+
+describe("extractTextContent", () => {
+  it("returns empty string for non-array", () => {
+    expect(extractTextContent(null)).toBe("");
+    expect(extractTextContent(undefined)).toBe("");
+    expect(extractTextContent("oops")).toBe("");
+    expect(extractTextContent({})).toBe("");
+  });
+
+  it("returns empty string for empty array", () => {
+    expect(extractTextContent([])).toBe("");
+  });
+
+  it("joins text blocks with newlines", () => {
+    const content = [
+      { type: "text", text: "first" },
+      { type: "text", text: "second" },
+    ];
+    expect(extractTextContent(content)).toBe("first\nsecond");
+  });
+
+  it("skips non-text blocks", () => {
+    const content = [
+      { type: "text", text: "keep" },
+      { type: "image", data: "..." },
+      { type: "text", text: "also keep" },
+    ];
+    expect(extractTextContent(content)).toBe("keep\nalso keep");
+  });
+
+  it("skips malformed blocks (null, missing fields, wrong types)", () => {
+    const content = [
+      null,
+      { type: "text" }, // missing text
+      { type: "text", text: 42 }, // wrong type
+      { type: "text", text: "valid" },
+      undefined,
+    ];
+    expect(extractTextContent(content)).toBe("valid");
+  });
+
+  it("does not trip on prototype-pollution-shaped input", () => {
+    const content = [
+      { type: "text", text: "safe", __proto__: { polluted: true } },
+    ];
+    expect(extractTextContent(content)).toBe("safe");
+    // Object.prototype should not have been polluted
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

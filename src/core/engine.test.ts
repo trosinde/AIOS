@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { join } from "path";
-import { Engine } from "./engine.js";
+import { Engine, sanitizeMcpArgs } from "./engine.js";
+import type { McpManager } from "./mcp.js";
 import { PatternRegistry } from "./registry.js";
 import type { LLMProvider } from "../agents/provider.js";
 import type { AiosConfig, ExecutionPlan, LLMResponse } from "../types.js";
@@ -390,5 +391,165 @@ describe("Engine", () => {
     expect(msg?.contentKind).toBe("file");
     expect(msg?.content).toMatch(/^Datei erzeugt: /);
     expect(msg?.filePath).toBeDefined();
+  });
+
+  // ─── MCP-Pattern Integration ────────────────────────────
+  //
+  // Verifies the engine routes mcp-type patterns to McpManager.callTool,
+  // passes JSON-parsed arguments through sanitizeMcpArgs (prototype-pollution
+  // defense), and propagates tool output back into the step message.
+
+  it("MCP-Pattern ruft McpManager.callTool mit sanitisierten Args auf", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "examplemcp/store",
+        description: "Store a memory item",
+        category: "mcp",
+        input_type: "json",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "examplemcp",
+        mcp_tool: "store",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const callTool = vi.fn().mockResolvedValue("stored: id=42");
+    const mcpManager = { callTool } as unknown as McpManager;
+    const provider = mockProvider();
+    const engine = new Engine(registry, provider, undefined, undefined, mcpManager);
+
+    const plan = makePlan({
+      steps: [
+        { id: "store", pattern: "examplemcp/store", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    // Payload includes a prototype-pollution sink that MUST be stripped.
+    const payload = JSON.stringify({
+      wing: "decisions",
+      content: "test",
+      __proto__: { polluted: true },
+      constructor: { evil: true },
+    });
+
+    const result = await engine.execute(plan, payload);
+
+    expect(result.status.get("store")).toBe("done");
+    expect(callTool).toHaveBeenCalledTimes(1);
+    const [serverName, toolName, passedArgs] = callTool.mock.calls[0];
+    expect(serverName).toBe("examplemcp");
+    expect(toolName).toBe("store");
+    expect(passedArgs.wing).toBe("decisions");
+    expect(passedArgs.content).toBe("test");
+    // Prototype-pollution sinks were stripped
+    expect(Object.prototype.hasOwnProperty.call(passedArgs, "__proto__")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(passedArgs, "constructor")).toBe(false);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    expect(result.results.get("store")?.content).toBe("stored: id=42");
+  });
+
+  it("MCP-Pattern wrappt Non-JSON-Input in { input } Fallback", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "examplemcp/recall",
+        description: "Recall memory",
+        category: "mcp",
+        input_type: "text",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "examplemcp",
+        mcp_tool: "recall",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const callTool = vi.fn().mockResolvedValue("no matches");
+    const mcpManager = { callTool } as unknown as McpManager;
+    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+
+    const plan = makePlan({
+      steps: [
+        { id: "recall", pattern: "examplemcp/recall", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    await engine.execute(plan, "plain text not json");
+
+    expect(callTool).toHaveBeenCalledWith("examplemcp", "recall", { input: "plain text not json" });
+  });
+
+  it("MCP-Pattern Fehler wird als failed-Status propagiert", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "examplemcp/broken",
+        description: "Broken tool",
+        category: "mcp",
+        input_type: "json",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "examplemcp",
+        mcp_tool: "broken",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const callTool = vi.fn().mockRejectedValue(new Error("connection refused"));
+    const mcpManager = { callTool } as unknown as McpManager;
+    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+
+    const plan = makePlan({
+      steps: [
+        { id: "fail", pattern: "examplemcp/broken", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "{}");
+    expect(result.status.get("fail")).toBe("failed");
+  });
+});
+
+describe("sanitizeMcpArgs", () => {
+  it("passes safe objects through", () => {
+    expect(sanitizeMcpArgs({ a: 1, b: "x", c: true })).toEqual({ a: 1, b: "x", c: true });
+  });
+
+  it("strips __proto__ at top level", () => {
+    const payload = JSON.parse('{"a":1,"__proto__":{"polluted":true}}');
+    const result = sanitizeMcpArgs(payload);
+    expect(result).toEqual({ a: 1 });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("strips constructor and prototype keys", () => {
+    const result = sanitizeMcpArgs({ ok: 1, constructor: "bad", prototype: "also bad" });
+    expect(result).toEqual({ ok: 1 });
+  });
+
+  it("strips nested prototype sinks recursively", () => {
+    const payload = JSON.parse('{"nested":{"__proto__":{"x":1},"keep":"me"}}');
+    const result = sanitizeMcpArgs(payload);
+    expect(result.nested).toEqual({ keep: "me" });
+  });
+
+  it("handles arrays", () => {
+    const result = sanitizeMcpArgs({ items: [{ a: 1 }, { b: 2 }] });
+    expect(result).toEqual({ items: [{ a: 1 }, { b: 2 }] });
+  });
+
+  it("returns empty object for non-object input", () => {
+    expect(sanitizeMcpArgs(null)).toEqual({});
+    expect(sanitizeMcpArgs("string")).toEqual({});
+    expect(sanitizeMcpArgs(42)).toEqual({});
   });
 });

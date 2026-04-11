@@ -10,13 +10,41 @@ import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
 import type { QualityPipeline } from "./quality/pipeline.js";
 import type { KnowledgeBus } from "./knowledge-bus.js";
-import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
+import { loadWingConfig, resolveItemWing } from "./wing-resolver.js";
+import { encodeMessages as encodeKcnMessages } from "./kcn.js";
+import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, KernelMessage, KnowledgeType, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 import type { StepExecutor } from "./executor.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
 import { PromptBuilder } from "../security/prompt-builder.js";
+
+/**
+ * Strip prototype-pollution sinks from parsed JSON before it crosses
+ * a trust boundary (MCP tool call). Recursively removes `__proto__`,
+ * `constructor`, `prototype` keys — returns a plain object tree.
+ */
+export function sanitizeMcpArgs(input: unknown): Record<string, unknown> {
+  const seen = new WeakSet<object>();
+  const walk = (v: unknown): unknown => {
+    if (v === null || typeof v !== "object") return v;
+    if (seen.has(v as object)) return undefined;
+    seen.add(v as object);
+    if (Array.isArray(v)) return v.map(walk);
+    const out: Record<string, unknown> = Object.create(null);
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+      out[k] = walk(val);
+    }
+    return out;
+  };
+  const result = walk(input);
+  if (result === null || typeof result !== "object" || Array.isArray(result)) {
+    return {};
+  }
+  return { ...(result as Record<string, unknown>) };
+}
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
@@ -139,6 +167,10 @@ export class Engine {
         // ── RAG-Pattern: Semantic Search/Index/Compare ──
         console.error(chalk.gray(`  🔍 ${step.id} → ${step.pattern} [RAG: ${pattern.meta.rag_collection}/${pattern.meta.rag_operation}]`));
         message = await this.executeRag(step, pattern, input, t0);
+      } else if (pattern.meta.type === "kb") {
+        // ── KB-Pattern: Knowledge Bus recall/store ──
+        console.error(chalk.gray(`  🧠 ${step.id} → ${step.pattern} [KB: ${pattern.meta.kb_operation}]`));
+        message = await this.executeKb(step, pattern, input, t0, ctx);
       } else if (pattern.meta.type === "mcp") {
         // ── MCP-Pattern: MCP-Server Tool aufrufen ──
         console.error(chalk.gray(`  🔌 ${step.id} → ${step.pattern} [MCP: ${pattern.meta.mcp_server}/${pattern.meta.mcp_tool}]`));
@@ -411,6 +443,207 @@ export class Engine {
     return this.buildMessage(step, pattern, output, t0, "text");
   }
 
+  // ─── KB Pattern Execution (recall / store) ────────────────────
+  //
+  // Mechanism: kb-type patterns combine an LLM extraction step with
+  // KnowledgeBus operations in a single executor. For "recall" the
+  // LLM emits {search_queries: [...]} and the engine runs each query
+  // against semanticSearch, then formats results as a markdown
+  // context block. For "store" the LLM emits {memory_items: [...]}
+  // and the engine publishes each item, returning a summary.
+  //
+  // Why this lives in the kernel: it's a generic mechanism (any
+  // pattern can declare type: kb in its frontmatter and the engine
+  // dispatches automatically). No domain-specific knowledge.
+  private async executeKb(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number,
+    ctx: ExecutionContext,
+  ): Promise<StepMessage> {
+    if (!this.knowledgeBus) {
+      throw new Error("KnowledgeBus nicht konfiguriert");
+    }
+    const op = pattern.meta.kb_operation;
+    if (!op) {
+      throw new Error(`KB-Pattern "${pattern.meta.name}" hat kein kb_operation gesetzt`);
+    }
+
+    // Step 1: LLM call to extract structured intent from input
+    const built = this.promptBuilder.build(
+      pattern.systemPrompt,
+      input,
+      [],
+      ctx.trace_id,
+    );
+    const llmResult = await this.provider.complete(
+      built.systemPrompt,
+      built.userMessage,
+      undefined,
+      ctx,
+    );
+    const llmJson = extractFirstJsonObject(llmResult.content);
+
+    if (op === "recall") {
+      return this.executeKbRecall(step, pattern, llmJson, ctx, t0);
+    }
+    if (op === "store") {
+      return this.executeKbStore(step, pattern, llmJson, ctx, t0);
+    }
+    throw new Error(`Unbekannte kb_operation: ${op}`);
+  }
+
+  private async executeKbRecall(
+    step: ExecutionStep,
+    pattern: Pattern,
+    llmJson: Record<string, unknown> | null,
+    ctx: ExecutionContext,
+    t0: number,
+  ): Promise<StepMessage> {
+    const kb = this.knowledgeBus!;
+    const maxQueries = pattern.meta.kb_max_queries ?? 4;
+    const topK = pattern.meta.kb_top_k ?? 5;
+
+    const queries = parseRecallQueries(llmJson, maxQueries);
+    if (queries.length === 0) {
+      return this.buildMessage(
+        step,
+        pattern,
+        "_Kein Kontext verfügbar: keine Suchanfragen extrahiert._",
+        t0,
+        "text",
+      );
+    }
+
+    // Run queries in parallel; dedupe results by id and concatenate
+    // into a single KCN-encoded block. KCN is the token-efficient
+    // wire format for recall output — see src/core/kcn.ts.
+    const seen = new Set<string>();
+    const collected: KernelMessage[] = [];
+    const queryResults = await Promise.all(
+      queries.map(async (q) => {
+        const opts: { top_k: number; type?: KnowledgeType; wing?: string; room?: string } = {
+          top_k: topK,
+        };
+        if (q.category && !q.wing) {
+          // Map common categories to message types where it makes sense.
+          const typeMap: Record<string, KnowledgeType> = {
+            decisions: "decision",
+            facts: "fact",
+            findings: "finding",
+            patterns: "pattern",
+            lessons: "lesson",
+          };
+          const t = typeMap[q.category.toLowerCase()];
+          if (t) opts.type = t;
+        }
+        if (q.wing) opts.wing = q.wing;
+        if (q.room) opts.room = q.room;
+        return await kb.semanticSearch(q.query, ctx, opts);
+      }),
+    );
+
+    for (const results of queryResults) {
+      for (const msg of results) {
+        if (seen.has(msg.id)) continue;
+        seen.add(msg.id);
+        collected.push(msg);
+      }
+    }
+
+    const output =
+      collected.length === 0
+        ? "_Kein relevanter Kontext gefunden._"
+        : `## Erinnerter Kontext (KCN)\n${encodeKcnMessages(collected)}`;
+
+    return this.buildMessage(step, pattern, output, t0, "text");
+  }
+
+  private async executeKbStore(
+    step: ExecutionStep,
+    pattern: Pattern,
+    llmJson: Record<string, unknown> | null,
+    ctx: ExecutionContext,
+    t0: number,
+  ): Promise<StepMessage> {
+    const kb = this.knowledgeBus!;
+    const items = parseStoreItems(llmJson);
+    if (items.length === 0) {
+      return this.buildMessage(
+        step,
+        pattern,
+        "## Memory Store\n\n_Nichts Speicherwürdiges extrahiert._",
+        t0,
+        "text",
+      );
+    }
+
+    const wingCfg = loadWingConfig();
+    const records: Array<{
+      type: KnowledgeType;
+      tags: string[];
+      source_pattern: string;
+      content: string;
+      format: "text";
+      target_context: string;
+      wing: string;
+      room?: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
+
+    for (const item of items) {
+      const wing = resolveItemWing({ wing: item.wing, category: item.category }, wingCfg);
+      records.push({
+        type: (item.type ?? "fact") as KnowledgeType,
+        tags: item.tags ?? [],
+        source_pattern: pattern.meta.name,
+        content: item.content,
+        format: "text",
+        target_context: ctx.context_id,
+        wing,
+        room: item.room,
+        metadata: item.metadata,
+      });
+    }
+
+    // Dedupe before publishing — both exact and near-dup.
+    let stored = 0;
+    let duplicates = 0;
+    const errors: string[] = [];
+    for (const rec of records) {
+      try {
+        const dup = await kb.checkDuplicate(rec.content, ctx);
+        if (dup) {
+          duplicates++;
+          continue;
+        }
+        await kb.publish(rec, ctx);
+        stored++;
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    const lines: string[] = [
+      "## Memory Store",
+      "",
+      `- Stored: ${stored}`,
+      `- Duplicates: ${duplicates}`,
+      `- Failed: ${errors.length}`,
+      `- Wing mapping: ${
+        wingCfg.source === "context.yaml"
+          ? `context.yaml (${wingCfg.contextPath})`
+          : "built-in defaults"
+      }`,
+    ];
+    if (errors.length > 0) {
+      lines.push("", "## Errors");
+      for (const e of errors) lines.push(`- ${e}`);
+    }
+    return this.buildMessage(step, pattern, lines.join("\n"), t0, "text");
+  }
+
   // ─── MCP Tool Execution ──────────────────────────────────────
 
   private async executeMcpTool(
@@ -424,12 +657,16 @@ export class Engine {
       throw new Error(`MCP-Pattern "${pattern.meta.name}" hat kein mcp_server/mcp_tool definiert`);
     }
 
-    // Input als JSON-Args parsen, Fallback: als { input: "..." } wrappen
+    // Input als JSON-Args parsen, Fallback: als { input: "..." } wrappen.
+    // sanitizeMcpArgs() entfernt __proto__/constructor/prototype-Keys defensiv
+    // (Prototype-Pollution-Schutz bei untrusted JSON-Inputs).
     let args: Record<string, unknown>;
     try {
-      args = JSON.parse(input);
-      if (typeof args !== "object" || args === null || Array.isArray(args)) {
+      const parsed: unknown = JSON.parse(input);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         args = { input };
+      } else {
+        args = sanitizeMcpArgs(parsed as Record<string, unknown>);
       }
     } catch {
       args = { input };
@@ -875,3 +1112,128 @@ export class Engine {
     return match ? parseInt(match[1]) : 5;
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// KB pattern helpers — JSON extraction and formatting
+// ─────────────────────────────────────────────────────────────
+
+interface RecallQuery {
+  query: string;
+  category?: string;
+  wing?: string;
+  room?: string;
+}
+
+interface StoreItem {
+  category?: string;
+  wing?: string;
+  type?: string;
+  room?: string;
+  content: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Extract the first balanced JSON object from an LLM response. The
+ * memory_recall and memory_store patterns instruct the LLM to emit
+ * pure JSON, but real LLMs sometimes wrap it in code fences or add
+ * a leading sentence. This helper finds the first `{...}` block and
+ * parses it. Returns null on failure.
+ */
+function extractFirstJsonObject(text: string): Record<string, unknown> | null {
+  if (!text) return null;
+  // Quick path: the entire text is JSON
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch { /* fall through */ }
+
+  // Slow path: find a balanced { ... } block
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === "\\") {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) {
+        const slice = text.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(slice);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>;
+          }
+        } catch { /* not valid */ }
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function parseRecallQueries(
+  json: Record<string, unknown> | null,
+  maxQueries: number,
+): RecallQuery[] {
+  if (!json) return [];
+  const raw = json.search_queries;
+  if (!Array.isArray(raw)) return [];
+  const out: RecallQuery[] = [];
+  for (const entry of raw) {
+    if (out.length >= maxQueries) break;
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.query !== "string" || !e.query.trim()) continue;
+    out.push({
+      query: e.query.trim(),
+      category: typeof e.category === "string" ? e.category : undefined,
+      wing: typeof e.wing === "string" ? e.wing : undefined,
+      room: typeof e.room === "string" ? e.room : undefined,
+    });
+  }
+  return out;
+}
+
+function parseStoreItems(json: Record<string, unknown> | null): StoreItem[] {
+  if (!json) return [];
+  const raw = json.memory_items;
+  if (!Array.isArray(raw)) return [];
+  const out: StoreItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.content !== "string" || !e.content.trim()) continue;
+    out.push({
+      content: e.content.trim(),
+      category: typeof e.category === "string" ? e.category : undefined,
+      wing: typeof e.wing === "string" ? e.wing : undefined,
+      type: typeof e.type === "string" ? e.type : undefined,
+      room: typeof e.room === "string" ? e.room : undefined,
+      tags: Array.isArray(e.tags) ? (e.tags as unknown[]).filter((t) => typeof t === "string") as string[] : undefined,
+      metadata: e.metadata && typeof e.metadata === "object" && !Array.isArray(e.metadata)
+        ? (e.metadata as Record<string, unknown>)
+        : undefined,
+    });
+  }
+  return out;
+}
+

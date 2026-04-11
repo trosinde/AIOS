@@ -133,35 +133,22 @@ paths:
   patterns: ./patterns
   personas: ./personas
 
+knowledge:
+  # Persistent memory store backed by LanceDB. Local, embedded, no
+  # external services required besides an embedding provider.
+  embedding_provider:
+    type: ollama          # ollama | stub
+    endpoint: http://localhost:11434
+    model: nomic-embed-text
+    dim: 768
+  # Threshold for cosine-based near-duplicate detection in checkDuplicate.
+  # 1.0 = exact match, 0.0 = anything counts as dup. Default works well
+  # for short factual statements.
+  duplicate_threshold: 0.92
+
 mcp:
-  servers:
-    mempalace:
-      command: python
-      args: ["-m", "mempalace.mcp_server"]
-      category: knowledge
-      prefix: mempalace
-      description: "MemPalace – Persistentes AI-Gedächtnis (lokal, ChromaDB + SQLite)"
-      # ── Install bootstrap: aios mcp install mempalace, auch automatisch
-      # von `aios update` und `install.sh` aufgerufen. Läuft NUR wenn
-      # install_detect fehlschlägt (d.h. mempalace noch nicht im Python-
-      # Env). Installiert via uv → pipx → pip --user in Reihenfolge.
-      install_detect: ["python", "-c", "import mempalace"]
-      install_hint: "pipx install mempalace  (oder: pip install --user mempalace)"
-      install_commands:
-        - detect: uv
-          label: "uv tool install"
-          run: ["uv", "tool", "install", "mempalace"]
-        - detect: pipx
-          label: "pipx install"
-          run: ["pipx", "install", "mempalace"]
-        - detect: python3
-          label: "python3 -m pip install --user"
-          run: ["python3", "-m", "pip", "install", "--user", "mempalace"]
-        - detect: python
-          label: "python -m pip install --user"
-          run: ["python", "-m", "pip", "install", "--user", "mempalace"]
-      post_install: ["python", "-m", "mempalace", "init"]
-  # Weitere MCP-Server können über 'aios configure' oder ~/.aios/config.yaml konfiguriert werden.
+  servers: {}
+  # MCP-Server können über 'aios configure' oder ~/.aios/config.yaml konfiguriert werden.
   # Beispiel:
   #   azure-devops:
   #     command: node

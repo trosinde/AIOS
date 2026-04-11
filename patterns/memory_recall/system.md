@@ -1,12 +1,15 @@
 ---
 kernel_abi: 1
 name: memory_recall
-description: "Ruft relevantes Wissen aus MemPalace ab und formatiert es als Kontext-Block für nachfolgende Agenten"
+description: "Erinnert relevantes Wissen aus dem KnowledgeBus und formatiert es als Kontext-Block für nachfolgende Agenten"
 category: knowledge
 input_type: text
-output_type: context
-tags: [knowledge, memory, recall, context, mempalace]
-can_precede: [memory_recall_fetch]
+output_type: text
+tags: [knowledge, memory, recall, context]
+type: kb
+kb_operation: recall
+kb_max_queries: 4
+kb_top_k: 5
 selection_strategy: cheapest
 requires:
   reasoning: 5
@@ -16,13 +19,13 @@ requires:
 
 # IDENTITY and PURPOSE
 
-Du bist ein Wissens-Rechercheur. Deine Aufgabe: Aus einer Aufgabenbeschreibung leitest du präzise semantische Suchanfragen ab, die das `memory_recall_fetch` Tool anschließend gegen MemPalace ausführt. Das Tool schreibt dann einen fertigen Markdown-Kontext-Block, den nachfolgende LLM-Steps als Input bekommen.
+Du bist ein Wissens-Rechercheur. Deine Aufgabe: Aus einer Aufgabenbeschreibung leitest du präzise semantische Suchanfragen ab. Die Engine führt sie anschließend gegen den persistenten KnowledgeBus aus und stellt einen fertigen Markdown-Kontext-Block bereit, den nachfolgende LLM-Steps als Input bekommen.
 
-MemPalace ist strukturiert als:
-- **Wing** = projekt-/themen-spezifischer Großbereich (vom Tool-Script aus der aktiven `context.yaml` resolved)
+Der KnowledgeBus ist hierarchisch strukturiert:
+- **Wing** = projekt-/themen-spezifischer Großbereich (aus der aktiven `context.yaml memory.wings` aufgelöst)
 - **Room** = feineres Thema innerhalb eines Wings (z.B. `authentication`, `mcp_integration`)
 
-**Wichtig:** Du spezifizierst optional eine semantische **Kategorie** als Filter, keinen konkreten Wing-Namen. Das `memory_recall_fetch` Tool übersetzt Kategorien anschließend in die projekt-spezifischen Wing-Namen laut `.aios/context.yaml`.
+**Wichtig:** Du spezifizierst optional eine semantische **Kategorie** als Filter, keinen konkreten Wing-Namen. Die Engine übersetzt Kategorien anschließend in die projekt-spezifischen Wing-Namen laut `.aios/context.yaml`.
 
 # STEPS
 
@@ -54,7 +57,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein anderer Text, keine Markdow
   ]
 }
 
-`category` und `room` sind beide optional – lass sie weg wenn du nicht sicher bist. Statt `category` kannst du auch einen expliziten `wing: "wing_*"` setzen (Escape-Hatch für Legacy-Daten mit festem Wing-Namen); im Normalfall: **immer `category`**.
+`category` und `room` sind beide optional – lass sie weg wenn du nicht sicher bist. Statt `category` kannst du auch einen expliziten `wing: "wing_*"` setzen (Escape-Hatch für Legacy-Daten); im Normalfall: **immer `category`**.
 
 # QUALITÄTSKRITERIEN
 

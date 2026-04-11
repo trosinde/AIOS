@@ -51,7 +51,7 @@ export interface PatternMeta {
   };
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "kb" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
@@ -72,6 +72,15 @@ export interface PatternMeta {
   rag_collection?: string;
   rag_operation?: "search" | "index" | "compare";
   rag_overrides?: { topK?: number; minRelevance?: number };
+
+  // KnowledgeBus-Pattern Felder
+  // - "recall": LLM extracts 2-4 search queries from input → semanticSearch
+  //   each → returns formatted markdown context block
+  // - "store":  LLM extracts memory_items[] from input → publish each →
+  //   returns markdown summary
+  kb_operation?: "recall" | "store";
+  kb_top_k?: number;            // Default 5 per query for recall
+  kb_max_queries?: number;      // Default 4 for recall
 
   // Capability-Based Provider Selection: required capabilities per pattern
   requires?: TaskRequirements;
@@ -210,7 +219,16 @@ export interface Persona {
 
 // ─── Knowledge Base ───────────────────────────────────────
 
-export type KnowledgeType = "decision" | "fact" | "requirement" | "artifact";
+export type KnowledgeType =
+  | "decision"
+  | "fact"
+  | "requirement"
+  | "artifact"
+  // ─── Additive (KnowledgeBus v1.1) ───
+  | "finding"
+  | "pattern"
+  | "lesson"
+  | "diary";
 
 export interface KnowledgeItem {
   id: string;
@@ -237,6 +255,12 @@ export interface KernelMessage {
   content: string;
   format: "text" | "json" | "markdown";
   metadata?: Record<string, unknown>;
+
+  // ─── Additive fields (KnowledgeBus v1.1, LanceDB-backed) ───
+  // Optional. Older publishers omit them; newer ones (memory_store
+  // pattern) populate them via the wing-resolver.
+  wing?: string;
+  room?: string;
 }
 
 export interface KnowledgeQuery {
@@ -394,21 +418,6 @@ export interface ToolsConfig {
 
 // ─── MCP ────────────────────────────────────────────────
 
-/**
- * A single install attempt for a MCP server, tried in order by
- * `McpServerConfig.install_commands`. The installer picks the first
- * entry whose `detect` tool is available in PATH and runs its `run`
- * command array.
- */
-export interface McpInstallCommand {
-  /** CLI tool name that must be available in PATH for this entry to be used */
-  detect: string;
-  /** Argv-style command to execute (no shell interpolation) */
-  run: string[];
-  /** Optional human-readable label for logs */
-  label?: string;
-}
-
 export interface McpServerConfig {
   command: string;
   args?: string[];
@@ -418,20 +427,6 @@ export interface McpServerConfig {
   description?: string;    // Menschenlesbarer Name für Katalog
   exclude?: string[];      // Tool-Namen die nicht registriert werden
   proxy?: boolean;         // Tools via MCP-Server nach außen exponieren (default: true)
-
-  // ─── Install bootstrap (optional, additive) ─────────────
-  // Enables `aios mcp install <server>` and automatic install-hints when
-  // the server fails to start. All fields are optional. Kernel stays
-  // policy-free: it only runs what the YAML declares, does not know
-  // anything MemPalace-specific.
-  /** Argv-style command that exits 0 iff the server is already installed */
-  install_detect?: string[];
-  /** Human-readable one-line hint (shown when auto-install is unavailable) */
-  install_hint?: string;
-  /** Ordered list of install methods, first available one is used */
-  install_commands?: McpInstallCommand[];
-  /** Optional post-install command (e.g. `mempalace init`) */
-  post_install?: string[];
 }
 
 export interface McpConfig {
@@ -735,12 +730,13 @@ export interface ContextConfig {
   // ─── Required Traits (optional) ────────────────────
   required_traits?: string[];
 
-  // ─── MemPalace Memory Wings (optional) ─────────────
+  // ─── KnowledgeBus Memory Wings (optional) ──────────
   // Maps semantic categories (decisions, facts, findings, patterns,
-  // lessons, default) to MemPalace wing names. Used by the memory_store
-  // and memory_recall tool scripts to translate category-keyed LLM
-  // output into context-specific wing names. Fully optional: when
-  // absent, built-in defaults (wing_aios_*) are used.
+  // lessons, default) to wing names used by the LanceDB-backed
+  // KnowledgeBus. Read by `src/core/wing-resolver.ts` whenever a
+  // memory_store/memory_recall pattern emits a category, translated
+  // into the project-specific wing. Fully optional: when absent,
+  // built-in defaults (wing_aios_*) are used.
   memory?: {
     wings?: Record<string, string>;
   };

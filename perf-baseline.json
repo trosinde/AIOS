@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-04-11T21:44:38.117Z",
+  "scale": 100000,
+  "provider": "stub",
+  "node": "v24.14.0",
+  "platform": "linux-x64",
+  "results": [
+    {
+      "name": "query-filter-large",
+      "iterations": 100,
+      "totalMs": 484.1364360000001,
+      "meanMs": 4.841364360000001,
+      "p50Ms": 4.608029,
+      "p95Ms": 5.715512,
+      "p99Ms": 23.322098,
+      "minMs": 3.55004,
+      "maxMs": 23.322098
+    },
+    {
+      "name": "semantic-search-large",
+      "iterations": 100,
+      "totalMs": 1954.8199300000006,
+      "meanMs": 19.548199300000007,
+      "p50Ms": 17.78531,
+      "p95Ms": 19.299743,
+      "p99Ms": 189.562079,
+      "minMs": 16.010182,
+      "maxMs": 189.562079
+    },
+    {
+      "name": "publish-warm-at-scale",
+      "iterations": 50,
+      "totalMs": 195.263642,
+      "meanMs": 3.9052728400000003,
+      "p50Ms": 3.136259,
+      "p95Ms": 6.728345,
+      "p99Ms": 21.340749,
+      "minMs": 2.538755,
+      "maxMs": 21.340749
+    },
+    {
+      "name": "concurrent-semantic-search-30-at-scale",
+      "iterations": 30,
+      "totalMs": 8562.805659000003,
+      "meanMs": 285.4268553000001,
+      "p50Ms": 285.305836,
+      "p95Ms": 299.784287,
+      "p99Ms": 300.795455,
+      "minMs": 254.871894,
+      "maxMs": 300.795455
+    },
+    {
+      "name": "checkDuplicate-at-scale",
+      "iterations": 50,
+      "totalMs": 1500.8183080000003,
+      "meanMs": 30.016366160000008,
+      "p50Ms": 29.224995,
+      "p95Ms": 36.11071,
+      "p99Ms": 39.877847,
+      "minMs": 27.190887,
+      "maxMs": 39.877847
+    }
+  ]
+}

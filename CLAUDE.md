@@ -308,17 +308,20 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] PromptBuilder-Integration für sichere LLM-Calls
 - [x] Beispiel-Kontexte: HR (Mitarbeiter, Abteilungen), Securitas (Findings), Network (Topologie)
 
-### MemPalace Integration (Persistentes Gedächtnis)
-- [x] MCP-Server-Config in `aios.yaml` (`mcp.servers.mempalace`)
-- [x] **Read-Chain:** `memory_recall` (LLM plant Queries) → `memory_recall_fetch` (Tool führt Searches aus, liefert gefüllten Markdown-Kontext-Block)
-- [x] **Write-Chain:** `memory_store` (LLM extrahiert Items) → `memory_store_persist` (Tool schreibt via MCP nach MemPalace)
-- [x] Tool-Scripts: `tools/mempalace-recall.ts`, `tools/mempalace-persist.ts` (nutzen `@modelcontextprotocol/sdk`, gemeinsame Helpers, lesen `aios.yaml` als Single-Source-of-Truth)
-- [x] `_router` Pattern plant beide Chains automatisch (fire-and-forget, `retry.max: 0`)
-- [x] Kernel-Mechanismus-Fix: `executeTool` inlined Datei-Inhalt als Message-Content wenn `output_type: "text"` – macht generell Tool→LLM-Ketten funktional (betrifft auch `pdf_extract_text → summarize`)
-- [x] `docs/MEMPALACE_INTEGRATION.md`
-- [x] **Wing-Mapping per `context.yaml` konfigurierbar**: LLM-Patterns emittieren semantische `category`-Keys (`decisions` / `facts` / `findings` / `patterns` / `lessons` / `compliance` / `default`), Tool-Scripts resolven diese via `memory.wings`-Block in `.aios/context.yaml` (mit Upward-Walk bis zu 6 Parent-Levels), Fallback auf Default-Map. Explizite `wing: "wing_*"` Strings bleiben als Escape-Hatch für Migration. Source-Trace in jeder Persist-Summary.
-- [x] Unit-Tests: 57 für persist script (inkl. WingConfig-Loading, resolveWing, resolveItemWing), 39 für recall script (inkl. resolveQueryWing, category-Queries), 2 für Engine-Text-Inlining, 42 für mcp-install command
-- [x] **Implizite Installation via `aios mcp install`**: Deklarative Install-Policy pro MCP-Server in `aios.yaml` (`install_detect` / `install_commands` / `install_hint` / `post_install`), generischer Installer in `src/commands/mcp-install.ts` (Detection + Iteration durch install_commands nach Präferenz uv→pipx→pip). Aufgerufen von `install.sh` (non-interactive nach `aios configure`), `aios update` (Post-Build-Verify), oder manuell. `McpManager` zeigt `install_hint` + `Fix: aios mcp install <server>` prominent bei Connection-Fehlern. Kernel bleibt policy-frei: MemPalace-Spezifika liegen ausschließlich in `aios.yaml`.
+### Phase 4c – KnowledgeBus auf LanceDB (Persistentes Gedächtnis) ✅
+- [x] **Persistenter HNSW-Vektor-Store** via LanceDB (`@lancedb/lancedb@0.27.2`), Rust-Core, Node-native, embedded — kein externer Subprocess, keine zusätzliche Sprach-Runtime
+- [x] `src/core/knowledge-bus.ts`: async API (`publish`/`query`/`search`/`byTrace`/`stats`/`delete`) + additive Methoden `semanticSearch`, `checkDuplicate`, `publishMany`, `listTaxonomy`, `kgAdd`/`kgQuery`, `diaryWrite`/`diaryRead`
+- [x] `src/core/embedding-provider.ts`: `EmbeddingProvider` Interface, `OllamaEmbeddingProvider` (Default `nomic-embed-text`, 768 dim), `StubEmbeddingProvider` für Tests
+- [x] `src/core/wing-resolver.ts`: Wing/Room-Hierarchie und Category→Wing-Mapping; liest `ContextConfig.memory.wings` mit 6-Level-Parent-Walk
+- [x] `src/core/knowledge-bus-schema.ts`: zentrales Arrow-Schema für `messages` und `kg_triples` Tabellen
+- [x] `src/core/kcn.ts`: **Knowledge Compact Notation** — token-effizientes Wire-Format für recall-Output (~60% billiger als JSON)
+- [x] **Engine kb-Pattern-Type:** `executeKb` Executor in `src/core/engine.ts`, dispatched `kb_operation: "recall" | "store"` — kombiniert LLM-Extraktion (Pattern-System-Prompt) und KB-Calls in einem Step
+- [x] Patterns `memory_recall` und `memory_store` als `type: kb` (kein Tool-Script-Umweg)
+- [x] **Quality-Pipeline async**: `quality/pipeline.ts:consistency_check` nutzt `await knowledgeBus.query` parallel
+- [x] CLI: `aios knowledge publish/query/search/semantic-search/taxonomy/diary/diary-write/kg-add/kg-query` (alle async)
+- [x] Tests: 29 KnowledgeBus-Tests, 14 Wing-Resolver-Tests, 12 KCN-Tests
+- [x] Performance: 10 Vitest-Benchmarks (`src/core/knowledge-bus.bench.ts`) mit Failure-Thresholds, Scale-Tests (100k Items) in `scripts/perf/knowledge-bus-scale.ts`, 8-Szenarien-Suite in `scripts/perf/kb-perf-scenarios.ts` (recall@k, search_filter, concurrent, RSS-Sampling, sequential vs batched, leak detection), Baseline-Vergleich via `scripts/perf/compare-baseline.ts`
+- [x] `docs/KNOWLEDGE_BUS.md` als zentrale Doku
 
 ### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer

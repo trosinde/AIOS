@@ -127,9 +127,11 @@ ok "CLI erstellt: $WRAPPER"
 step "Claude Code MCP-Server registrieren"
 
 if command -v claude &> /dev/null; then
-  # Parse MCP servers from aios.yaml and register via `claude mcp add`
-  REGISTERED=0
-  AIOS_REPO_ABS="$AIOS_REPO" node -e '
+  # Parse MCP servers from aios.yaml and register via `claude mcp add`.
+  # NUL-separated argv stream → bash array → exec (no eval, no shell parsing).
+  MCP_ARGV_FILE=$(mktemp)
+  trap 'rm -f "$MCP_ARGV_FILE"' EXIT
+  AIOS_REPO_ABS="$AIOS_REPO" MCP_ARGV_OUT="$MCP_ARGV_FILE" node -e '
     const fs = require("fs");
     const yaml = require(process.env.AIOS_REPO_ABS + "/node_modules/js-yaml/index.js");
     const path = require("path");
@@ -140,34 +142,38 @@ if command -v claude &> /dev/null; then
     const config = yaml.load(fs.readFileSync(aiosYaml, "utf8"));
     if (!config.mcp?.servers) process.exit(0);
 
-    // Output shell commands for each server
+    const out = fs.openSync(process.env.MCP_ARGV_OUT, "w");
     for (const [name, srv] of Object.entries(config.mcp.servers)) {
-      const envArgs = [];
-      if (srv.env) {
+      if (typeof srv.command !== "string") continue;
+      const argv = ["claude", "mcp", "add", "-s", "user"];
+      if (srv.env && typeof srv.env === "object") {
         for (const [k, v] of Object.entries(srv.env)) {
-          const resolved = String(v).startsWith("./") ? path.resolve(repoDir, v) : v;
-          envArgs.push("-e", k + "=" + resolved);
+          const resolved = String(v).startsWith("./") ? path.resolve(repoDir, v) : String(v);
+          argv.push("-e", `${k}=${resolved}`);
         }
       }
-      const args = srv.args || [];
-      // Output as tab-separated: name \t command \t args \t envArgs
-      console.log(JSON.stringify({ name, command: srv.command, args, envArgs }));
+      argv.push("--", String(name), String(srv.command));
+      for (const a of (srv.args || [])) argv.push(String(a));
+      // Record group: <name>\x1E<argc>\x1E<arg0>\x1E...\x1E<argN>\x00
+      fs.writeSync(out, `${name}\x1E${argv.length}\x1E${argv.join("\x1E")}\x00`);
     }
-  ' | while IFS= read -r line; do
-    NAME=$(echo "$line" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).name)")
-    # Remove existing server (ignore errors if not present)
+    fs.closeSync(out);
+  '
+
+  while IFS= read -r -d "" GROUP; do
+    # Split on \x1E (record separator) into a bash array — safe, no eval.
+    IFS=$'\x1E' read -r -a PARTS <<< "$GROUP"
+    NAME="${PARTS[0]}"
+    # PARTS[1] is argc; PARTS[2..] are argv
     claude mcp remove -s user "$NAME" 2>/dev/null || true
-    # Build the claude mcp add command
-    CMD=$(echo "$line" | AIOS_REPO_ABS="$AIOS_REPO" node -e '
-      const srv = JSON.parse(require("fs").readFileSync("/dev/stdin","utf8"));
-      const parts = ["claude", "mcp", "add", "-s", "user"];
-      parts.push(...srv.envArgs);
-      parts.push("--", srv.name, srv.command, ...srv.args);
-      console.log(parts.map(p => p.includes(" ") ? JSON.stringify(p) : p).join(" "));
-    ')
-    eval "$CMD" 2>/dev/null && ok "  $NAME" || warn "  $NAME fehlgeschlagen"
-    REGISTERED=$((REGISTERED + 1))
-  done
+    if "${PARTS[@]:2}" 2>/dev/null; then
+      ok "  $NAME"
+    else
+      warn "  $NAME fehlgeschlagen"
+    fi
+  done < "$MCP_ARGV_FILE"
+  rm -f "$MCP_ARGV_FILE"
+  trap - EXIT
 else
   warn "Claude Code CLI nicht gefunden, MCP-Registrierung übersprungen"
 fi
@@ -198,18 +204,6 @@ else
   # Also export for current session
   export PATH="$HOME/.local/bin:$PATH"
   warn "Starte eine neue Shell oder: source $RC_FILE"
-fi
-
-# ─── MCP Server Installation ─────────────────────────────
-# Installs external MCP servers declared in aios.yaml with
-# install_commands (e.g. MemPalace). Non-interactive and non-fatal:
-# a missing Python toolchain must not break the AIOS install.
-step "MCP-Server Installation (optional)"
-
-if "$WRAPPER" mcp install --non-interactive --only-installable 2>&1; then
-  ok "MCP-Server Bootstrap abgeschlossen"
-else
-  warn "MCP-Server Install teilweise fehlgeschlagen — kann später mit 'aios mcp install' nachgeholt werden"
 fi
 
 # ─── Configure ────────────────────────────────────────────
