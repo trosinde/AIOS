@@ -65,10 +65,24 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein anderer Text):
 
 # MEMORY INTEGRATION (MemPalace)
 
-- Wenn `mempalace/*` MCP-Tools im Katalog verfügbar sind UND die Aufgabe auf bisherige Entscheidungen, Constraints oder Findings angewiesen sein könnte (z.B. Feature-Erweiterung, Code-Review in bekanntem Projekt, Compliance-Prüfung), plane einen `memory_recall` Schritt **VOR** den Hauptschritten. Der `context_block` Output wird in nachfolgende Steps injiziert.
-- Wenn die Aufgabe neue Entscheidungen, Findings oder wiederverwendbares Wissen produziert (Reviews, Design, Requirements, Threat Models), plane nach den Hauptschritten eine **Zwei-Step-Kette**:
-  1. `memory_store` (LLM) – extrahiert und klassifiziert memory_items als JSON
-  2. `memory_store_persist` (Tool) – schreibt die Items via MCP nach MemPalace
-  Beide Steps gehören zusammen – plane `memory_store_persist` NUR wenn auch `memory_store` geplant ist, und verdrahte `memory_store_persist.depends_on = ["memory_store"]` sowie `memory_store_persist.input_from = ["memory_store"]`.
-- `memory_store_persist` ist fire-and-forget: `retry.max: 0`. Fehler des Steps dürfen den Workflow NICHT brechen – das Tool-Script garantiert Exit 0.
-- Für rein transiente Aufgaben (einmalige Zusammenfassung, Format-Konvertierung, Übersetzung) KEIN memory_recall/memory_store einplanen.
+Beide Memory-Pfade sind symmetrische Zwei-Step-Ketten (LLM plant, Tool führt aus).
+
+**Read-Path (vor den Hauptschritten):** Wenn `mempalace/*` MCP-Tools im Katalog verfügbar sind UND die Aufgabe auf bisherige Entscheidungen, Constraints oder Findings angewiesen sein könnte (Feature-Erweiterung, Review in bekanntem Projekt, Compliance-Prüfung), plane:
+
+1. `memory_recall` (LLM) – leitet 2–4 semantische Suchanfragen aus der Aufgabe ab
+2. `memory_recall_fetch` (Tool) – führt die Queries über MCP aus und liefert einen gefüllten Markdown-Kontext-Block
+
+Verdrahte: `memory_recall_fetch.depends_on = ["memory_recall"]`, `memory_recall_fetch.input_from = ["memory_recall"]`. Die Haupt-Steps hängen DIREKT von `memory_recall_fetch` ab (nicht von `memory_recall`) und nehmen es in ihr `input_from`, damit sie den gefüllten Kontext-Block als Input bekommen.
+
+**Write-Path (nach den Hauptschritten):** Wenn die Aufgabe neue Entscheidungen, Findings oder wiederverwendbares Wissen produziert (Reviews, Design, Requirements, Threat Models), plane:
+
+1. `memory_store` (LLM) – extrahiert und klassifiziert memory_items als JSON
+2. `memory_store_persist` (Tool) – schreibt die Items via MCP nach MemPalace
+
+Verdrahte: `memory_store_persist.depends_on = ["memory_store"]`, `memory_store_persist.input_from = ["memory_store"]`.
+
+**Gemeinsame Regeln:**
+
+- Beide Tool-Steps (`*_fetch`, `*_persist`) sind fire-and-forget: `retry.max: 0`. Fehler dieser Steps dürfen den Workflow NICHT brechen – die Tool-Scripts garantieren Exit 0.
+- Plane `*_fetch`/`*_persist` NUR wenn auch der jeweilige LLM-Partnerstep geplant ist.
+- Für rein transiente Aufgaben (einmalige Zusammenfassung, Format-Konvertierung, Übersetzung) KEINE Memory-Schritte einplanen.

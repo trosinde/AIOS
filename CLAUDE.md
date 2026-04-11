@@ -310,14 +310,13 @@ aios service refresh [context]           # Service-Cache neu generieren
 
 ### MemPalace Integration (Persistentes Gedächtnis)
 - [x] MCP-Server-Config in `aios.yaml` (`mcp.servers.mempalace`)
-- [x] Pattern: `memory_store` (Wissen extrahieren)
-- [x] Pattern: `memory_store_persist` (Tool-Pattern, schreibt Items via MCP nach MemPalace, fire-and-forget, Exit 0 garantiert)
-- [x] Tool-Script: `tools/mempalace-persist.ts` (nutzt `@modelcontextprotocol/sdk`, liest `aios.yaml` für Konfig-Single-Source)
-- [x] Pattern: `memory_recall` (Wissen abrufen → Kontext-Injection)
-- [x] `_router` Pattern plant Chain `memory_store → memory_store_persist` automatisch
+- [x] **Read-Chain:** `memory_recall` (LLM plant Queries) → `memory_recall_fetch` (Tool führt Searches aus, liefert gefüllten Markdown-Kontext-Block)
+- [x] **Write-Chain:** `memory_store` (LLM extrahiert Items) → `memory_store_persist` (Tool schreibt via MCP nach MemPalace)
+- [x] Tool-Scripts: `tools/mempalace-recall.ts`, `tools/mempalace-persist.ts` (nutzen `@modelcontextprotocol/sdk`, gemeinsame Helpers, lesen `aios.yaml` als Single-Source-of-Truth)
+- [x] `_router` Pattern plant beide Chains automatisch (fire-and-forget, `retry.max: 0`)
+- [x] Kernel-Mechanismus-Fix: `executeTool` inlined Datei-Inhalt als Message-Content wenn `output_type: "text"` – macht generell Tool→LLM-Ketten funktional (betrifft auch `pdf_extract_text → summarize`)
 - [x] `docs/MEMPALACE_INTEGRATION.md`
-- [x] Unit-Tests für persist script (32 Tests: JSON-Extraktion, Config-Loading, Response-Parsing, Summary-Formatting)
-- [ ] Context-Block-Injection aus `memory_recall` in nachgelagerte System-Prompts (aktuell nur als Input-Artefakt verfügbar)
+- [x] Unit-Tests: 32 für persist script, 31 für recall script, 2 für Engine-Text-Inlining
 - [ ] Wing-Mapping per `context.yaml` konfigurierbar
 
 ### Noch offen (nach Phase 4b)

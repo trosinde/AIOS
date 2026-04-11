@@ -503,16 +503,41 @@ export class Engine {
         }
       } catch { /* not JSON, use default single file */ }
 
-      const content = filePaths
-        ? `Dateien extrahiert: ${filePaths.join(", ")}`
-        : `Datei erzeugt: ${outputFile}`;
+      // Kernel mechanism: if the pattern declares output_type: "text", inline
+      // the tool's output file as message content so downstream LLM steps see
+      // the actual text (not just a path string). This makes declared
+      // can_precede chains like `pdf_extract_text → summarize` actually work
+      // and is the enabling mechanism for user-space Tool→LLM workflows.
+      // The kernel stays policy-free: it only looks at the frontmatter
+      // contract (`output_type`), not at the content semantics.
+      const isTextOutput = !filePaths && pattern.meta.output_type === "text";
+      let content: string;
+      let kind: "text" | "file";
+      if (filePaths) {
+        content = `Dateien extrahiert: ${filePaths.join(", ")}`;
+        kind = "file";
+      } else if (isTextOutput) {
+        try {
+          content = readFileSync(outputFile, "utf-8");
+          kind = "text";
+        } catch {
+          // Fall back to legacy path-only message if the file is unreadable
+          // (tool produced no output, crashed after partial write, etc.).
+          content = `Datei erzeugt: ${outputFile}`;
+          kind = "file";
+        }
+      } else {
+        content = `Datei erzeugt: ${outputFile}`;
+        kind = "file";
+      }
+
       return this.buildMessage(
         step,
         pattern,
         content,
         t0,
-        "file",
-        filePaths?.[0] ?? outputFile,
+        kind,
+        filePaths?.[0] ?? (kind === "file" ? outputFile : undefined),
         filePaths,
       );
     } finally {

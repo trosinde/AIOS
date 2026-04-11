@@ -6,7 +6,7 @@ category: knowledge
 input_type: text
 output_type: context
 tags: [knowledge, memory, recall, context, mempalace]
-can_precede: [extract_requirements, design_solution, generate_code, code_review, security_review, threat_model, compliance_report]
+can_precede: [memory_recall_fetch]
 selection_strategy: cheapest
 requires:
   reasoning: 5

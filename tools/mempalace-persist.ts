@@ -52,7 +52,7 @@ export interface PersistResult {
   errors: string[];
 }
 
-interface MempalaceCmd {
+export interface MempalaceCmd {
   command: string;
   args: string[];
   env?: Record<string, string>;

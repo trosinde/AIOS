@@ -291,4 +291,104 @@ describe("Engine", () => {
     expect(result.results.get("gen")?.contentKind).toBe("text");
     expect(provider.complete).toHaveBeenCalledTimes(1);
   });
+
+  // ─── Tool-Pattern text inlining ─────────────────────────
+  //
+  // Mechanism: when a tool pattern declares output_type: "text", the engine
+  // reads the $OUTPUT file back and uses its content as the message content.
+  // This makes Tool → LLM chains (pdf_extract_text → summarize,
+  // memory_recall → memory_recall_fetch → code_review, etc.) actually work.
+  // Pattern declaring output_type: "file" keeps the legacy path-string behavior.
+
+  it("Tool-Pattern mit output_type: text inlined Dateiinhalt in Message", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_text_tool",
+        description: "Test tool that copies input to output",
+        category: "test",
+        input_type: "text",
+        input_format: "in",
+        output_type: "text",
+        output_format: ["out"],
+        tags: [],
+        internal: true,
+        type: "tool",
+        tool: "cp",
+        tool_args: ["$INPUT", "$OUTPUT"],
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+    const provider = mockProvider();
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-text-tool", allowed: ["cp"] },
+    };
+    const engine = new Engine(registry, provider, config);
+
+    const plan = makePlan({
+      steps: [
+        { id: "copy", pattern: "__test_text_tool", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const payload = "CONTEXT_MARKER: this should reach the message content";
+    const result = await engine.execute(plan, payload);
+
+    expect(result.status.get("copy")).toBe("done");
+    const msg = result.results.get("copy");
+    expect(msg?.contentKind).toBe("text");
+    // Content is the $OUTPUT file content (which is the ContextBuilder-formatted
+    // input copied by `cp`), NOT the literal "Datei erzeugt: /path" string.
+    expect(msg?.content).toContain(payload);
+    expect(msg?.content).not.toMatch(/^Datei erzeugt: /);
+    // filePath stays undefined for text-kind messages (CLI writer checks both).
+    expect(msg?.filePath).toBeUndefined();
+  });
+
+  it("Tool-Pattern mit output_type: file behält Pfad-Legacy-Verhalten", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_file_tool",
+        description: "Test tool with file output",
+        category: "test",
+        input_type: "text",
+        input_format: "txt",
+        output_type: "file",
+        output_format: ["bin"],
+        tags: [],
+        internal: true,
+        type: "tool",
+        tool: "cp",
+        tool_args: ["$INPUT", "$OUTPUT"],
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+    const provider = mockProvider();
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-file-tool", allowed: ["cp"] },
+    };
+    const engine = new Engine(registry, provider, config);
+
+    const plan = makePlan({
+      steps: [
+        { id: "copy", pattern: "__test_file_tool", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "hello");
+    expect(result.status.get("copy")).toBe("done");
+    const msg = result.results.get("copy");
+    expect(msg?.contentKind).toBe("file");
+    expect(msg?.content).toMatch(/^Datei erzeugt: /);
+    expect(msg?.filePath).toBeDefined();
+  });
 });
