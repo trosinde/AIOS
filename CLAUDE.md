@@ -308,6 +308,15 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] PromptBuilder-Integration für sichere LLM-Calls
 - [x] Beispiel-Kontexte: HR (Mitarbeiter, Abteilungen), Securitas (Findings), Network (Topologie)
 
+### MemPalace Integration (Persistentes Gedächtnis)
+- [x] MCP-Server-Config in `aios.yaml` (`mcp.servers.mempalace`)
+- [x] Pattern: `memory_store` (Wissen extrahieren → MemPalace)
+- [x] Pattern: `memory_recall` (Wissen abrufen → Kontext-Injection)
+- [x] `_router` Pattern um Memory-Awareness erweitert
+- [x] `docs/MEMPALACE_INTEGRATION.md`
+- [ ] Post-Workflow-Hook für automatische Wissensextraktion (aktuell: Router plant es selbst ein)
+- [ ] Wing-Mapping per `context.yaml` konfigurierbar
+
 ### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)

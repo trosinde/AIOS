@@ -134,8 +134,14 @@ paths:
   personas: ./personas
 
 mcp:
-  servers: {}
-  # MCP-Server werden über 'aios configure' oder ~/.aios/config.yaml konfiguriert.
+  servers:
+    mempalace:
+      command: python
+      args: ["-m", "mempalace.mcp_server"]
+      category: knowledge
+      prefix: mempalace
+      description: "MemPalace – Persistentes AI-Gedächtnis (lokal, ChromaDB + SQLite)"
+  # Weitere MCP-Server können über 'aios configure' oder ~/.aios/config.yaml konfiguriert werden.
   # Beispiel:
   #   azure-devops:
   #     command: node
