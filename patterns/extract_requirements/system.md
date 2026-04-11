@@ -8,6 +8,11 @@ output_type: requirements
 tags: [requirements, analysis, regulated]
 can_precede: [design_solution, generate_tests]
 persona: re
+requires:
+  reasoning: 7
+  instruction_following: 7
+  structured_output: 7
+  language: de
 ---
 
 # AUFGABE

@@ -12,8 +12,11 @@ import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
 import { ProviderSelector } from "./agents/provider-selector.js";
+import { CapabilityProviderSelector } from "./agents/selector.js";
+import { ExecutionMemory } from "./memory/execution-memory.js";
+import { StepExecutor, DEFAULT_ESCALATION } from "./core/executor.js";
 import { RAGService } from "./rag/rag-service.js";
-import { loadConfig } from "./utils/config.js";
+import { loadConfig, getAiosHome } from "./utils/config.js";
 import { buildContextAwareRegistry } from "./utils/registry-factory.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
@@ -27,6 +30,22 @@ function buildProviderSelector(config: AiosConfig): ProviderSelector {
     try { allProviders.set(name, createProvider(cfg)); } catch { /* skip unconfigured */ }
   }
   return new ProviderSelector(allProviders, config.providers);
+}
+
+/** Path to the execution-memory file used by the capability selector. */
+function getMemoryPath(): string {
+  return join(getAiosHome(), "memory.json");
+}
+
+/** Return a StepExecutor only when at least one provider declares model_capabilities or cost.tier */
+function buildStepExecutor(config: AiosConfig): StepExecutor | undefined {
+  const hasCapabilityConfig = Object.values(config.providers).some(
+    (p) => p.model_capabilities || p.cost,
+  );
+  if (!hasCapabilityConfig) return undefined;
+  const memory = new ExecutionMemory(getMemoryPath());
+  const selector = new CapabilityProviderSelector(config.providers, memory);
+  return new StepExecutor(selector, memory, config.escalation ?? DEFAULT_ESCALATION);
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -213,7 +232,8 @@ program
     const router = new Router(registry, provider);
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const selector = buildProviderSelector(config);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+    const stepExecutor = buildStepExecutor(config);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
     const plan = await router.planWorkflow(fullInput);
@@ -289,10 +309,11 @@ program
 
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const selector = buildProviderSelector(config);
+    const stepExecutor = buildStepExecutor(config);
 
     if (pattern.meta.type === "rag") {
       // RAG-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
       const ragPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -306,7 +327,7 @@ program
       if (out) process.stdout.write(out.output);
     } else if (pattern.meta.type === "mcp") {
       // MCP-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
       const mcpPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -320,7 +341,7 @@ program
       if (out) process.stdout.write(out.output);
     } else if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
       const toolPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -339,7 +360,7 @@ program
       }
     } else if (pattern.meta.type === "image_generation") {
       // Image-Generation-Pattern: Über Engine ausführen (speichert Bilder in output/)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
       const imgPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -358,7 +379,7 @@ program
       }
     } else if (pattern.meta.type === "tts") {
       // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
       const ttsPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -517,8 +538,9 @@ program
     const personas = new PersonaRegistry(config.paths.personas);
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const selector = buildProviderSelector(config);
+    const stepExecutor = buildStepExecutor(config);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();
@@ -898,6 +920,63 @@ personaCmd
     if (!allPassed) {
       console.error(chalk.yellow("Tipp: Füge Handoff/Trace-Instruktionen zum system_prompt hinzu."));
     }
+  });
+
+// ─── aios memory ────────────────────────────────────────
+const memoryCmd = program.command("memory").description("Execution Memory verwalten (Capability-based Selection)");
+
+memoryCmd
+  .command("stats")
+  .description("Erfolgsraten pro Pattern und Provider anzeigen")
+  .action(() => {
+    const memory = new ExecutionMemory(getMemoryPath());
+    const stats = memory.allStats();
+    if (stats.length === 0) {
+      console.log(chalk.gray("Noch keine Daten. Führe Patterns aus, um Statistiken zu sammeln."));
+      return;
+    }
+
+    console.log(
+      chalk.bold(
+        "Pattern".padEnd(25) +
+          "Provider".padEnd(22) +
+          "Runs".padStart(6) +
+          "Success".padStart(10) +
+          "Tier".padStart(6) +
+          "Avg ms".padStart(10),
+      ),
+    );
+    console.log(chalk.gray("─".repeat(79)));
+    for (const s of stats) {
+      const rateColor = s.successRate >= 90
+        ? chalk.green
+        : s.successRate >= 70
+          ? chalk.yellow
+          : chalk.red;
+      console.log(
+        (s.pattern ?? "").padEnd(25) +
+          s.provider.padEnd(22) +
+          String(s.totalRuns).padStart(6) +
+          rateColor((s.successRate.toFixed(1) + "%").padStart(10)) +
+          String(s.costTier).padStart(6) +
+          String(s.avgDurationMs).padStart(10),
+      );
+    }
+  });
+
+memoryCmd
+  .command("reset")
+  .description("Memory zurücksetzen (optional gefiltert)")
+  .option("--provider <name>", "Nur für diesen Provider")
+  .option("--pattern <name>", "Nur für dieses Pattern")
+  .action((opts: { provider?: string; pattern?: string }) => {
+    const memory = new ExecutionMemory(getMemoryPath());
+    const deleted = memory.reset({ pattern: opts.pattern, provider: opts.provider });
+    const filters: string[] = [];
+    if (opts.pattern) filters.push(`pattern=${opts.pattern}`);
+    if (opts.provider) filters.push(`provider=${opts.provider}`);
+    const scope = filters.length > 0 ? ` (${filters.join(", ")})` : "";
+    console.log(chalk.green(`${deleted} Einträge gelöscht${scope}.`));
   });
 
 // ─── aios knowledge ─────────────────────────────────────

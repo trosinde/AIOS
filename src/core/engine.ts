@@ -11,6 +11,7 @@ import type { RAGService } from "../rag/rag-service.js";
 import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, SelectionStrategy, StepResult, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
+import type { StepExecutor } from "./executor.js";
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
@@ -26,6 +27,7 @@ export class Engine {
   private mcpManager?: McpManager;
   private ragService?: RAGService;
   private providerSelector?: ProviderSelector;
+  private stepExecutor?: StepExecutor;
 
   constructor(
     registry: PatternRegistry,
@@ -35,6 +37,7 @@ export class Engine {
     mcpManager?: McpManager,
     ragService?: RAGService,
     providerSelector?: ProviderSelector,
+    stepExecutor?: StepExecutor,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -43,6 +46,7 @@ export class Engine {
     this.mcpManager = mcpManager;
     this.ragService = ragService;
     this.providerSelector = providerSelector;
+    this.stepExecutor = stepExecutor;
   }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -148,24 +152,62 @@ export class Engine {
         // Vision: collect images from upstream steps
         const images = this.collectImages(step, results);
         const capability = images.length > 0 ? "vision" : undefined;
-        const providerToUse = this.resolveProvider(pattern, step, capability);
 
-        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
+        // Prefer capability-based executor when available for plain LLM calls
+        // (no vision, no explicit preferred_provider, no persona override).
+        // These constraints keep the existing provider-resolution chain
+        // authoritative for legacy paths while still giving new patterns
+        // access to capability-based selection + automatic escalation.
+        const canUseExecutor =
+          this.stepExecutor !== undefined &&
+          !capability &&
+          !pattern.meta.preferred_provider &&
+          !persona?.preferred_provider;
 
-        // Optional: Quality Gate
-        if (step.quality_gate) {
-          const score = await this.checkQualityGate(step, response.content, ctx);
-          if (score < step.quality_gate.min_score) {
-            throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
+        let responseContent: string;
+        let provenance: { provider?: string; model?: string; attempt?: number; escalationPath?: string[] } = {};
+
+        if (canUseExecutor && this.stepExecutor) {
+          const exec = await this.stepExecutor.execute(pattern, input, {
+            stepId: step.id,
+            workflowId: ctx.trace_id,
+            execCtx: ctx,
+            systemPromptOverride: systemPrompt,
+          });
+          responseContent = exec.response.content;
+          provenance = {
+            provider: exec.provider,
+            model: exec.model,
+            attempt: exec.attempt,
+            escalationPath: exec.escalationPath.length > 1 ? exec.escalationPath : undefined,
+          };
+
+          if (step.quality_gate) {
+            const score = await this.checkQualityGate(step, responseContent, ctx);
+            if (score < step.quality_gate.min_score) {
+              throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
+            }
+          }
+        } else {
+          const providerToUse = this.resolveProvider(pattern, step, capability);
+          const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
+          responseContent = response.content;
+
+          if (step.quality_gate) {
+            const score = await this.checkQualityGate(step, responseContent, ctx);
+            if (score < step.quality_gate.min_score) {
+              throw new Error(`Quality Gate: ${score}/${step.quality_gate.min_score}`);
+            }
           }
         }
 
         stepResult = {
           stepId: step.id,
           pattern: step.pattern,
-          output: response.content,
+          output: responseContent,
           outputType: "text",
           durationMs: Date.now() - t0,
+          ...provenance,
         };
       }
 

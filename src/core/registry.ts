@@ -57,6 +57,7 @@ export class PatternRegistry {
       tool_args: data.tool_args,
       input_format: data.input_format,
       output_format: data.output_format,
+      requires: data.requires,
     };
 
     if (!meta.kernel_abi) {

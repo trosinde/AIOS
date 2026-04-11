@@ -9,6 +9,12 @@ tags: [security, owasp, iec62443, compliance]
 can_follow: [generate_code]
 parallelizable_with: [code_review, architecture_review]
 persona: security_expert
+requires:
+  reasoning: 8
+  instruction_following: 7
+  structured_output: 7
+  language: de
+  min_context: 16000
 ---
 
 # AUFGABE

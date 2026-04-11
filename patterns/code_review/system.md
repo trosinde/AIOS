@@ -9,6 +9,12 @@ tags: [review, quality, clean-code]
 can_follow: [generate_code]
 parallelizable_with: [security_review, architecture_review]
 persona: reviewer
+requires:
+  reasoning: 6
+  code_generation: 5
+  instruction_following: 6
+  structured_output: 5
+  min_context: 8000
 ---
 
 # AUFGABE
