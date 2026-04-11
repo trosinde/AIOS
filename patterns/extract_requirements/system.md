@@ -8,6 +8,10 @@ output_type: requirements
 tags: [requirements, analysis, regulated]
 can_precede: [design_solution, generate_tests]
 persona: re
+output_extraction:
+  artifact_pattern: "^\\|\\s*(?<id>REQ-\\d+)\\s*\\|\\s*(?<content>[^|]+\\|[^|]+)"
+  artifact_type: requirement
+  summary_strategy: first_paragraph
 ---
 
 # AUFGABE
