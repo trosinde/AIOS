@@ -12,6 +12,7 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test:integration": "vitest run '**/*.integration.test.ts'",
     "test:all": "npm run test && npm run test:e2e",
     "typecheck": "tsc --noEmit",
     "bench": "vitest bench --run src/core/knowledge-bus.bench.ts",

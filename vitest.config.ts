@@ -3,10 +3,10 @@ import { defineConfig } from "vitest/config";
 /**
  * Default vitest config for the unit/integration test suite (`npm test`).
  *
- * E2E tests under `tests/e2e/` are excluded here because each spawns
- * the real CLI as a subprocess (~1-2s startup per command) and would
- * slow down the developer feedback loop. Run them via `npm run test:e2e`
- * which uses `vitest.config.e2e.ts`.
+ * Excluded from the default run:
+ * - tests/e2e: spawns real CLI via tsx, run via `npm run test:e2e`
+ * - *.integration.test.ts: hits real external infra (Azure DevOps, TFS, ...),
+ *   run via `npm run test:integration` with the relevant env vars set.
  */
 export default defineConfig({
   test: {
@@ -14,6 +14,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/tests/e2e/**",
+      "**/*.integration.test.ts",
     ],
   },
 });
