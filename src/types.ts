@@ -295,6 +295,129 @@ export interface McpConfig {
   servers: Record<string, McpServerConfig>;
 }
 
+// ─── Quality Backbone ─────────────────────────────────────
+
+export type QualityLevel = "minimal" | "standard" | "regulated";
+
+export interface QualityContext {
+  output: string;
+  pattern: PatternMeta;
+  persona?: Persona;
+  task: string;
+  inputUsed: string;
+  workflowPosition?: {
+    workflowId: string;
+    stepId: string;
+    isOutputBoundary: boolean;
+  };
+  relevantDecisions?: KernelMessage[];
+  relevantFacts?: KernelMessage[];
+  relevantRequirements?: KernelMessage[];
+  previousAttempts?: {
+    output: string;
+    findings: Finding[];
+  }[];
+  previousPolicyFindings?: Finding[];
+  executionContext: ExecutionContext;
+}
+
+export interface QualityPolicy {
+  name: string;
+  description: string;
+  appliesAt: QualityLevel;
+  evaluate(context: QualityContext): Promise<PolicyResult>;
+}
+
+export interface PolicyResult {
+  pass: boolean;
+  findings: Finding[];
+  action: "continue" | "rework" | "block";
+  reworkHint?: string;
+  auditEntry?: AuditEntry;
+}
+
+export interface Finding {
+  severity: "critical" | "major" | "minor" | "info";
+  category: string;
+  message: string;
+  source: string;
+  suggestedAction?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: string;
+  workflow?: string;
+  step?: string;
+  pattern: string;
+  persona?: string;
+  qualityLevel: QualityLevel;
+  inputHash: string;
+  outputHash: string;
+  policiesExecuted: {
+    policy: string;
+    result: string;
+    findings: Finding[];
+    durationMs: number;
+  }[];
+  totalDurationMs: number;
+  reworkAttempts: number;
+  finalDecision: "PASSED" | "BLOCKED" | "PASSED_WITH_FINDINGS";
+}
+
+export interface QualityConfig {
+  level: QualityLevel;
+  policies: {
+    self_check?: {
+      enabled?: boolean;
+      provider?: string;
+      max_retries?: number;
+    };
+    consistency_check?: {
+      enabled?: boolean;
+      check_against?: ("decisions" | "facts" | "requirements")[];
+    };
+    peer_review?: {
+      enabled?: boolean;
+      review_map?: Record<string, string[]>;
+      provider?: string;
+    };
+    compliance_check?: {
+      enabled?: boolean;
+      standards?: string[];
+      require_security_review?: boolean;
+    };
+    traceability_check?: {
+      enabled?: boolean;
+      enforce_coverage?: boolean;
+    };
+    quality_gate?: {
+      enabled?: boolean;
+      block_on?: "critical" | "major" | "minor";
+      require_sign_off?: string[];
+    };
+  };
+  boundaries?: {
+    stdout?: boolean;
+    files?: boolean;
+    knowledge?: boolean;
+  };
+  audit?: {
+    enabled?: boolean;
+    format?: "json" | "markdown";
+    output_dir?: string;
+  };
+}
+
+export interface QualityResult {
+  output: string;
+  passed: boolean;
+  findings: Finding[];
+  reworkAttempts: number;
+  auditEntry?: AuditEntry;
+  decision: "PASSED" | "BLOCKED" | "PASSED_WITH_FINDINGS";
+}
+
 // ─── Context (Unified Schema) ────────────────────────────
 //
 // EIN Format, EIN Schema für .aios/context.yaml.
@@ -521,4 +644,5 @@ export interface AiosConfig {
   tools: ToolsConfig;
   mcp?: McpConfig;
   rag?: import("./rag/types.js").RagConfig;
+  quality?: QualityConfig;
 }

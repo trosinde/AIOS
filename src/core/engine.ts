@@ -8,6 +8,8 @@ import { createTTSProvider, type TTSProvider } from "../agents/tts-provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
+import type { QualityPipeline } from "./quality/pipeline.js";
+import type { KnowledgeBus } from "./knowledge-bus.js";
 import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
@@ -29,6 +31,8 @@ export class Engine {
   private mcpManager?: McpManager;
   private ragService?: RAGService;
   private providerSelector?: ProviderSelector;
+  private qualityPipeline?: QualityPipeline;
+  private knowledgeBus?: KnowledgeBus;
   private contextBuilder: ContextBuilder;
   private outputExtractor: OutputExtractor;
   private promptBuilder: PromptBuilder;
@@ -41,6 +45,8 @@ export class Engine {
     mcpManager?: McpManager,
     ragService?: RAGService,
     providerSelector?: ProviderSelector,
+    qualityPipeline?: QualityPipeline,
+    knowledgeBus?: KnowledgeBus,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -49,6 +55,8 @@ export class Engine {
     this.mcpManager = mcpManager;
     this.ragService = ragService;
     this.providerSelector = providerSelector;
+    this.qualityPipeline = qualityPipeline;
+    this.knowledgeBus = knowledgeBus;
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
     this.promptBuilder = new PromptBuilder();
@@ -177,6 +185,53 @@ export class Engine {
         }
 
         message = this.buildMessage(step, pattern, response.content, t0, "text");
+      }
+
+      // ── Quality Backbone: Check at output boundaries ──
+      if (this.qualityPipeline && message.contentKind === "text") {
+        const isLastStep = plan.plan.steps[plan.plan.steps.length - 1].id === step.id;
+        const hasDownstream = plan.plan.steps.some((s) => s.depends_on.includes(step.id));
+        const isOutputBoundary = isLastStep || !hasDownstream;
+
+        if (isOutputBoundary) {
+          const personaId = step.persona ?? pattern.meta.persona;
+          const persona = personaId ? this.personaRegistry?.get(personaId) : undefined;
+
+          console.error(chalk.blue(`  🔍 Quality check: ${step.id}`));
+          const qualityResult = await this.qualityPipeline.evaluate(
+            message.content,
+            pattern.meta,
+            userInput,
+            this.contextBuilder.build(step, userInput, results),
+            ctx,
+            {
+              persona,
+              workflowPosition: {
+                workflowId: ctx.trace_id,
+                stepId: step.id,
+                isOutputBoundary: true,
+              },
+              knowledgeBus: this.knowledgeBus,
+              rerunPattern: async (reworkHint: string, previousOutput: string) => {
+                const providerToUse = this.resolveProvider(pattern, step);
+                const reworkPrompt = `${pattern.systemPrompt}\n\n## REWORK FEEDBACK\n\nYour previous output had issues. Fix the following:\n${reworkHint}`;
+                const reworkInput = `${this.contextBuilder.build(step, userInput, results)}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
+                const built = this.promptBuilder.build(reworkPrompt, reworkInput, [], ctx.trace_id);
+                const resp = await providerToUse.complete(built.systemPrompt, built.userMessage, undefined, ctx);
+                return resp.content;
+              },
+            },
+          );
+
+          message = {
+            ...message,
+            content: qualityResult.output,
+          };
+
+          if (!qualityResult.passed) {
+            throw new Error(`Quality Gate blocked step "${step.id}": ${qualityResult.findings.filter(f => f.severity === "critical").map(f => f.message).join("; ")}`);
+          }
+        }
       }
 
       results.set(step.id, message);
