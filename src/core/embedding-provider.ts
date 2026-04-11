@@ -170,3 +170,34 @@ export function createEmbeddingProvider(
     dim: config?.dim,
   });
 }
+
+/**
+ * Default embedding provider used by `KnowledgeBus.create()` when no
+ * explicit provider is passed. Honors `AIOS_EMBEDDING_PROVIDER` env
+ * var so e2e tests, CI runs, and offline environments can switch to
+ * the stub provider without modifying any code.
+ *
+ * Recognized values:
+ *   AIOS_EMBEDDING_PROVIDER=stub      → StubEmbeddingProvider
+ *   AIOS_EMBEDDING_PROVIDER=ollama    → OllamaEmbeddingProvider
+ *   (unset)                           → OllamaEmbeddingProvider
+ *
+ * Other env vars also override the Ollama defaults:
+ *   AIOS_OLLAMA_ENDPOINT  (default http://localhost:11434)
+ *   AIOS_OLLAMA_MODEL     (default nomic-embed-text)
+ *   AIOS_EMBEDDING_DIM    (default 768)
+ */
+export function createDefaultEmbeddingProvider(): EmbeddingProvider {
+  const type = process.env.AIOS_EMBEDDING_PROVIDER?.toLowerCase() ?? "ollama";
+  const dim = process.env.AIOS_EMBEDDING_DIM
+    ? parseInt(process.env.AIOS_EMBEDDING_DIM, 10)
+    : undefined;
+  if (type === "stub") {
+    return new StubEmbeddingProvider(dim ?? 768);
+  }
+  return new OllamaEmbeddingProvider({
+    endpoint: process.env.AIOS_OLLAMA_ENDPOINT,
+    model: process.env.AIOS_OLLAMA_MODEL,
+    dim,
+  });
+}

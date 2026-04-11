@@ -16,7 +16,7 @@ import {
 } from "./knowledge-bus-schema.js";
 import {
   type EmbeddingProvider,
-  OllamaEmbeddingProvider,
+  createDefaultEmbeddingProvider,
 } from "./embedding-provider.js";
 
 /**
@@ -62,7 +62,12 @@ export class KnowledgeBus {
     provider?: EmbeddingProvider,
   ): Promise<KnowledgeBus> {
     mkdirSync(dir, { recursive: true });
-    const embedder = provider ?? new OllamaEmbeddingProvider();
+    // When no provider is passed explicitly we honor env vars (see
+    // createDefaultEmbeddingProvider). This is what makes e2e tests
+    // and CI runs work without an Ollama dependency: setting
+    // AIOS_EMBEDDING_PROVIDER=stub gives them a deterministic
+    // in-process embedder.
+    const embedder = provider ?? createDefaultEmbeddingProvider();
     const db = await lancedb.connect(dir);
 
     const tableNames = await db.tableNames();
