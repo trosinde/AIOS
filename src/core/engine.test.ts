@@ -50,7 +50,11 @@ describe("Engine", () => {
     const result = await engine.execute(makePlan(), "Langer Text...");
 
     expect(result.status.get("step1")).toBe("done");
-    expect(result.results.get("step1")?.output).toBe("Zusammenfassung des Textes");
+    const msg = result.results.get("step1");
+    expect(msg?.content).toBe("Zusammenfassung des Textes");
+    expect(msg?.source.pattern).toBe("summarize");
+    expect(msg?.source.outputType).toBeTruthy();
+    expect(msg?.artifacts).toEqual([]);
     expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
   });
 
@@ -224,14 +228,14 @@ describe("Engine", () => {
     expect(result.status.get("render")).toBe("failed");
   });
 
-  it("LLM-Pattern setzt outputType auf text", async () => {
+  it("LLM-Pattern setzt contentKind auf text", async () => {
     const registry = new PatternRegistry(PATTERNS_DIR);
     const provider = mockProvider("Diagramm-Code");
     const engine = new Engine(registry, provider);
 
     const result = await engine.execute(makePlan(), "Test");
     const stepResult = result.results.get("step1");
-    expect(stepResult?.outputType).toBe("text");
+    expect(stepResult?.contentKind).toBe("text");
     expect(stepResult?.filePath).toBeUndefined();
   });
 
@@ -256,7 +260,7 @@ describe("Engine", () => {
 
     const result = await engine.execute(plan, "Erstelle Flowchart");
     expect(result.status.get("gen")).toBe("done");
-    expect(result.results.get("gen")?.outputType).toBe("text");
+    expect(result.results.get("gen")?.contentKind).toBe("text");
     expect(provider.complete).toHaveBeenCalledTimes(1);
   });
 });

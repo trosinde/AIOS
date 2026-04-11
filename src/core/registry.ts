@@ -57,6 +57,13 @@ export class PatternRegistry {
       tool_args: data.tool_args,
       input_format: data.input_format,
       output_format: data.output_format,
+      output_extraction: data.output_extraction
+        ? {
+            artifact_pattern: data.output_extraction.artifact_pattern,
+            artifact_type: data.output_extraction.artifact_type,
+            summary_strategy: data.output_extraction.summary_strategy,
+          }
+        : undefined,
     };
 
     if (!meta.kernel_abi) {

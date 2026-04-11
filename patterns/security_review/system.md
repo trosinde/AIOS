@@ -9,6 +9,10 @@ tags: [security, owasp, iec62443, compliance]
 can_follow: [generate_code]
 parallelizable_with: [code_review, architecture_review]
 persona: security_expert
+output_extraction:
+  artifact_pattern: "(?<severity>CRITICAL|HIGH|MEDIUM|LOW)[:\\s]+(?<content>.+)"
+  artifact_type: finding
+  summary_strategy: first_paragraph
 ---
 
 # AUFGABE
