@@ -9,6 +9,10 @@ tags: [review, quality, clean-code]
 can_follow: [generate_code]
 parallelizable_with: [security_review, architecture_review]
 persona: reviewer
+output_extraction:
+  artifact_pattern: "(?<severity>CRITICAL|MAJOR|MINOR|SUGGESTION)[:\\s]+(?<content>.+)"
+  artifact_type: finding
+  summary_strategy: first_paragraph
 ---
 
 # AUFGABE

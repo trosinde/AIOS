@@ -40,6 +40,16 @@ export interface PatternMeta {
   internal?: boolean;
   kernel_abi?: number;
 
+  /**
+   * Optionale Extraktion-Konfiguration für strukturierte Outputs.
+   * Definiert Regex-Patterns um Artefakte aus dem LLM-Output zu extrahieren.
+   */
+  output_extraction?: {
+    artifact_pattern?: string;   // Regex mit Named Groups: (?<id>...) (?<content>...)
+    artifact_type?: string;      // z.B. "requirement", "finding"
+    summary_strategy?: "first_paragraph" | "first_line" | "none";
+  };
+
   // Tool-Pattern Felder
   type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
@@ -102,19 +112,67 @@ export interface ExecutionPlan {
 
 export type StepStatus = "pending" | "running" | "done" | "failed";
 
+/** @deprecated – Wird durch StepMessage ersetzt */
 export interface StepResult {
   stepId: string;
   pattern: string;
   output: string;
-  outputType: "text" | "file";    // Was output enthält
-  filePath?: string;               // Bei outputType: "file"
-  filePaths?: string[];            // Multiple output files (e.g. thumbnails)
+  outputType: "text" | "file";
+  filePath?: string;
+  filePaths?: string[];
   durationMs: number;
+}
+
+// ─── Message Envelope (ersetzt StepResult) ───────────────
+
+/**
+ * Ein extrahiertes Artefakt aus dem LLM-Output.
+ * Wird durch output_extraction im Frontmatter gesteuert.
+ */
+export interface MessageArtifact {
+  type: string;              // "requirement" | "finding" | "code" | "decision" | "diagram"
+  id?: string;               // "REQ-001", "FIND-003" – wenn extrahierbar
+  content: string;           // Der Artefakt-Inhalt
+  severity?: string;         // Für Findings: "critical" | "high" | "medium" | "low"
+}
+
+/**
+ * Metadaten über die Herkunft einer Nachricht.
+ * Wird automatisch aus Pattern-Frontmatter + ExecutionStep befüllt.
+ */
+export interface MessageSource {
+  stepId: string;            // z.B. "s1"
+  pattern: string;           // z.B. "security_review"
+  persona?: string;          // z.B. "security_expert" – aus Frontmatter oder Step
+  outputType: string;        // z.B. "security_findings" – aus Frontmatter output_type
+}
+
+/**
+ * Typed Message Envelope – EIP-konformes Nachrichtenformat.
+ *
+ * Ersetzt das bisherige StepResult. Jeder Step produziert eine
+ * StepMessage statt eines nackten Strings. Der Header trägt die
+ * Metadaten, die der Empfänger braucht um zu wissen WAS er bekommt,
+ * VON WEM und in welcher STRUKTUR.
+ */
+export interface StepMessage {
+  source: MessageSource;
+  content: string;                // Der vollständige LLM-/Tool-Output
+  artifacts: MessageArtifact[];   // Extrahierte strukturierte Artefakte (kann leer sein)
+  summary: string;                // Einzeiler-Zusammenfassung (erster Absatz oder generiert)
+  durationMs: number;
+
+  // ─── File-basierte Outputs (tool/mcp/image_generation/tts Patterns) ──
+  // Diese Felder bleiben für Downstream-Kompatibilität (collectImages,
+  // CLI-Anzeige von Datei-Outputs) erhalten.
+  contentKind?: "text" | "file";
+  filePath?: string;
+  filePaths?: string[];
 }
 
 export interface WorkflowResult {
   plan: ExecutionPlan;
-  results: Map<string, StepResult>;
+  results: Map<string, StepMessage>;
   status: Map<string, StepStatus>;
   totalDurationMs: number;
 }
@@ -235,6 +293,129 @@ export interface McpServerConfig {
 
 export interface McpConfig {
   servers: Record<string, McpServerConfig>;
+}
+
+// ─── Quality Backbone ─────────────────────────────────────
+
+export type QualityLevel = "minimal" | "standard" | "regulated";
+
+export interface QualityContext {
+  output: string;
+  pattern: PatternMeta;
+  persona?: Persona;
+  task: string;
+  inputUsed: string;
+  workflowPosition?: {
+    workflowId: string;
+    stepId: string;
+    isOutputBoundary: boolean;
+  };
+  relevantDecisions?: KernelMessage[];
+  relevantFacts?: KernelMessage[];
+  relevantRequirements?: KernelMessage[];
+  previousAttempts?: {
+    output: string;
+    findings: Finding[];
+  }[];
+  previousPolicyFindings?: Finding[];
+  executionContext: ExecutionContext;
+}
+
+export interface QualityPolicy {
+  name: string;
+  description: string;
+  appliesAt: QualityLevel;
+  evaluate(context: QualityContext): Promise<PolicyResult>;
+}
+
+export interface PolicyResult {
+  pass: boolean;
+  findings: Finding[];
+  action: "continue" | "rework" | "block";
+  reworkHint?: string;
+  auditEntry?: AuditEntry;
+}
+
+export interface Finding {
+  severity: "critical" | "major" | "minor" | "info";
+  category: string;
+  message: string;
+  source: string;
+  suggestedAction?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: string;
+  workflow?: string;
+  step?: string;
+  pattern: string;
+  persona?: string;
+  qualityLevel: QualityLevel;
+  inputHash: string;
+  outputHash: string;
+  policiesExecuted: {
+    policy: string;
+    result: string;
+    findings: Finding[];
+    durationMs: number;
+  }[];
+  totalDurationMs: number;
+  reworkAttempts: number;
+  finalDecision: "PASSED" | "BLOCKED" | "PASSED_WITH_FINDINGS";
+}
+
+export interface QualityConfig {
+  level: QualityLevel;
+  policies: {
+    self_check?: {
+      enabled?: boolean;
+      provider?: string;
+      max_retries?: number;
+    };
+    consistency_check?: {
+      enabled?: boolean;
+      check_against?: ("decisions" | "facts" | "requirements")[];
+    };
+    peer_review?: {
+      enabled?: boolean;
+      review_map?: Record<string, string[]>;
+      provider?: string;
+    };
+    compliance_check?: {
+      enabled?: boolean;
+      standards?: string[];
+      require_security_review?: boolean;
+    };
+    traceability_check?: {
+      enabled?: boolean;
+      enforce_coverage?: boolean;
+    };
+    quality_gate?: {
+      enabled?: boolean;
+      block_on?: "critical" | "major" | "minor";
+      require_sign_off?: string[];
+    };
+  };
+  boundaries?: {
+    stdout?: boolean;
+    files?: boolean;
+    knowledge?: boolean;
+  };
+  audit?: {
+    enabled?: boolean;
+    format?: "json" | "markdown";
+    output_dir?: string;
+  };
+}
+
+export interface QualityResult {
+  output: string;
+  passed: boolean;
+  findings: Finding[];
+  reworkAttempts: number;
+  auditEntry?: AuditEntry;
+  decision: "PASSED" | "BLOCKED" | "PASSED_WITH_FINDINGS";
 }
 
 // ─── Context (Unified Schema) ────────────────────────────
@@ -463,4 +644,5 @@ export interface AiosConfig {
   tools: ToolsConfig;
   mcp?: McpConfig;
   rag?: import("./rag/types.js").RagConfig;
+  quality?: QualityConfig;
 }

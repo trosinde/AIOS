@@ -8,9 +8,14 @@ import { createTTSProvider, type TTSProvider } from "../agents/tts-provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { McpManager } from "./mcp.js";
 import type { RAGService } from "../rag/rag-service.js";
-import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Persona, Pattern, SelectionStrategy, StepResult, StepStatus, WorkflowResult } from "../types.js";
+import type { QualityPipeline } from "./quality/pipeline.js";
+import type { KnowledgeBus } from "./knowledge-bus.js";
+import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
+import { ContextBuilder } from "./context-builder.js";
+import { OutputExtractor } from "./output-extractor.js";
+import { PromptBuilder } from "../security/prompt-builder.js";
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
@@ -26,6 +31,11 @@ export class Engine {
   private mcpManager?: McpManager;
   private ragService?: RAGService;
   private providerSelector?: ProviderSelector;
+  private qualityPipeline?: QualityPipeline;
+  private knowledgeBus?: KnowledgeBus;
+  private contextBuilder: ContextBuilder;
+  private outputExtractor: OutputExtractor;
+  private promptBuilder: PromptBuilder;
 
   constructor(
     registry: PatternRegistry,
@@ -35,6 +45,8 @@ export class Engine {
     mcpManager?: McpManager,
     ragService?: RAGService,
     providerSelector?: ProviderSelector,
+    qualityPipeline?: QualityPipeline,
+    knowledgeBus?: KnowledgeBus,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -43,10 +55,15 @@ export class Engine {
     this.mcpManager = mcpManager;
     this.ragService = ragService;
     this.providerSelector = providerSelector;
+    this.qualityPipeline = qualityPipeline;
+    this.knowledgeBus = knowledgeBus;
+    this.contextBuilder = new ContextBuilder(registry);
+    this.outputExtractor = new OutputExtractor();
+    this.promptBuilder = new PromptBuilder();
   }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
-    const results = new Map<string, StepResult>();
+    const results = new Map<string, StepMessage>();
     const status = new Map<string, StepStatus>();
     const retries = new Map<string, number>();
     const feedback = new Map<string, string>();
@@ -92,7 +109,7 @@ export class Engine {
   private async executeStep(
     step: ExecutionStep,
     userInput: string,
-    results: Map<string, StepResult>,
+    results: Map<string, StepMessage>,
     status: Map<string, StepStatus>,
     retries: Map<string, number>,
     feedback: Map<string, string>,
@@ -106,35 +123,34 @@ export class Engine {
 
       // Input aus Dependencies + User-Input zusammenbauen
       // MCP-Patterns bekommen rohen Input (JSON), LLM-Patterns den formatierten
-      let input = pattern.meta.type === "mcp"
-        ? this.buildRawInput(step, userInput, results)
-        : this.buildInput(step, userInput, results);
-      if (feedback.has(step.id)) {
-        input += "\n\n## ⚠️ FEEDBACK AUS VORHERIGEM VERSUCH\n\n" + feedback.get(step.id);
-      }
+      const fb = feedback.get(step.id);
+      const input = pattern.meta.type === "mcp"
+        ? this.contextBuilder.buildRaw(step, userInput, results) +
+          (fb ? "\n\n## ⚠️ FEEDBACK AUS VORHERIGEM VERSUCH\n\n" + fb : "")
+        : this.contextBuilder.build(step, userInput, results, fb);
 
-      let stepResult: StepResult;
+      let message: StepMessage;
 
       if (pattern.meta.type === "rag") {
         // ── RAG-Pattern: Semantic Search/Index/Compare ──
         console.error(chalk.gray(`  🔍 ${step.id} → ${step.pattern} [RAG: ${pattern.meta.rag_collection}/${pattern.meta.rag_operation}]`));
-        stepResult = await this.executeRag(step, pattern, input, t0);
+        message = await this.executeRag(step, pattern, input, t0);
       } else if (pattern.meta.type === "mcp") {
         // ── MCP-Pattern: MCP-Server Tool aufrufen ──
         console.error(chalk.gray(`  🔌 ${step.id} → ${step.pattern} [MCP: ${pattern.meta.mcp_server}/${pattern.meta.mcp_tool}]`));
-        stepResult = await this.executeMcpTool(step, pattern, input, t0);
+        message = await this.executeMcpTool(step, pattern, input, t0);
       } else if (pattern.meta.type === "tool") {
         // ── Tool-Pattern: CLI-Tool ausführen ──
         console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
-        stepResult = await this.executeTool(step, pattern, input, t0);
+        message = await this.executeTool(step, pattern, input, t0);
       } else if (pattern.meta.type === "image_generation") {
         // ── Image-Generation-Pattern: Gemini Nano Banana ──
         console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE]`));
-        stepResult = await this.executeImageGeneration(step, pattern, input, t0, ctx);
+        message = await this.executeImageGeneration(step, pattern, input, t0, ctx);
       } else if (pattern.meta.type === "tts") {
         // ── TTS-Pattern: Text-to-Speech ──
         console.error(chalk.gray(`  🔊 ${step.id} → ${step.pattern} [TTS]`));
-        stepResult = await this.executeTTS(step, pattern, input, t0, ctx);
+        message = await this.executeTTS(step, pattern, input, t0, ctx);
       } else {
         // ── LLM-Pattern: Provider aufrufen ──
         console.error(chalk.gray(`  ⏳ ${step.id} → ${step.pattern}`));
@@ -150,7 +166,15 @@ export class Engine {
         const capability = images.length > 0 ? "vision" : undefined;
         const providerToUse = this.resolveProvider(pattern, step, capability);
 
-        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
+        // Data/Instruction Separation: upstream step outputs + user input
+        // werden als untrusted data getagged, bevor sie ins LLM gehen.
+        const built = this.promptBuilder.build(systemPrompt, input, [], ctx.trace_id);
+        const response = await providerToUse.complete(
+          built.systemPrompt,
+          built.userMessage,
+          images.length > 0 ? images : undefined,
+          ctx,
+        );
 
         // Optional: Quality Gate
         if (step.quality_gate) {
@@ -160,16 +184,57 @@ export class Engine {
           }
         }
 
-        stepResult = {
-          stepId: step.id,
-          pattern: step.pattern,
-          output: response.content,
-          outputType: "text",
-          durationMs: Date.now() - t0,
-        };
+        message = this.buildMessage(step, pattern, response.content, t0, "text");
       }
 
-      results.set(step.id, stepResult);
+      // ── Quality Backbone: Check at output boundaries ──
+      if (this.qualityPipeline && message.contentKind === "text") {
+        const isLastStep = plan.plan.steps[plan.plan.steps.length - 1].id === step.id;
+        const hasDownstream = plan.plan.steps.some((s) => s.depends_on.includes(step.id));
+        const isOutputBoundary = isLastStep || !hasDownstream;
+
+        if (isOutputBoundary) {
+          const personaId = step.persona ?? pattern.meta.persona;
+          const persona = personaId ? this.personaRegistry?.get(personaId) : undefined;
+
+          console.error(chalk.blue(`  🔍 Quality check: ${step.id}`));
+          const qualityResult = await this.qualityPipeline.evaluate(
+            message.content,
+            pattern.meta,
+            userInput,
+            this.contextBuilder.build(step, userInput, results),
+            ctx,
+            {
+              persona,
+              workflowPosition: {
+                workflowId: ctx.trace_id,
+                stepId: step.id,
+                isOutputBoundary: true,
+              },
+              knowledgeBus: this.knowledgeBus,
+              rerunPattern: async (reworkHint: string, previousOutput: string) => {
+                const providerToUse = this.resolveProvider(pattern, step);
+                const reworkPrompt = `${pattern.systemPrompt}\n\n## REWORK FEEDBACK\n\nYour previous output had issues. Fix the following:\n${reworkHint}`;
+                const reworkInput = `${this.contextBuilder.build(step, userInput, results)}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
+                const built = this.promptBuilder.build(reworkPrompt, reworkInput, [], ctx.trace_id);
+                const resp = await providerToUse.complete(built.systemPrompt, built.userMessage, undefined, ctx);
+                return resp.content;
+              },
+            },
+          );
+
+          message = {
+            ...message,
+            content: qualityResult.output,
+          };
+
+          if (!qualityResult.passed) {
+            throw new Error(`Quality Gate blocked step "${step.id}": ${qualityResult.findings.filter(f => f.severity === "critical").map(f => f.message).join("; ")}`);
+          }
+        }
+      }
+
+      results.set(step.id, message);
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
@@ -201,6 +266,44 @@ export class Engine {
     }
   }
 
+  // ─── Message Factory ────────────────────────────────────
+
+  /**
+   * Baut eine StepMessage aus einem Content-String.
+   * Extrahiert automatisch Summary und Artefakte laut Pattern-Frontmatter.
+   */
+  private buildMessage(
+    step: ExecutionStep,
+    pattern: Pattern,
+    content: string,
+    t0: number,
+    kind: "text" | "file" = "text",
+    filePath?: string,
+    filePaths?: string[],
+  ): StepMessage {
+    const summary = this.outputExtractor.extractSummary(
+      content,
+      pattern.meta.output_extraction?.summary_strategy,
+    );
+    const artifacts = this.outputExtractor.extractArtifacts(content, pattern.meta);
+
+    return {
+      source: {
+        stepId: step.id,
+        pattern: step.pattern,
+        persona: step.persona ?? pattern.meta.persona,
+        outputType: pattern.meta.output_type,
+      },
+      content,
+      artifacts,
+      summary,
+      durationMs: Date.now() - t0,
+      contentKind: kind,
+      filePath,
+      filePaths,
+    };
+  }
+
   // ─── RAG Execution ──────────────────────────────────────────
 
   private async executeRag(
@@ -208,7 +311,7 @@ export class Engine {
     pattern: Pattern,
     input: string,
     t0: number
-  ): Promise<StepResult> {
+  ): Promise<StepMessage> {
     if (!this.ragService) throw new Error("RAGService nicht konfiguriert");
     const collection = pattern.meta.rag_collection;
     const operation = pattern.meta.rag_operation ?? "search";
@@ -232,8 +335,9 @@ export class Engine {
         try {
           items = JSON.parse(input);
           if (!Array.isArray(items)) items = [items];
-        } catch {
-          throw new Error("RAG index: Input muss JSON-Array von Items sein");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`RAG index: Input muss JSON-Array von Items sein (${msg})`);
         }
         const count = await this.ragService.index(collection, items);
         output = `${count} Chunks in Collection "${collection}" indexiert.`;
@@ -244,8 +348,9 @@ export class Engine {
         let params: { sourceCollection: string; sourceIds: string[]; topK?: number; minScore?: number };
         try {
           params = JSON.parse(input);
-        } catch {
-          throw new Error("RAG compare: Input muss JSON mit sourceCollection und sourceIds sein");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`RAG compare: Input muss JSON mit sourceCollection und sourceIds sein (${msg})`);
         }
         const results = await this.ragService.compare(
           params.sourceCollection, params.sourceIds, collection,
@@ -262,13 +367,7 @@ export class Engine {
         throw new Error(`Unbekannte RAG-Operation: ${operation}`);
     }
 
-    return {
-      stepId: step.id,
-      pattern: step.pattern,
-      output,
-      outputType: "text",
-      durationMs: Date.now() - t0,
-    };
+    return this.buildMessage(step, pattern, output, t0, "text");
   }
 
   // ─── MCP Tool Execution ──────────────────────────────────────
@@ -278,7 +377,7 @@ export class Engine {
     pattern: Pattern,
     input: string,
     t0: number
-  ): Promise<StepResult> {
+  ): Promise<StepMessage> {
     if (!this.mcpManager) throw new Error("McpManager nicht konfiguriert");
     if (!pattern.meta.mcp_server || !pattern.meta.mcp_tool) {
       throw new Error(`MCP-Pattern "${pattern.meta.name}" hat kein mcp_server/mcp_tool definiert`);
@@ -300,15 +399,15 @@ export class Engine {
     // Extract file paths from output (e.g. thumbnail paths)
     const filePaths = this.extractFilePaths(output);
 
-    return {
-      stepId: step.id,
-      pattern: step.pattern,
+    return this.buildMessage(
+      step,
+      pattern,
       output,
-      outputType: filePaths.length > 0 ? "file" : "text",
-      filePath: filePaths[0],
-      filePaths: filePaths.length > 0 ? filePaths : undefined,
-      durationMs: Date.now() - t0,
-    };
+      t0,
+      filePaths.length > 0 ? "file" : "text",
+      filePaths[0],
+      filePaths.length > 0 ? filePaths : undefined,
+    );
   }
 
   // ─── Tool Execution (generisch) ────────────────────────────
@@ -318,7 +417,7 @@ export class Engine {
     pattern: Pattern,
     input: string,
     t0: number
-  ): Promise<StepResult> {
+  ): Promise<StepMessage> {
     const tool = pattern.meta.tool;
     if (!tool) throw new Error(`Tool-Pattern "${pattern.meta.name}" hat kein tool definiert`);
 
@@ -363,17 +462,18 @@ export class Engine {
         }
       } catch { /* not JSON, use default single file */ }
 
-      return {
-        stepId: step.id,
-        pattern: step.pattern,
-        output: filePaths
-          ? `Dateien extrahiert: ${filePaths.join(", ")}`
-          : `Datei erzeugt: ${outputFile}`,
-        outputType: "file",
-        filePath: filePaths?.[0] ?? outputFile,
+      const content = filePaths
+        ? `Dateien extrahiert: ${filePaths.join(", ")}`
+        : `Datei erzeugt: ${outputFile}`;
+      return this.buildMessage(
+        step,
+        pattern,
+        content,
+        t0,
+        "file",
+        filePaths?.[0] ?? outputFile,
         filePaths,
-        durationMs: Date.now() - t0,
-      };
+      );
     } finally {
       // Temp-Input aufräumen
       try { unlinkSync(tmpInput); } catch { /* ignore */ }
@@ -400,7 +500,7 @@ export class Engine {
     input: string,
     t0: number,
     ctx: ExecutionContext
-  ): Promise<StepResult> {
+  ): Promise<StepMessage> {
     const maxIterations = step.retry?.max ?? 3;
     const maxCostCents = 50; // Hard cap: 50 cents per image generation cycle
     let currentPrompt = input;
@@ -489,15 +589,15 @@ export class Engine {
       console.error(chalk.gray(`    🔄 Prompt refined, regenerating... (${totalCostCents}¢ / ${maxCostCents}¢)`));
     }
 
-    return {
-      stepId: step.id,
-      pattern: step.pattern,
-      output: `Bild erzeugt: ${filePaths.join(", ")}`,
-      outputType: "file",
-      filePath: filePaths[0],
+    return this.buildMessage(
+      step,
+      pattern,
+      `Bild erzeugt: ${filePaths.join(", ")}`,
+      t0,
+      "file",
+      filePaths[0],
       filePaths,
-      durationMs: Date.now() - t0,
-    };
+    );
   }
 
   // ─── Text-to-Speech ────────────────────────────────────────────
@@ -508,7 +608,7 @@ export class Engine {
     input: string,
     t0: number,
     ctx: ExecutionContext
-  ): Promise<StepResult> {
+  ): Promise<StepMessage> {
     const outputDir = this.config?.tools?.output_dir ?? "./output";
     mkdirSync(outputDir, { recursive: true });
 
@@ -540,14 +640,14 @@ export class Engine {
     writeFileSync(filePath, result.audioData);
     console.error(chalk.gray(`    📁 ${filePath} (${(result.audioData.length / 1024).toFixed(1)} KB)`));
 
-    return {
-      stepId: step.id,
-      pattern: step.pattern,
-      output: `Audio erzeugt: ${filePath}`,
-      outputType: "file",
+    return this.buildMessage(
+      step,
+      pattern,
+      `Audio erzeugt: ${filePath}`,
+      t0,
+      "file",
       filePath,
-      durationMs: Date.now() - t0,
-    };
+    );
   }
 
   // ─── Provider Resolution ────────────────────────────────────────
@@ -614,9 +714,10 @@ export class Engine {
   private estimateCostCents(tokens?: { input: number; output: number }, providerName?: string): number {
     if (!tokens) return 0;
     const totalTokens = tokens.input + tokens.output;
-    const costPerMtok = providerName && this.config?.providers?.[providerName]?.cost_per_mtok
-      ? this.config.providers[providerName].cost_per_mtok!
-      : 0.1; // Conservative default: $0.10/Mtok
+    const configured = providerName
+      ? this.config?.providers?.[providerName]?.cost_per_mtok
+      : undefined;
+    const costPerMtok = configured ?? 0.1; // Conservative default: $0.10/Mtok
     return (totalTokens / 1_000_000) * costPerMtok * 100; // Convert $ to cents
   }
 
@@ -628,7 +729,7 @@ export class Engine {
    */
   private async rollback(
     plan: ExecutionPlan,
-    results: Map<string, StepResult>,
+    results: Map<string, StepMessage>,
     status: Map<string, StepStatus>,
     ctx: ExecutionContext
   ): Promise<void> {
@@ -647,7 +748,7 @@ export class Engine {
 
       try {
         // Input für Kompensation: Original-Output des Steps + Error-Kontext
-        const originalOutput = results.get(step.id)?.output ?? "";
+        const originalOutput = results.get(step.id)?.content ?? "";
         const compensateInput = `## Zu kompensierender Output\n\n${originalOutput}\n\n## Kontext\n\nDieser Step wird zurückgerollt weil ein nachfolgender Step fehlgeschlagen ist.`;
 
         console.error(chalk.yellow(`  ⏪ Kompensiere ${step.id} → ${step.compensate.pattern}`));
@@ -663,7 +764,7 @@ export class Engine {
   // ─── Vision Helpers ──────────────────────────────────────────
 
   /** Read image files from upstream step results as base64 */
-  private collectImages(step: ExecutionStep, results: Map<string, StepResult>): string[] {
+  private collectImages(step: ExecutionStep, results: Map<string, StepMessage>): string[] {
     const images: string[] = [];
     for (const src of step.input_from) {
       if (src === "$USER_INPUT") continue;
@@ -694,30 +795,7 @@ export class Engine {
     return paths;
   }
 
-  // ─── Input & Quality Gate ──────────────────────────────────
-
-  /** Raw input für MCP-Patterns (kein Markdown-Wrapping, damit JSON parsebar bleibt) */
-  private buildRawInput(step: ExecutionStep, userInput: string, results: Map<string, StepResult>): string {
-    return step.input_from
-      .map((src) => {
-        if (src === "$USER_INPUT") return userInput;
-        const r = results.get(src);
-        return r ? r.output : "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  private buildInput(step: ExecutionStep, userInput: string, results: Map<string, StepResult>): string {
-    return step.input_from
-      .map((src) => {
-        if (src === "$USER_INPUT") return `## Aufgabe\n\n${userInput}`;
-        const r = results.get(src);
-        return r ? `## Ergebnis von "${src}"\n\n${r.output}` : "";
-      })
-      .filter(Boolean)
-      .join("\n\n---\n\n");
-  }
+  // ─── Quality Gate ──────────────────────────────────
 
   private async checkQualityGate(step: ExecutionStep, content: string, ctx: ExecutionContext): Promise<number> {
     if (!step.quality_gate) return 10;

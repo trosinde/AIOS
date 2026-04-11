@@ -17,7 +17,8 @@ import { loadConfig } from "./utils/config.js";
 import { buildContextAwareRegistry } from "./utils/registry-factory.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
-import type { AiosConfig, Pattern } from "./types.js";
+import { QualityPipeline } from "./core/quality/pipeline.js";
+import type { AiosConfig, Pattern, QualityLevel } from "./types.js";
 import type { LLMProvider } from "./agents/provider.js";
 
 /** Build all providers and a ProviderSelector from config */
@@ -27,6 +28,28 @@ function buildProviderSelector(config: AiosConfig): ProviderSelector {
     try { allProviders.set(name, createProvider(cfg)); } catch { /* skip unconfigured */ }
   }
   return new ProviderSelector(allProviders, config.providers);
+}
+
+/** Build QualityPipeline from config (returns undefined if quality not configured) */
+function buildQualityPipeline(
+  config: AiosConfig,
+  provider: LLMProvider,
+  personas?: PersonaRegistry,
+  levelOverride?: QualityLevel,
+): QualityPipeline | undefined {
+  const qualityConfig = config.quality;
+  if (!qualityConfig && !levelOverride) return undefined;
+
+  const effectiveConfig = qualityConfig ?? {
+    level: levelOverride ?? "minimal",
+    policies: {},
+  };
+
+  if (levelOverride) {
+    effectiveConfig.level = levelOverride;
+  }
+
+  return new QualityPipeline(effectiveConfig, provider, personas, config);
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -64,6 +87,7 @@ program
   .argument("[task...]", "Aufgabe in natürlicher Sprache")
   .option("--dry-run", "Nur planen, nicht ausführen")
   .option("--provider <name>", "LLM Provider überschreiben")
+  .option("--quality <level>", "Quality Level überschreiben (minimal|standard|regulated)")
   .option("--cross", "Cross-Context Modus: Orchestriert über mehrere Kontexte")
   .option("--context <name>", "Aufgabe an spezifischen Kontext delegieren")
   .action(async (taskParts: string[], opts) => {
@@ -194,7 +218,7 @@ program
       const result = await engine.execute(plan, fullInput);
       const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
       const output = result.results.get(lastStep.id);
-      if (output) process.stdout.write(output.output);
+      if (output) process.stdout.write(output.content);
       return;
     }
 
@@ -213,7 +237,12 @@ program
     const router = new Router(registry, provider);
     const ragService = config.rag ? new RAGService(config.rag) : undefined;
     const selector = buildProviderSelector(config);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+    const qualityPipeline = buildQualityPipeline(config, provider, personas, opts.quality as QualityLevel | undefined);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, qualityPipeline);
+
+    if (qualityPipeline) {
+      console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
+    }
 
     console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
     const plan = await router.planWorkflow(fullInput);
@@ -235,10 +264,10 @@ program
     const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
     const output = result.results.get(lastStep.id);
     if (output) {
-      if (output.outputType === "file" && output.filePath) {
+      if (output.contentKind === "file" && output.filePath) {
         console.error(chalk.green(`\n📁 Datei erzeugt: ${output.filePath}`));
       }
-      process.stdout.write(output.output);
+      process.stdout.write(output.content);
     }
     await mcpManager?.shutdown();
   });
@@ -248,6 +277,7 @@ program
   .command("run <pattern>")
   .description("Ein Pattern direkt ausführen (stdin → LLM → stdout)")
   .option("--provider <name>", "LLM Provider überschreiben")
+  .option("--quality <level>", "Quality Level überschreiben (minimal|standard|regulated)")
   .allowUnknownOption(true)
   .action(async (patternName: string, _opts, cmd: Command) => {
     const input = await readStdin();
@@ -303,7 +333,7 @@ program
       };
       const result = await engine.execute(ragPlan, input);
       const out = result.results.get("run");
-      if (out) process.stdout.write(out.output);
+      if (out) process.stdout.write(out.content);
     } else if (pattern.meta.type === "mcp") {
       // MCP-Pattern: Über Engine ausführen
       const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
@@ -317,7 +347,7 @@ program
       };
       const result = await engine.execute(mcpPlan, input);
       const out = result.results.get("run");
-      if (out) process.stdout.write(out.output);
+      if (out) process.stdout.write(out.content);
     } else if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
       const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
@@ -332,10 +362,10 @@ program
       const result = await engine.execute(toolPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.type === "image_generation") {
       // Image-Generation-Pattern: Über Engine ausführen (speichert Bilder in output/)
@@ -351,10 +381,10 @@ program
       const result = await engine.execute(imgPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.type === "tts") {
       // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
@@ -370,10 +400,10 @@ program
       const result = await engine.execute(ttsPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`🔊 Audio erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.input_type === "image") {
       // Vision-Pattern: Dateipfade aus stdin lesen, als Base64 an Vision-Provider
@@ -407,7 +437,37 @@ program
         ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
         : systemPrompt;
       const response = await provider.complete(fullPrompt, input);
-      process.stdout.write(response.content);
+
+      // Quality Backbone: check at output boundary
+      const qualityLevel = cmd.opts().quality as QualityLevel | undefined;
+      const qualityPipeline = buildQualityPipeline(config, provider, personas, qualityLevel);
+      if (qualityPipeline) {
+        const { randomUUID } = await import("crypto");
+        const ctx = { trace_id: randomUUID(), context_id: "default", started_at: Date.now() };
+        console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
+        const qualityResult = await qualityPipeline.evaluate(
+          response.content,
+          pattern.meta,
+          input,
+          input,
+          ctx,
+          {
+            persona: persona ?? undefined,
+            rerunPattern: async (reworkHint: string, previousOutput: string) => {
+              const reworkPrompt = `${fullPrompt}\n\n## REWORK FEEDBACK\n\nFix the following:\n${reworkHint}`;
+              const reworkInput = `${input}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
+              const resp = await provider.complete(reworkPrompt, reworkInput);
+              return resp.content;
+            },
+          },
+        );
+        process.stdout.write(qualityResult.output);
+        if (qualityResult.findings.length > 0) {
+          console.error(chalk.gray(`\n  Quality: ${qualityResult.decision} (${qualityResult.findings.length} findings, ${qualityResult.reworkAttempts} reworks)`));
+        }
+      } else {
+        process.stdout.write(response.content);
+      }
     }
     await mcpManager?.shutdown();
   });
@@ -1470,6 +1530,70 @@ program
     console.error(chalk.gray('    aios "describe your task"    # start working'));
     console.error(chalk.gray("    aios init --refresh          # regenerate after editing context.yaml"));
     console.error();
+  });
+
+// ─── aios quality ──────────────────────────────────────
+const qualityCmd = program.command("quality").description("Quality Backbone Verwaltung");
+
+qualityCmd
+  .command("status")
+  .description("Quality Level und aktive Policies anzeigen")
+  .action(() => {
+    const config = loadConfig();
+    const qualityConfig = config.quality;
+
+    if (!qualityConfig) {
+      console.log(chalk.yellow("Quality Backbone: nicht konfiguriert"));
+      console.log(chalk.gray("Konfiguriere in aios.yaml unter 'quality:' oder nutze --quality=<level>"));
+      return;
+    }
+
+    console.log(chalk.bold(`Quality Level: ${qualityConfig.level}`));
+
+    // Determine active policies based on level
+    const level = qualityConfig.level;
+    const policies: string[] = [];
+    if (qualityConfig.policies.self_check?.enabled !== false) policies.push("self_check");
+    if (level !== "minimal") {
+      if (qualityConfig.policies.consistency_check?.enabled !== false) policies.push("consistency_check");
+      if (qualityConfig.policies.peer_review?.enabled !== false) policies.push("peer_review");
+    }
+    if (level === "regulated") {
+      if (qualityConfig.policies.compliance_check?.enabled !== false) policies.push("compliance_check");
+      if (qualityConfig.policies.traceability_check?.enabled !== false) policies.push("traceability_check");
+      if (qualityConfig.policies.quality_gate?.enabled !== false) policies.push("quality_gate");
+    }
+
+    console.log(chalk.gray(`Active Policies: ${policies.join(", ")}`));
+    console.log(chalk.gray(`Audit Trail: ${qualityConfig.audit?.enabled ? `enabled (${qualityConfig.audit.output_dir ?? ".aios/audit/"})` : "disabled"}`));
+
+    // Boundaries
+    const boundaries = qualityConfig.boundaries ?? {};
+    const activeBoundaries = Object.entries(boundaries).filter(([, v]) => v).map(([k]) => k);
+    if (activeBoundaries.length > 0) {
+      console.log(chalk.gray(`Boundaries: ${activeBoundaries.join(", ")}`));
+    }
+  });
+
+qualityCmd
+  .command("policies")
+  .description("Alle verfügbaren Policies und deren Level anzeigen")
+  .action(() => {
+    const policyInfo = [
+      { name: "self_check", level: "minimal", desc: "LLM-based self-validation" },
+      { name: "consistency_check", level: "standard", desc: "Consistency against Knowledge Base" },
+      { name: "peer_review", level: "standard", desc: "Review by counter-persona" },
+      { name: "compliance_check", level: "regulated", desc: "Standards compliance (IEC 62443, CRA)" },
+      { name: "traceability_check", level: "regulated", desc: "Requirements coverage check" },
+      { name: "quality_gate", level: "regulated", desc: "Aggregate gate with blocking" },
+    ];
+
+    console.log(chalk.bold("\nQuality Policies:\n"));
+    for (const p of policyInfo) {
+      const levelColor = p.level === "minimal" ? chalk.green : p.level === "standard" ? chalk.yellow : chalk.red;
+      console.log(`  ${chalk.cyan(p.name.padEnd(25))} ${levelColor(`[${p.level}]`.padEnd(12))} ${chalk.gray(p.desc)}`);
+    }
+    console.log();
   });
 
 // ─── aios configure ──────────────────────────────────────
