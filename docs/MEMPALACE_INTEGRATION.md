@@ -12,35 +12,43 @@ Die Integration nutzt ausschließlich den bestehenden MCP-Client (`src/core/mcp.
 └────────────┬─────────────────┘
              │
        ┌─────▼──────┐
-       │  Router    │  plant memory_recall VOR / memory_store NACH
-       └─────┬──────┘   Haupt-Schritten (wenn relevant)
+       │  Router    │  plant Chain: memory_recall → main → memory_store → memory_store_persist
+       └─────┬──────┘
              │
-   ┌─────────┴─────────┐
-   │                   │
-┌──▼───────────┐  ┌────▼──────────┐
-│ memory_recall│  │ Haupt-Steps   │  (code_review, design_solution, …)
-│ (LLM)        │  │ mit Kontext   │
-└──┬───────────┘  └────┬──────────┘
-   │                   │
-   │                   ▼
-   │            ┌──────────────┐
-   │            │ memory_store │
-   │            │ (LLM)        │
-   │            └──┬───────────┘
-   │               │
-   └───┬───────────┘
-       │ MCP tools/call
-       ▼
-┌─────────────────────────────┐
-│ McpManager (src/core/mcp.ts)│
-└────────────┬────────────────┘
-             │ stdio
-┌────────────▼────────────────┐
-│ MemPalace MCP Server        │
-│ (python -m mempalace...)    │
-│ → ChromaDB + SQLite (local) │
-└─────────────────────────────┘
+   ┌─────────┼──────────────────────────┐
+   │         │                          │
+┌──▼────────┐│  ┌──────────────┐  ┌─────▼──────────────┐
+│memory_    ││  │ Haupt-Steps  │  │ memory_store (LLM) │
+│recall(LLM)││  │ mit Kontext  │  │ → memory_items[]   │
+└──┬────────┘│  └────┬─────────┘  └─────┬──────────────┘
+   │         │       │                  │
+   │         │       │                  ▼
+   │         │       │          ┌───────────────────────┐
+   │         │       │          │ memory_store_persist  │
+   │         │       │          │ (type: tool)          │
+   │         │       │          │ tools/mempalace-      │
+   │         │       │          │  persist.ts           │
+   │         │       │          └─────┬─────────────────┘
+   │         │       │                │ MCP stdio (kurzlebig)
+   │         │       │                ▼
+   │         │       │         ┌────────────────────┐
+   │         │       │         │ MemPalace MCP      │
+   │         │       │         │ (ChromaDB+SQLite)  │
+   │         │       │         └────────────────────┘
+   │         │       │                ▲
+   │         │       │                │ tools/call (MCP stdio, langlebig)
+   │         ▼       ▼                │
+   │  ┌─────────────────────────┐     │
+   └─►│ McpManager              ├─────┘
+      │ (src/core/mcp.ts)       │
+      │ spawnt mempalace lazy   │
+      └─────────────────────────┘
 ```
+
+**Zwei MemPalace-Zugriffswege**, beide via MCP:
+
+1. **Read-Path** (`memory_recall`, manuelle `mempalace/*` Calls): Der langlebige `McpManager` im AIOS-Hauptprozess hält eine persistente MCP-Verbindung.
+2. **Write-Path** (`memory_store_persist`): Der Tool-Script spawnt kurz einen **zweiten** MemPalace-Prozess, schreibt seine Items und terminiert. Das ist nötig weil Tool-Pattern-Subprozesse keinen Zugriff auf den laufenden `McpManager` haben (würde Kernel-Änderungen erfordern). SQLite WAL + lokale ChromaDB vertragen den kurzen parallelen Schreibzugriff.
 
 ## Setup
 
@@ -83,9 +91,10 @@ Nach dem Start von AIOS werden die MemPalace-Tools automatisch entdeckt und als 
 
 ```bash
 aios patterns list --category knowledge
-# Erwartet u.a.:
-#   memory_recall
-#   memory_store
+# Erwartet:
+#   memory_recall             (LLM)
+#   memory_store              (LLM)
+#   memory_store_persist      (TOOL)
 #   mempalace/mempalace_search
 #   mempalace/mempalace_add_drawer
 #   mempalace/mempalace_check_duplicate
@@ -93,10 +102,15 @@ aios patterns list --category knowledge
 #   …
 ```
 
-Smoke-Test:
+Smoke-Tests:
 
 ```bash
+# Read-Path via McpManager
 echo '{"query": "OAuth2", "wing": "wing_aios"}' | aios run mempalace/mempalace_search
+
+# Write-Path via Tool-Script (manuell)
+echo '{"memory_items":[{"wing":"wing_aios_decisions","room":"mcp","type":"decision","content":"Test"}]}' \
+  | aios run memory_store_persist
 ```
 
 ## Patterns
@@ -108,14 +122,30 @@ Leitet aus einer Aufgabe semantische Suchanfragen ab und bereitet einen `context
 Input: Aufgabenbeschreibung (Text)
 Output: JSON mit `search_queries[]` und `context_block` (Markdown)
 
-### `memory_store`
+### `memory_store` + `memory_store_persist` (Chain)
 
-Extrahiert aus Workflow-Outputs langlebiges Wissen (decisions, facts, findings, patterns, lessons) und formatiert es für MemPalace. Der Router plant diesen Step **nach** Haupt-Schritten ein, wenn neue Entscheidungen/Findings produziert wurden. Fire-and-forget: Fehler dürfen den Workflow nicht brechen.
+Die eigentliche Persistenz erfolgt als **zweistufige Kette**, die der Router automatisch hinter den Haupt-Schritten einplant:
 
-Input: Workflow-Output (Text)
-Output: JSON mit `memory_items[]` (jedes Item hat `wing`, `room`, `type`, `content`, `relevance`)
+1. **`memory_store`** (LLM-Pattern, `selection_strategy: cheapest`) – extrahiert aus dem Workflow-Output langlebiges Wissen (decisions, facts, findings, patterns, lessons), klassifiziert nach Wing/Room und gibt JSON `memory_items[]` aus. Selbst-Test-Kriterium: Jedes Item muss ohne Original-Kontext verständlich sein.
 
-Jedes Item trägt `action: check_duplicate` – vor dem tatsächlichen `mempalace_add_drawer` Aufruf muss `mempalace_check_duplicate` geprüft werden.
+2. **`memory_store_persist`** (Tool-Pattern, `tsx tools/mempalace-persist.ts`) – nimmt den JSON-Output von `memory_store` entgegen, extrahiert das erste balancierte JSON-Objekt (robust gegen ContextBuilder-Markdown-Wrapping und Code-Fences), spawnt kurz einen MemPalace MCP-Client, ruft für jedes Item `mempalace_check_duplicate` + `mempalace_add_drawer`, und schreibt eine Markdown-Summary (`stored / duplicates / failed / skipped`) auf `$OUTPUT`.
+
+Der Tool-Script ist **fire-and-forget**: Exit-Code ist IMMER 0, auch bei
+- nicht-installierter MemPalace,
+- fehlerhaftem Input (kein JSON, falsches Schema, unvollständige Items),
+- MCP-Verbindungsfehlern,
+- teilweise fehlgeschlagenen Item-Writes.
+
+Fehler landen in der Summary mit Status `Skipped: …` oder als Einträge unter `## Errors`. Der umgebende AIOS-Workflow wird nicht gebrochen.
+
+Input: Workflow-Output (Text, wird an `memory_store` gereicht)
+Output (von `memory_store_persist`): Markdown-Summary
+
+## Konfigurations-Single-Source
+
+`tools/mempalace-persist.ts` liest beim Start `./aios.yaml` und verwendet dieselbe `mcp.servers.mempalace.{command,args,env}` Konfiguration wie der laufende `McpManager`. Änderst du den MemPalace-Command in `aios.yaml`, greift er sowohl für Read- als auch für Write-Pfad. Falls `aios.yaml` fehlt oder keinen `mempalace`-Block hat, fällt der Script auf Defaults (`python -m mempalace.mcp_server`) zurück.
+
+Sensitive Env-Vars (`ANTHROPIC_API_KEY`, `GH_TOKEN`, …) werden beim Spawn gestrippt – dieselbe Defense-in-Depth-Liste wie in `src/core/mcp.ts`.
 
 ## Wing-Mapping Konvention
 
@@ -153,13 +183,13 @@ Die vollständige Tool-Liste mit Schemas sieht der Router im Pattern-Katalog –
 
 Die Integration ist vollständig User Space:
 
-- Kein Code in `src/core/` (Kernel)
-- Patterns liegen in `patterns/memory_store/` und `patterns/memory_recall/`
-- Config in `aios.yaml` (`mcp.servers.mempalace`)
-- Nutzt existierendes `McpServerConfig` Interface
+- **Kein Code in `src/core/` (Kernel)** – die Persist-Logik lebt als Tool-Script in `tools/mempalace-persist.ts` und wird über den existierenden `type: tool` Mechanismus aufgerufen (derselbe Weg wie `patterns/pdf_merge/` → `tools/pdf-tools.ts`)
+- Patterns liegen in `patterns/memory_store/`, `patterns/memory_recall/`, `patterns/memory_store_persist/`
+- Config in `aios.yaml` (`mcp.servers.mempalace`) – Single Source of Truth für beide Zugriffspfade
+- Nutzt existierende `McpServerConfig` und `@modelcontextprotocol/sdk`
 - Keine Änderung an kernel-stable Interfaces
 
-Ein Perl-Entwickler, ein Java-Entwickler und ein CRA-Compliance-Beauftragter profitieren gleichermaßen von persistentem Gedächtnis – trotzdem bleibt die Konkretion (welche Wings, welche Klassifizierung) im User Space, weil sie Domain-Konvention ist.
+Ein Perl-Entwickler, ein Java-Entwickler und ein CRA-Compliance-Beauftragter profitieren gleichermaßen von persistentem Gedächtnis – trotzdem bleibt die Konkretion (welche Wings, welche Klassifizierung, welche Persistenz-Semantik) im User Space, weil sie Domain-Konvention ist.
 
 ## Troubleshooting
 

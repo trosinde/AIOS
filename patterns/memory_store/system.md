@@ -7,6 +7,7 @@ input_type: text
 output_type: structured
 tags: [knowledge, memory, persistence, mempalace]
 can_follow: [code_review, security_review, architecture_review, design_solution, extract_requirements, threat_model, compliance_report, generate_code, generate_tests]
+can_precede: [memory_store_persist]
 selection_strategy: cheapest
 requires:
   reasoning: 5

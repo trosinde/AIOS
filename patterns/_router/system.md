@@ -66,5 +66,9 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein anderer Text):
 # MEMORY INTEGRATION (MemPalace)
 
 - Wenn `mempalace/*` MCP-Tools im Katalog verfügbar sind UND die Aufgabe auf bisherige Entscheidungen, Constraints oder Findings angewiesen sein könnte (z.B. Feature-Erweiterung, Code-Review in bekanntem Projekt, Compliance-Prüfung), plane einen `memory_recall` Schritt **VOR** den Hauptschritten. Der `context_block` Output wird in nachfolgende Steps injiziert.
-- Wenn die Aufgabe neue Entscheidungen, Findings oder wiederverwendbares Wissen produziert (Reviews, Design, Requirements, Threat Models), plane einen `memory_store` Schritt **NACH** den Hauptschritten (fire-and-forget, darf den Workflow nicht blockieren – markiere als `retry.max: 0, on_failure: ignore` falls unterstützt).
+- Wenn die Aufgabe neue Entscheidungen, Findings oder wiederverwendbares Wissen produziert (Reviews, Design, Requirements, Threat Models), plane nach den Hauptschritten eine **Zwei-Step-Kette**:
+  1. `memory_store` (LLM) – extrahiert und klassifiziert memory_items als JSON
+  2. `memory_store_persist` (Tool) – schreibt die Items via MCP nach MemPalace
+  Beide Steps gehören zusammen – plane `memory_store_persist` NUR wenn auch `memory_store` geplant ist, und verdrahte `memory_store_persist.depends_on = ["memory_store"]` sowie `memory_store_persist.input_from = ["memory_store"]`.
+- `memory_store_persist` ist fire-and-forget: `retry.max: 0`. Fehler des Steps dürfen den Workflow NICHT brechen – das Tool-Script garantiert Exit 0.
 - Für rein transiente Aufgaben (einmalige Zusammenfassung, Format-Konvertierung, Übersetzung) KEIN memory_recall/memory_store einplanen.
