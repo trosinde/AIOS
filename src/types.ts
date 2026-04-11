@@ -40,6 +40,16 @@ export interface PatternMeta {
   internal?: boolean;
   kernel_abi?: number;
 
+  /**
+   * Optionale Extraktion-Konfiguration für strukturierte Outputs.
+   * Definiert Regex-Patterns um Artefakte aus dem LLM-Output zu extrahieren.
+   */
+  output_extraction?: {
+    artifact_pattern?: string;   // Regex mit Named Groups: (?<id>...) (?<content>...)
+    artifact_type?: string;      // z.B. "requirement", "finding"
+    summary_strategy?: "first_paragraph" | "first_line" | "none";
+  };
+
   // Tool-Pattern Felder
   type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
@@ -102,19 +112,67 @@ export interface ExecutionPlan {
 
 export type StepStatus = "pending" | "running" | "done" | "failed";
 
+/** @deprecated – Wird durch StepMessage ersetzt */
 export interface StepResult {
   stepId: string;
   pattern: string;
   output: string;
-  outputType: "text" | "file";    // Was output enthält
-  filePath?: string;               // Bei outputType: "file"
-  filePaths?: string[];            // Multiple output files (e.g. thumbnails)
+  outputType: "text" | "file";
+  filePath?: string;
+  filePaths?: string[];
   durationMs: number;
+}
+
+// ─── Message Envelope (ersetzt StepResult) ───────────────
+
+/**
+ * Ein extrahiertes Artefakt aus dem LLM-Output.
+ * Wird durch output_extraction im Frontmatter gesteuert.
+ */
+export interface MessageArtifact {
+  type: string;              // "requirement" | "finding" | "code" | "decision" | "diagram"
+  id?: string;               // "REQ-001", "FIND-003" – wenn extrahierbar
+  content: string;           // Der Artefakt-Inhalt
+  severity?: string;         // Für Findings: "critical" | "high" | "medium" | "low"
+}
+
+/**
+ * Metadaten über die Herkunft einer Nachricht.
+ * Wird automatisch aus Pattern-Frontmatter + ExecutionStep befüllt.
+ */
+export interface MessageSource {
+  stepId: string;            // z.B. "s1"
+  pattern: string;           // z.B. "security_review"
+  persona?: string;          // z.B. "security_expert" – aus Frontmatter oder Step
+  outputType: string;        // z.B. "security_findings" – aus Frontmatter output_type
+}
+
+/**
+ * Typed Message Envelope – EIP-konformes Nachrichtenformat.
+ *
+ * Ersetzt das bisherige StepResult. Jeder Step produziert eine
+ * StepMessage statt eines nackten Strings. Der Header trägt die
+ * Metadaten, die der Empfänger braucht um zu wissen WAS er bekommt,
+ * VON WEM und in welcher STRUKTUR.
+ */
+export interface StepMessage {
+  source: MessageSource;
+  content: string;                // Der vollständige LLM-/Tool-Output
+  artifacts: MessageArtifact[];   // Extrahierte strukturierte Artefakte (kann leer sein)
+  summary: string;                // Einzeiler-Zusammenfassung (erster Absatz oder generiert)
+  durationMs: number;
+
+  // ─── File-basierte Outputs (tool/mcp/image_generation/tts Patterns) ──
+  // Diese Felder bleiben für Downstream-Kompatibilität (collectImages,
+  // CLI-Anzeige von Datei-Outputs) erhalten.
+  contentKind?: "text" | "file";
+  filePath?: string;
+  filePaths?: string[];
 }
 
 export interface WorkflowResult {
   plan: ExecutionPlan;
-  results: Map<string, StepResult>;
+  results: Map<string, StepMessage>;
   status: Map<string, StepStatus>;
   totalDurationMs: number;
 }

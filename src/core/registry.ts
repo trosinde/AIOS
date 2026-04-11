@@ -3,6 +3,7 @@ import { execFileSync } from "child_process";
 import { join } from "path";
 import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
+import { validateOutputExtraction } from "./output-extractor.js";
 
 const CURRENT_KERNEL_ABI = 1;
 
@@ -57,12 +58,27 @@ export class PatternRegistry {
       tool_args: data.tool_args,
       input_format: data.input_format,
       output_format: data.output_format,
+      output_extraction: data.output_extraction
+        ? {
+            artifact_pattern: data.output_extraction.artifact_pattern,
+            artifact_type: data.output_extraction.artifact_type,
+            summary_strategy: data.output_extraction.summary_strategy,
+          }
+        : undefined,
     };
 
     if (!meta.kernel_abi) {
       console.error(`⚠️  Pattern "${meta.name}" hat kein kernel_abi Feld`);
     } else if (meta.kernel_abi > CURRENT_KERNEL_ABI) {
       console.error(`❌ Pattern "${meta.name}" benötigt kernel_abi ${meta.kernel_abi}, Kernel unterstützt ${CURRENT_KERNEL_ABI}`);
+      return null;
+    }
+
+    try {
+      validateOutputExtraction(meta.name, meta.output_extraction);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`❌ ${msg}`);
       return null;
     }
 

@@ -194,7 +194,7 @@ program
       const result = await engine.execute(plan, fullInput);
       const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
       const output = result.results.get(lastStep.id);
-      if (output) process.stdout.write(output.output);
+      if (output) process.stdout.write(output.content);
       return;
     }
 
@@ -235,10 +235,10 @@ program
     const lastStep = plan.plan.steps[plan.plan.steps.length - 1];
     const output = result.results.get(lastStep.id);
     if (output) {
-      if (output.outputType === "file" && output.filePath) {
+      if (output.contentKind === "file" && output.filePath) {
         console.error(chalk.green(`\n📁 Datei erzeugt: ${output.filePath}`));
       }
-      process.stdout.write(output.output);
+      process.stdout.write(output.content);
     }
     await mcpManager?.shutdown();
   });
@@ -303,7 +303,7 @@ program
       };
       const result = await engine.execute(ragPlan, input);
       const out = result.results.get("run");
-      if (out) process.stdout.write(out.output);
+      if (out) process.stdout.write(out.content);
     } else if (pattern.meta.type === "mcp") {
       // MCP-Pattern: Über Engine ausführen
       const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
@@ -317,7 +317,7 @@ program
       };
       const result = await engine.execute(mcpPlan, input);
       const out = result.results.get("run");
-      if (out) process.stdout.write(out.output);
+      if (out) process.stdout.write(out.content);
     } else if (pattern.meta.type === "tool") {
       // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
       const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
@@ -332,10 +332,10 @@ program
       const result = await engine.execute(toolPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.type === "image_generation") {
       // Image-Generation-Pattern: Über Engine ausführen (speichert Bilder in output/)
@@ -351,10 +351,10 @@ program
       const result = await engine.execute(imgPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.type === "tts") {
       // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
@@ -370,10 +370,10 @@ program
       const result = await engine.execute(ttsPlan, input);
       const out = result.results.get("run");
       if (out) {
-        if (out.outputType === "file" && out.filePath) {
+        if (out.contentKind === "file" && out.filePath) {
           console.error(chalk.green(`🔊 Audio erzeugt: ${out.filePath}`));
         }
-        process.stdout.write(out.output);
+        process.stdout.write(out.content);
       }
     } else if (pattern.meta.input_type === "image") {
       // Vision-Pattern: Dateipfade aus stdin lesen, als Base64 an Vision-Provider
