@@ -72,6 +72,9 @@ export interface PatternMeta {
   rag_collection?: string;
   rag_operation?: "search" | "index" | "compare";
   rag_overrides?: { topK?: number; minRelevance?: number };
+
+  // Capability-Based Provider Selection: required capabilities per pattern
+  requires?: TaskRequirements;
 }
 
 export interface Pattern {
@@ -121,6 +124,12 @@ export interface StepResult {
   filePath?: string;
   filePaths?: string[];
   durationMs: number;
+
+  // ─── Capability-Based Provider Selection Provenance ───
+  provider?: string;               // Provider name (e.g. "ollama-qwen-235b")
+  model?: string;                  // Model identifier (e.g. "qwen3:235b")
+  attempt?: number;                // 1 = first try, 2+ = retry/escalation
+  escalationPath?: string[];       // Provider names in order of tries
 }
 
 // ─── Message Envelope (ersetzt StepResult) ───────────────
@@ -145,6 +154,13 @@ export interface MessageSource {
   pattern: string;           // z.B. "security_review"
   persona?: string;          // z.B. "security_expert" – aus Frontmatter oder Step
   outputType: string;        // z.B. "security_findings" – aus Frontmatter output_type
+
+  // Optional provenance from the capability-based StepExecutor.
+  // Only populated when the step ran through that path.
+  provider?: string;
+  model?: string;
+  attempt?: number;
+  escalationPath?: string[];
 }
 
 /**
@@ -246,9 +262,107 @@ export interface ProviderConfig {
   model: string;
   endpoint?: string;
   apiKey?: string;       // Bearer token for authenticated Ollama endpoints
+
+  /**
+   * Legacy tag-based provider metadata. Consumed by the older tag-based
+   * `ProviderSelector` (src/agents/provider-selector.ts). New capability
+   * work should prefer `model_capabilities` + `cost`. Both schemas coexist
+   * for now; full consolidation is tracked as follow-up.
+   */
   capabilities?: string[];     // e.g. ["vision", "code"]
   cost_per_mtok?: number;      // $/million input tokens (0 = free/local)
   quality?: Record<string, number>;  // capability → quality score 0-10
+
+  /**
+   * Capability-Based Provider Selection (new):
+   * - `model_capabilities` — score-based capability profile
+   * - `cost` — cost tier + per-Mtok pricing
+   *
+   * Consumed by `CapabilityProviderSelector` (src/agents/selector.ts).
+   * `cost.per_mtok_usd` supersedes `cost_per_mtok` when both are present.
+   */
+  model_capabilities?: ModelCapabilities;
+  cost?: CostInfo;
+}
+
+// ─── Model Capabilities (Score-based) ────────────────────
+
+export interface ModelCapabilities {
+  reasoning: number;              // 1-10: logical reasoning / analysis
+  code_generation: number;        // 1-10: code synthesis / refactoring
+  instruction_following: number;  // 1-10: follows prompt instructions precisely
+  structured_output: number;      // 1-10: reliable JSON/Markdown output
+  language: string[];             // Supported languages e.g. ["de", "en"]
+  max_context: number;            // Max context window in tokens
+}
+
+export interface TaskRequirements {
+  reasoning?: number;
+  code_generation?: number;
+  instruction_following?: number;
+  structured_output?: number;
+  language?: string;              // Single required language
+  min_context?: number;           // Minimum required context window
+}
+
+export interface CostInfo {
+  tier: number;                   // 1 = cheap/local, 5 = expensive
+  input_per_mtok: number;         // USD per million input tokens
+  output_per_mtok: number;        // USD per million output tokens
+}
+
+// ─── Escalation Policy ───────────────────────────────────
+
+export type EscalationStrategy = "upgrade_on_fail" | "same_model_retry" | "fail_fast";
+
+export interface EscalationConfig {
+  maxRetries: number;             // 0-3 retries allowed per step
+  strategy: EscalationStrategy;
+  retrySameTierFirst: boolean;    // Retry same provider before upgrading
+  cooldownMs: number;             // Pause between retries
+}
+
+// ─── Selector Results ────────────────────────────────────
+
+export interface RankedProvider {
+  name: string;
+  config: ProviderConfig;
+  capable: boolean;
+  costTier: number;
+  headroom: number;               // Average excess over requirements
+  history?: PatternStats;
+}
+
+// ─── Execution Memory Records ────────────────────────────
+
+export type ExecutionOutcome = "success" | "retry" | "failed";
+
+export interface ExecutionRecord {
+  timestamp: string;              // ISO 8601
+  contextId?: string;             // Stamped by ExecutionMemory.log() from its contextId
+  pattern: string;
+  provider: string;
+  model: string;
+  costTier: number;
+  outcome: ExecutionOutcome;
+  errorType?: string;             // "invalid_json" | "timeout" | "rate_limit" | ...
+  attempt: number;                // 1 = first try
+  escalatedFrom?: string;         // Previous provider name
+  durationMs: number;
+  tokensInput: number;
+  tokensOutput: number;
+  stepId?: string;
+  workflowId?: string;
+  traceId?: string;               // ExecutionContext.trace_id for audit
+}
+
+export interface PatternStats {
+  pattern?: string;               // Pattern name (populated by allStats)
+  provider: string;
+  costTier: number;
+  totalRuns: number;
+  successRate: number;            // 0-100
+  avgDurationMs: number;
 }
 
 // ─── Chat / REPL ────────────────────────────────────────
@@ -639,10 +753,14 @@ export interface CrossContextResult {
 
 export interface AiosConfig {
   providers: Record<string, ProviderConfig>;
-  defaults: { provider: string };
+  defaults: {
+    provider: string;
+    router_provider?: string;    // Provider forced for router (always strongest)
+  };
   paths: { patterns: string; personas: string };
   tools: ToolsConfig;
   mcp?: McpConfig;
   rag?: import("./rag/types.js").RagConfig;
+  escalation?: EscalationConfig;
   quality?: QualityConfig;
 }

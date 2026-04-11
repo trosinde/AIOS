@@ -1,5 +1,5 @@
 ---
-kernel_abi: 1
+kernel_abi: 2
 name: extract_requirements
 description: "Extrahiert strukturierte Requirements aus natürlichsprachlichem Input"
 category: analyze
@@ -8,6 +8,11 @@ output_type: requirements
 tags: [requirements, analysis, regulated]
 can_precede: [design_solution, generate_tests]
 persona: re
+requires:
+  reasoning: 7
+  instruction_following: 7
+  structured_output: 7
+  language: de
 output_extraction:
   artifact_pattern: "^\\|\\s*(?<id>REQ-\\d+)\\s*\\|\\s*(?<content>[^|]+\\|[^|]+)"
   artifact_type: requirement

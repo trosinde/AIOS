@@ -9,6 +9,11 @@ tags: [testing, quality]
 can_follow: [generate_code, design_solution]
 parallelizable_with: [code_review, security_review]
 persona: tester
+requires:
+  reasoning: 5
+  code_generation: 7
+  instruction_following: 7
+  structured_output: 6
 ---
 
 # AUFGABE

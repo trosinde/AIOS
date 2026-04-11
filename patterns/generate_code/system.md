@@ -10,6 +10,11 @@ can_follow: [design_solution]
 can_precede: [code_review, security_review, generate_tests]
 parallelizable_with: [threat_model]
 persona: developer
+requires:
+  reasoning: 5
+  code_generation: 8
+  instruction_following: 7
+  structured_output: 6
 ---
 
 # AUFGABE

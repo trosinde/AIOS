@@ -11,6 +11,11 @@ tags: [diagram, visualization, mermaid, architecture]
 can_follow: [design_solution, extract_requirements, summarize]
 can_precede: [render_diagram]
 parallelizable_with: [generate_code, generate_tests]
+requires:
+  reasoning: 4
+  code_generation: 5
+  instruction_following: 7
+  structured_output: 7
 ---
 
 # IDENTITY and PURPOSE

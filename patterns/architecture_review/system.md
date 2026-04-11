@@ -9,6 +9,13 @@ tags: [architecture, design, patterns]
 can_follow: [generate_code, design_solution]
 parallelizable_with: [code_review, security_review]
 persona: architect
+requires:
+  reasoning: 8
+  code_generation: 5
+  instruction_following: 7
+  structured_output: 6
+  language: de
+  min_context: 16000
 ---
 
 # AUFGABE
