@@ -1,5 +1,13 @@
 import { execSync } from "child_process";
-import { existsSync, readFileSync, cpSync, mkdirSync } from "fs";
+import {
+  existsSync,
+  readFileSync,
+  cpSync,
+  mkdirSync,
+  rmSync,
+  renameSync,
+  statSync,
+} from "fs";
 import { join } from "path";
 import chalk from "chalk";
 import ora from "ora";
@@ -28,6 +36,159 @@ export function syncNewFiles(source: string, target: string): void {
   if (!existsSync(source)) return;
   mkdirSync(target, { recursive: true });
   cpSync(source, target, { recursive: true, force: false });
+}
+
+/**
+ * Migrate a pre-LanceDB AIOS install to the new KnowledgeBus layout.
+ *
+ * Idempotent: every step checks for existence first and only acts on
+ * what is actually stale. Safe to call on a fresh install (no-op).
+ *
+ * Steps:
+ *   1. The old `~/.aios/knowledge/bus.db` was a single SQLite file.
+ *      The new layout expects `~/.aios/knowledge/` to be a directory
+ *      that holds the LanceDB tables. If we find the file, back it up
+ *      to `bus.db.pre-lance.bak` and remove it so the directory can
+ *      be created.
+ *   2. The old MemPalace integration shipped two extra patterns
+ *      (memory_recall_fetch, memory_store_persist) that no longer
+ *      exist in the repo. The pattern sync uses `force: false` so it
+ *      cannot delete stale patterns on its own — we delete them here.
+ *   3. The current memory_recall and memory_store patterns were
+ *      rewritten as `type: kb`. Force-overwrite the user's local
+ *      copies with the version from the repo, but only when the local
+ *      copy is the legacy `type: llm` flavor — never clobber a custom
+ *      pattern.
+ *   4. Best-effort: if the `claude` CLI is available and `mempalace`
+ *      is registered as a user-scope MCP server, unregister it.
+ *
+ * Migration of existing knowledge data is intentionally NOT automatic:
+ * old SQLite rows would need to be re-embedded, which requires Ollama
+ * online and is a one-shot operation the user should consciously
+ * trigger. We leave the .bak file in place and print a hint.
+ */
+export function migrateFromLegacyKb(aiosHome: string, repoPath: string): {
+  changes: string[];
+  backupPath?: string;
+} {
+  const changes: string[] = [];
+  let backupPath: string | undefined;
+
+  // Step 1: legacy bus.db file → directory layout
+  const knowledgeDir = join(aiosHome, "knowledge");
+  if (existsSync(knowledgeDir)) {
+    try {
+      const st = statSync(knowledgeDir);
+      if (st.isFile()) {
+        // Old single-file SQLite KB. Move it aside so the new
+        // directory can be created on first KB use.
+        backupPath = `${knowledgeDir}.pre-lance.bak`;
+        renameSync(knowledgeDir, backupPath);
+        changes.push(`legacy SQLite KB → ${backupPath}`);
+      }
+    } catch {
+      /* ignore stat errors */
+    }
+  }
+  // Also handle the explicit bus.db file if it sits inside a directory
+  const legacyDbFile = join(aiosHome, "knowledge", "bus.db");
+  if (existsSync(legacyDbFile)) {
+    try {
+      backupPath = `${legacyDbFile}.pre-lance.bak`;
+      renameSync(legacyDbFile, backupPath);
+      changes.push(`legacy bus.db → ${backupPath}`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Step 2: stale tool-script patterns
+  const patternsHome = join(aiosHome, "patterns");
+  for (const stale of ["memory_recall_fetch", "memory_store_persist"]) {
+    const dir = join(patternsHome, stale);
+    if (existsSync(dir)) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        changes.push(`removed stale pattern ${stale}`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // Step 3: force-overwrite legacy memory_recall / memory_store
+  // patterns when the local copy is the pre-kb version
+  for (const name of ["memory_recall", "memory_store"]) {
+    const localFile = join(patternsHome, name, "system.md");
+    const repoFile = join(repoPath, "patterns", name, "system.md");
+    if (!existsSync(localFile) || !existsSync(repoFile)) continue;
+    try {
+      const local = readFileSync(localFile, "utf-8");
+      // Pre-kb patterns have no `type: kb` line. Newer ones do.
+      // We only overwrite when the local copy is missing it AND the
+      // repo copy has it — preserves user customizations of the new
+      // version while replacing legacy ones.
+      const localIsKb = /^type:\s*kb\b/m.test(local);
+      const repoContent = readFileSync(repoFile, "utf-8");
+      const repoIsKb = /^type:\s*kb\b/m.test(repoContent);
+      if (!localIsKb && repoIsKb) {
+        cpSync(repoFile, localFile);
+        changes.push(`upgraded pattern ${name} to type: kb`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Step 4: best-effort unregister mempalace from Claude Code
+  try {
+    execSync("command -v claude >/dev/null 2>&1");
+    const list = execSync("claude mcp list 2>/dev/null", { encoding: "utf-8" });
+    if (list.includes("mempalace")) {
+      execSync("claude mcp remove -s user mempalace 2>/dev/null");
+      changes.push("unregistered mempalace from Claude Code MCP user scope");
+    }
+  } catch {
+    /* claude not installed or no mempalace registered — ignore */
+  }
+
+  return { changes, backupPath };
+}
+
+/**
+ * Verify that the active embedding provider can serve the
+ * KnowledgeBus. The check is non-fatal: KB still works without it,
+ * but semanticSearch returns degenerate results until embeddings are
+ * available. We print an actionable hint instead of erroring.
+ */
+export function checkEmbeddingProvider(): {
+  ok: boolean;
+  hint?: string;
+} {
+  try {
+    // Best-effort: try the default Ollama endpoint with a tiny prompt.
+    const out = execSync(
+      'curl -s -m 3 -X POST http://localhost:11434/api/embeddings -d \'{"model":"nomic-embed-text","prompt":"x"}\'',
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    );
+    if (!out || out.includes('"error"')) {
+      const hint = out.includes("not found")
+        ? "Ollama läuft, aber Modell fehlt: 'ollama pull nomic-embed-text'"
+        : `Ollama antwortet nicht wie erwartet: ${out.slice(0, 80)}`;
+      return { ok: false, hint };
+    }
+    // Cheap sanity check: response should contain "embedding"
+    if (!out.includes('"embedding"')) {
+      return { ok: false, hint: "Ollama-Antwort enthält kein embedding-Feld" };
+    }
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      hint:
+        "Ollama nicht erreichbar (http://localhost:11434). Installiere via 'curl https://ollama.com/install.sh | sh' und 'ollama pull nomic-embed-text'.",
+    };
+  }
 }
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
@@ -115,11 +276,50 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     process.exit(1);
   }
 
+  // Migrate from legacy KB layout (no-op on fresh installs)
+  const migrationSpinner = ora({
+    text: "Prüfe Legacy-KnowledgeBus-Layout...",
+    stream: process.stderr,
+  }).start();
+  const migration = migrateFromLegacyKb(aiosHome, repoPath);
+  if (migration.changes.length === 0) {
+    migrationSpinner.succeed("KnowledgeBus-Layout aktuell");
+  } else {
+    migrationSpinner.succeed(`KnowledgeBus migriert (${migration.changes.length} Änderungen)`);
+    for (const change of migration.changes) {
+      console.error(chalk.gray(`    • ${change}`));
+    }
+    if (migration.backupPath) {
+      console.error(
+        chalk.yellow(
+          `    ⚠ Alte SQLite-KB unter ${migration.backupPath} gesichert — manuelle Re-Embedding-Migration ist (noch) nicht automatisch.`,
+        ),
+      );
+    }
+  }
+
   // Sync patterns & personas (new ones only, don't overwrite existing)
   const syncSpinner = ora({ text: "Synchronisiere Patterns & Personas...", stream: process.stderr }).start();
   syncNewFiles(join(repoPath, "patterns"), join(aiosHome, "patterns"));
   syncNewFiles(join(repoPath, "personas"), join(aiosHome, "personas"));
   syncSpinner.succeed("Patterns & Personas synchronisiert");
+
+  // Embedding provider sanity check (non-fatal)
+  const embedSpinner = ora({
+    text: "Prüfe Embedding-Provider (Ollama)...",
+    stream: process.stderr,
+  }).start();
+  const embedCheck = checkEmbeddingProvider();
+  if (embedCheck.ok) {
+    embedSpinner.succeed("Embedding-Provider erreichbar");
+  } else {
+    embedSpinner.warn(
+      "Embedding-Provider nicht erreichbar — semantische Suche bleibt offline bis behoben",
+    );
+    if (embedCheck.hint) {
+      console.error(chalk.gray(`    → ${embedCheck.hint}`));
+    }
+  }
 
   // Scan and refresh context registry
   const scanSpinner = ora({ text: "Aktualisiere Kontext-Registry...", stream: process.stderr }).start();
