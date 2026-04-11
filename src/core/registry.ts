@@ -3,8 +3,18 @@ import { execFileSync } from "child_process";
 import { join } from "path";
 import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
+import { validateOutputExtraction } from "./output-extractor.js";
 
-const CURRENT_KERNEL_ABI = 1;
+/**
+ * Kernel ABI version supported by this kernel.
+ *
+ * - v1: baseline (kernel_abi, name, input_type, output_type, persona, ...)
+ * - v2: adds `requires` (TaskRequirements for capability-based provider selection)
+ *
+ * Patterns with `kernel_abi > CURRENT_KERNEL_ABI` are rejected. Patterns
+ * without `kernel_abi` get a warning and default semantics.
+ */
+const CURRENT_KERNEL_ABI = 2;
 
 /**
  * Pattern Registry – lädt alle system.md Dateien,
@@ -58,12 +68,27 @@ export class PatternRegistry {
       input_format: data.input_format,
       output_format: data.output_format,
       requires: data.requires,
+      output_extraction: data.output_extraction
+        ? {
+            artifact_pattern: data.output_extraction.artifact_pattern,
+            artifact_type: data.output_extraction.artifact_type,
+            summary_strategy: data.output_extraction.summary_strategy,
+          }
+        : undefined,
     };
 
     if (!meta.kernel_abi) {
       console.error(`⚠️  Pattern "${meta.name}" hat kein kernel_abi Feld`);
     } else if (meta.kernel_abi > CURRENT_KERNEL_ABI) {
       console.error(`❌ Pattern "${meta.name}" benötigt kernel_abi ${meta.kernel_abi}, Kernel unterstützt ${CURRENT_KERNEL_ABI}`);
+      return null;
+    }
+
+    try {
+      validateOutputExtraction(meta.name, meta.output_extraction);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`❌ ${msg}`);
       return null;
     }
 

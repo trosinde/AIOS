@@ -1,5 +1,5 @@
 ---
-kernel_abi: 1
+kernel_abi: 2
 name: security_review
 description: "Security-fokussiertes Code Review (OWASP, IEC 62443)"
 category: review
@@ -15,6 +15,10 @@ requires:
   structured_output: 7
   language: de
   min_context: 16000
+output_extraction:
+  artifact_pattern: "(?<severity>CRITICAL|HIGH|MEDIUM|LOW)[:\\s]+(?<content>.+)"
+  artifact_type: finding
+  summary_strategy: first_paragraph
 ---
 
 # AUFGABE

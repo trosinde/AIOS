@@ -10,6 +10,7 @@ import type { CapabilityProviderSelector } from "../agents/selector.js";
 import type { ExecutionMemory } from "../memory/execution-memory.js";
 import type { LLMProvider } from "../agents/provider.js";
 import { createProvider } from "../agents/provider.js";
+import { PromptBuilder } from "../security/prompt-builder.js";
 
 /**
  * StepExecutor – runs a single LLM-pattern step with capability-based
@@ -43,6 +44,8 @@ export const DEFAULT_ESCALATION: EscalationConfig = {
 };
 
 export class StepExecutor {
+  private promptBuilder = new PromptBuilder();
+
   constructor(
     private selector: CapabilityProviderSelector,
     private memory: ExecutionMemory,
@@ -73,9 +76,16 @@ export class StepExecutor {
       const start = Date.now();
 
       try {
-        const response = await provider.complete(
+        // Data/Instruction Separation: wrap user input as untrusted data.
+        const built = this.promptBuilder.build(
           systemPrompt,
           userInput,
+          [],
+          ctx.execCtx.trace_id,
+        );
+        const response = await provider.complete(
+          built.systemPrompt,
+          built.userMessage,
           ctx.images,
           ctx.execCtx,
         );
@@ -96,6 +106,7 @@ export class StepExecutor {
           tokensOutput: response.tokensUsed.output,
           stepId: ctx.stepId,
           workflowId: ctx.workflowId,
+          traceId: ctx.execCtx.trace_id,
         });
 
         console.error(
@@ -133,6 +144,7 @@ export class StepExecutor {
           tokensOutput: 0,
           stepId: ctx.stepId,
           workflowId: ctx.workflowId,
+          traceId: ctx.execCtx.trace_id,
         });
 
         console.error(

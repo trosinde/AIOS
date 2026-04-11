@@ -79,9 +79,10 @@ describe("ExecutionMemory", () => {
     expect(b.successRate).toBe(50);
   });
 
-  it("persists to disk and reloads", () => {
+  it("persists to disk and reloads", async () => {
     const mem1 = new ExecutionMemory(filePath);
     mem1.log(makeRecord());
+    await mem1.flush();
     expect(existsSync(filePath)).toBe(true);
 
     const mem2 = new ExecutionMemory(filePath);
@@ -152,5 +153,66 @@ describe("ExecutionMemory", () => {
     const all = mem.allStats();
     expect(all).toHaveLength(2);
     expect(all.map((s) => s.pattern).sort()).toEqual(["code_review", "summarize"]);
+  });
+
+  it("stamps records with the memory's contextId", async () => {
+    const mem = new ExecutionMemory(filePath, "ctx-alpha");
+    mem.log(makeRecord({ contextId: "wrong" }));
+    await mem.flush();
+    // Re-load raw JSON and confirm contextId was stamped correctly.
+    const raw = JSON.parse(require("fs").readFileSync(filePath, "utf-8"));
+    expect(raw.records[0].contextId).toBe("ctx-alpha");
+  });
+
+  it("isolates stats between contexts", () => {
+    const memA = new ExecutionMemory(filePath, "ctx-a");
+    memA.log(makeRecord({ pattern: "p1", outcome: "success" }));
+    memA.log(makeRecord({ pattern: "p1", outcome: "failed" }));
+
+    // Same file, different context — must NOT see ctx-a's data in its stats.
+    const memB = new ExecutionMemory(filePath, "ctx-b");
+    expect(memB.getStats("p1")).toHaveLength(0);
+    expect(memB.getProviderReliability("ollama-qwen")).toBe(-1);
+
+    // But ctx-a still sees its own.
+    expect(memA.getStats("p1")).toHaveLength(1);
+  });
+
+  it("serializes concurrent log() calls without data loss", async () => {
+    const mem = new ExecutionMemory(filePath);
+    // Fire 50 parallel logs — mimics Promise.all in the Engine.
+    const promises = Array.from({ length: 50 }, (_, i) =>
+      Promise.resolve().then(() => mem.log(makeRecord({ stepId: `s${i}` }))),
+    );
+    await Promise.all(promises);
+    await mem.flush();
+
+    // Fresh load sees all 50 records.
+    const fresh = new ExecutionMemory(filePath);
+    expect(fresh.recordCount()).toBe(50);
+  });
+
+  it("caps memory at maxRecords via FIFO rotation", () => {
+    // Use a small cap for test speed.
+    const mem = new ExecutionMemory(filePath, "default", { maxRecords: 10 });
+    for (let i = 0; i < 15; i++) {
+      mem.log(makeRecord({ stepId: `s${i}` }));
+    }
+    expect(mem.recordCount()).toBe(10);
+  });
+
+  it("drops malformed records on load without crashing", () => {
+    // Write a file with one valid + one malformed record.
+    const goodRecord = makeRecord();
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        version: 1,
+        records: [goodRecord, { foo: "bar" }, { pattern: "missing-fields" }],
+      }),
+      "utf-8",
+    );
+    const mem = new ExecutionMemory(filePath);
+    expect(mem.recordCount()).toBe(1);
   });
 });

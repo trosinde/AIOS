@@ -160,21 +160,27 @@ export class CapabilityProviderSelector {
     const caps = config.model_capabilities;
     if (!caps) return 0;
 
-    const dimensions: [keyof TaskRequirements, keyof ModelCapabilities][] = [
-      ["reasoning", "reasoning"],
-      ["code_generation", "code_generation"],
-      ["instruction_following", "instruction_following"],
-      ["structured_output", "structured_output"],
+    // Explicit per-dimension arithmetic. Avoids unsafe `as number` casts and
+    // silently produces `0` contribution if the config has a non-number
+    // value where we expected one (e.g. "5" instead of 5).
+    const pairs: Array<{ req: number | undefined; cap: number | undefined }> = [
+      { req: reqs.reasoning, cap: caps.reasoning },
+      { req: reqs.code_generation, cap: caps.code_generation },
+      { req: reqs.instruction_following, cap: caps.instruction_following },
+      { req: reqs.structured_output, cap: caps.structured_output },
     ];
 
     let total = 0;
     let count = 0;
-    for (const [reqKey, capKey] of dimensions) {
-      const reqVal = reqs[reqKey] as number | undefined;
-      if (reqVal !== undefined) {
-        total += (caps[capKey] as number) - reqVal;
-        count++;
+    for (const { req, cap } of pairs) {
+      if (typeof req !== "number") continue;
+      if (typeof cap !== "number") {
+        // Treat malformed config as neutral (no contribution), but don't
+        // silently NaN the headroom.
+        continue;
       }
+      total += cap - req;
+      count += 1;
     }
 
     return count > 0 ? total / count : 0;

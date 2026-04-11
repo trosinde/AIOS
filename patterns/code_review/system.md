@@ -1,5 +1,5 @@
 ---
-kernel_abi: 1
+kernel_abi: 2
 name: code_review
 description: "Systematisches Code Review mit kategorisierten Findings"
 category: review
@@ -15,6 +15,10 @@ requires:
   instruction_following: 6
   structured_output: 5
   min_context: 8000
+output_extraction:
+  artifact_pattern: "(?<severity>CRITICAL|MAJOR|MINOR|SUGGESTION)[:\\s]+(?<content>.+)"
+  artifact_type: finding
+  summary_strategy: first_paragraph
 ---
 
 # AUFGABE

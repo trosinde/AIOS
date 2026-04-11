@@ -313,7 +313,7 @@ export async function startMCPServer(): Promise<void> {
           const result = await engine.execute(plan, task);
           // Combine all step results
           const output = Array.from(result.results.entries())
-            .map(([id, r]) => `## ${id}\n${r.output}`)
+            .map(([id, r]) => `## ${id}\n${r.content}`)
             .join("\n\n");
           return {
             content: [{ type: "text" as const, text: output }],

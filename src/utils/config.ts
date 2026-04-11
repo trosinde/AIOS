@@ -148,6 +148,7 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
       : DEFAULT_CONFIG.mcp,
     rag: expanded.rag,
     escalation: expanded.escalation,
+    quality: expanded.quality,
   };
 }
 

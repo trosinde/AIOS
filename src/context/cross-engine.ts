@@ -218,7 +218,7 @@ export class CrossContextEngine {
         const stepResult: CrossContextStepResult = {
           stepId: step.id,
           context: step.context,
-          output: lastOutput?.output ?? "",
+          output: lastOutput?.content ?? "",
           localPlan,
           durationMs: Date.now() - stepStart,
         };
