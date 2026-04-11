@@ -5,6 +5,12 @@ on:
     branches: [development]
   pull_request:
     branches: [development]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to run CI on"
+        required: false
+        default: "development"
 
 jobs:
   lint-and-test:
