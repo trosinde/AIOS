@@ -705,6 +705,16 @@ export interface ContextConfig {
 
   // ─── Required Traits (optional) ────────────────────
   required_traits?: string[];
+
+  // ─── MemPalace Memory Wings (optional) ─────────────
+  // Maps semantic categories (decisions, facts, findings, patterns,
+  // lessons, default) to MemPalace wing names. Used by the memory_store
+  // and memory_recall tool scripts to translate category-keyed LLM
+  // output into context-specific wing names. Fully optional: when
+  // absent, built-in defaults (wing_aios_*) are used.
+  memory?: {
+    wings?: Record<string, string>;
+  };
 }
 
 /** @deprecated Use ContextConfig instead */

@@ -4,10 +4,12 @@ import {
   parseSearchResponse,
   groupDrawers,
   formatContextBlock,
+  resolveQueryWing,
   type Drawer,
   type RecallResult,
   type SearchQuery,
 } from "./mempalace-recall.js";
+import type { WingConfig } from "./mempalace-persist.js";
 
 describe("extractRecallPlan", () => {
   it("parses plain JSON with search_queries", () => {
@@ -23,6 +25,28 @@ describe("extractRecallPlan", () => {
     expect(plan.search_queries[0].query).toBe("OAuth2 flows");
     expect(plan.search_queries[1].wing).toBe("wing_aios");
     expect(plan.search_queries[1].room).toBe("api");
+  });
+
+  it("parses category alongside legacy wing", () => {
+    const input = JSON.stringify({
+      search_queries: [
+        { query: "kernel abi", category: "decisions" },
+        { query: "open findings", category: "findings", room: "security" },
+      ],
+    });
+    const plan = extractRecallPlan(input);
+    expect(plan.search_queries[0].category).toBe("decisions");
+    expect(plan.search_queries[0].wing).toBeUndefined();
+    expect(plan.search_queries[1].category).toBe("findings");
+    expect(plan.search_queries[1].room).toBe("security");
+  });
+
+  it("drops empty category strings", () => {
+    const input = JSON.stringify({
+      search_queries: [{ query: "q", category: "   " }],
+    });
+    const plan = extractRecallPlan(input);
+    expect(plan.search_queries[0].category).toBeUndefined();
   });
 
   it("handles ContextBuilder-wrapped markdown", () => {
@@ -201,6 +225,40 @@ describe("parseSearchResponse", () => {
   });
 });
 
+describe("resolveQueryWing", () => {
+  const ctxCfg: WingConfig = {
+    source: "context.yaml",
+    wings: { decisions: "wing_myproject_adrs", default: "wing_myproject" },
+  };
+  const emptyCfg: WingConfig = { source: "defaults", wings: {} };
+
+  it("prefers explicit wing over category", () => {
+    const q: SearchQuery = { query: "x", wing: "wing_explicit", category: "decisions" };
+    expect(resolveQueryWing(q, ctxCfg)).toBe("wing_explicit");
+  });
+
+  it("resolves category via context override", () => {
+    const q: SearchQuery = { query: "x", category: "decisions" };
+    expect(resolveQueryWing(q, ctxCfg)).toBe("wing_myproject_adrs");
+  });
+
+  it("resolves category via built-in defaults when no context override", () => {
+    const q: SearchQuery = { query: "x", category: "findings" };
+    expect(resolveQueryWing(q, emptyCfg)).toBe("wing_aios_findings");
+  });
+
+  it("returns undefined when neither wing nor category is set (broad search)", () => {
+    const q: SearchQuery = { query: "x" };
+    expect(resolveQueryWing(q, ctxCfg)).toBeUndefined();
+    expect(resolveQueryWing(q, emptyCfg)).toBeUndefined();
+  });
+
+  it("ignores blank wing/category strings", () => {
+    expect(resolveQueryWing({ query: "x", wing: "   " }, ctxCfg)).toBeUndefined();
+    expect(resolveQueryWing({ query: "x", category: "" }, ctxCfg)).toBeUndefined();
+  });
+});
+
 describe("groupDrawers", () => {
   it("routes drawers to sections by type", () => {
     const drawers: Drawer[] = [
@@ -286,6 +344,16 @@ describe("formatContextBlock", () => {
     expect(out).toContain("_Suchanfragen:_");
     expect(out).toContain("`kernel abi`");
     expect(out).toContain("`mcp policy` [wing_aios_decisions]");
+  });
+
+  it("annotates category-based queries with category:<name> label", () => {
+    const queries: SearchQuery[] = [
+      { query: "adrs", category: "decisions" },
+      { query: "issues", category: "findings", room: "security" },
+    ];
+    const out = formatContextBlock(emptyResult, queries);
+    expect(out).toContain("`adrs` [category:decisions]");
+    expect(out).toContain("`issues` [category:findings/security]");
   });
 
   it("caps query list at MAX_QUERIES=4", () => {

@@ -34,8 +34,15 @@ import YAML from "yaml";
 export type MemoryType = "decision" | "fact" | "finding" | "pattern" | "lesson";
 export type Relevance = "high" | "medium" | "low";
 
+/**
+ * A memory item carries either a pre-resolved `wing` name (power-user
+ * override) or a semantic `category` which the tool script resolves to
+ * a wing via the per-context mapping in `.aios/context.yaml`. At least
+ * one of the two must be set; if both are present, `wing` wins.
+ */
 export interface MemoryItem {
-  wing: string;
+  wing?: string;
+  category?: string;
   room: string;
   content: string;
   type: MemoryType;
@@ -50,6 +57,8 @@ export interface PersistResult {
   total: number;
   skipped_reason?: string;
   errors: string[];
+  wing_source?: "context.yaml" | "defaults";
+  wing_context_path?: string;
 }
 
 export interface MempalaceCmd {
@@ -104,10 +113,13 @@ function validateItem(raw: unknown): MemoryItem {
   }
   const obj = raw as Record<string, unknown>;
   const wing = typeof obj.wing === "string" ? obj.wing.trim() : "";
+  const category = typeof obj.category === "string" ? obj.category.trim() : "";
   const room = typeof obj.room === "string" ? obj.room.trim() : "";
   const content = typeof obj.content === "string" ? obj.content.trim() : "";
   const type = obj.type;
-  if (!wing) throw new Error("memory_item: wing fehlt oder leer");
+  if (!wing && !category) {
+    throw new Error("memory_item: wing oder category muss gesetzt sein");
+  }
   if (!room) throw new Error("memory_item: room fehlt oder leer");
   if (!content) throw new Error("memory_item: content fehlt oder leer");
   if (!isMemoryType(type)) throw new Error(`memory_item: ungültiger type "${String(type)}"`);
@@ -117,7 +129,15 @@ function validateItem(raw: unknown): MemoryItem {
     : undefined;
   const relevance = isRelevance(obj.relevance) ? obj.relevance : undefined;
 
-  return { wing, room, content, type, relevance, tags };
+  return {
+    wing: wing || undefined,
+    category: category || undefined,
+    room,
+    content,
+    type,
+    relevance,
+    tags,
+  };
 }
 
 /**
@@ -144,6 +164,112 @@ export function extractMemoryItems(input: string): MemoryItem[] {
     throw new Error("Feld memory_items fehlt oder ist kein Array");
   }
   return items.map(validateItem);
+}
+
+// ─── Wing Resolution (context.yaml memory.wings) ──────────
+
+/**
+ * Default wing names used when no context.yaml override is present.
+ * Keep in sync with docs/MEMPALACE_INTEGRATION.md Wing-Mapping section.
+ */
+export const DEFAULT_WINGS: Record<string, string> = {
+  decisions: "wing_aios_decisions",
+  facts: "wing_aios",
+  findings: "wing_aios_findings",
+  patterns: "wing_aios_patterns",
+  lessons: "wing_aios_patterns",
+  compliance: "wing_aios_compliance",
+  default: "wing_aios",
+};
+
+export interface WingConfig {
+  wings: Record<string, string>;
+  source: "context.yaml" | "defaults";
+  contextPath?: string;
+}
+
+/**
+ * Walk upward from `start` looking for `.aios/context.yaml` (up to 6 parent
+ * levels). Returns the absolute path or null. Tool scripts run in the same
+ * CWD as the AIOS process, so the same context applies.
+ */
+function findContextYaml(start: string): string | null {
+  let dir = resolve(normalize(start));
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(dir, ".aios", "context.yaml");
+    if (existsSync(candidate)) return candidate;
+    const parent = resolve(dir, "..");
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Load the `memory.wings` mapping from the active context's context.yaml.
+ * Returns an empty map (and source="defaults") when no file is found or
+ * the file lacks a memory.wings section. Malformed YAML is silently
+ * ignored — tool scripts must never crash the workflow over config.
+ */
+export function loadWingConfig(cwd: string): WingConfig {
+  const contextPath = findContextYaml(cwd);
+  if (!contextPath) return { wings: {}, source: "defaults" };
+  try {
+    const raw = readFileSync(contextPath, "utf-8");
+    const doc = YAML.parse(raw) as unknown;
+    if (!doc || typeof doc !== "object") return { wings: {}, source: "defaults" };
+    const memory = (doc as { memory?: unknown }).memory;
+    if (!memory || typeof memory !== "object" || Array.isArray(memory)) {
+      return { wings: {}, source: "defaults", contextPath };
+    }
+    const wingsRaw = (memory as { wings?: unknown }).wings;
+    if (!wingsRaw || typeof wingsRaw !== "object" || Array.isArray(wingsRaw)) {
+      return { wings: {}, source: "defaults", contextPath };
+    }
+    const wings: Record<string, string> = {};
+    for (const [k, v] of Object.entries(wingsRaw as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim()) {
+        wings[k.trim().toLowerCase()] = v.trim();
+      }
+    }
+    return {
+      wings,
+      source: Object.keys(wings).length > 0 ? "context.yaml" : "defaults",
+      contextPath,
+    };
+  } catch {
+    return { wings: {}, source: "defaults", contextPath };
+  }
+}
+
+/**
+ * Resolve a semantic category to a MemPalace wing name.
+ *
+ * Precedence:
+ *   1. Explicit full `wing_*` name passed as category → used verbatim
+ *      (power-user / legacy prompt escape hatch)
+ *   2. Per-context override from context.yaml `memory.wings`
+ *   3. Built-in DEFAULT_WINGS map
+ *   4. DEFAULT_WINGS.default as final fallback
+ */
+export function resolveWing(category: string, cfg: WingConfig): string {
+  const raw = category.trim();
+  if (!raw) return cfg.wings.default ?? DEFAULT_WINGS.default;
+  if (raw.startsWith("wing_")) return raw;
+  const key = raw.toLowerCase();
+  if (cfg.wings[key]) return cfg.wings[key];
+  if (DEFAULT_WINGS[key]) return DEFAULT_WINGS[key];
+  return cfg.wings.default ?? DEFAULT_WINGS.default;
+}
+
+/**
+ * Resolve a memory item to its final wing.
+ * Explicit `item.wing` takes precedence over `item.category`.
+ */
+export function resolveItemWing(item: MemoryItem, cfg: WingConfig): string {
+  if (item.wing && item.wing.trim()) return item.wing.trim();
+  if (item.category && item.category.trim()) return resolveWing(item.category, cfg);
+  return cfg.wings.default ?? DEFAULT_WINGS.default;
 }
 
 // ─── MemPalace config loading ──────────────────────────────
@@ -217,7 +343,11 @@ export function parseDuplicateResponse(response: unknown): boolean {
 
 // ─── Persistence loop ──────────────────────────────────────
 
-async function persistItems(items: MemoryItem[], cmd: MempalaceCmd): Promise<PersistResult> {
+async function persistItems(
+  items: MemoryItem[],
+  cmd: MempalaceCmd,
+  wingCfg: WingConfig,
+): Promise<PersistResult> {
   const result: PersistResult = {
     stored: 0,
     duplicates: 0,
@@ -261,10 +391,14 @@ async function persistItems(items: MemoryItem[], cmd: MempalaceCmd): Promise<Per
   try {
     for (const item of items) {
       try {
+        // Resolve the final wing from context.yaml overrides or defaults.
+        // Explicit item.wing wins; otherwise item.category is looked up.
+        const wing = resolveItemWing(item, wingCfg);
+
         const dupRes = await client.callTool({
           name: "mempalace_check_duplicate",
           arguments: {
-            wing: item.wing,
+            wing,
             room: item.room,
             content: item.content,
           },
@@ -277,7 +411,7 @@ async function persistItems(items: MemoryItem[], cmd: MempalaceCmd): Promise<Per
         await client.callTool({
           name: "mempalace_add_drawer",
           arguments: {
-            wing: item.wing,
+            wing,
             room: item.room,
             content: item.content,
             metadata: {
@@ -285,6 +419,7 @@ async function persistItems(items: MemoryItem[], cmd: MempalaceCmd): Promise<Per
               relevance: item.relevance ?? "medium",
               tags: item.tags ?? [],
               source: "aios:memory_store",
+              category: item.category ?? null,
             },
           },
         });
@@ -313,6 +448,12 @@ export function formatSummary(result: PersistResult): string {
   ];
   if (result.skipped_reason) {
     lines.push(`- Skipped:      ${result.skipped_reason}`);
+  }
+  if (result.wing_source) {
+    const srcDesc = result.wing_source === "context.yaml"
+      ? `context.yaml (${result.wing_context_path ?? "unknown"})`
+      : "built-in defaults";
+    lines.push(`- Wing mapping: ${srcDesc}`);
   }
   if (result.errors.length > 0) {
     lines.push("", "## Errors", ...result.errors.slice(0, 10).map((e) => `- ${e}`));
@@ -353,12 +494,15 @@ async function main(): Promise<void> {
   }
 
   const cmd = loadMempalaceConfig(process.cwd());
-  const result = await persistItems(items, cmd);
+  const wingCfg = loadWingConfig(process.cwd());
+  const result = await persistItems(items, cmd, wingCfg);
+  result.wing_source = wingCfg.source;
+  result.wing_context_path = wingCfg.contextPath;
 
   writeFileSync(outputFile, formatSummary(result));
   console.error(
     `mempalace-persist: stored=${result.stored} duplicates=${result.duplicates} ` +
-      `failed=${result.failed} total=${result.total}` +
+      `failed=${result.failed} total=${result.total} wings=${wingCfg.source}` +
       (result.skipped_reason ? ` skipped="${result.skipped_reason}"` : ""),
   );
   process.exit(0);

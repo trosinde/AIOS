@@ -316,8 +316,8 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] `_router` Pattern plant beide Chains automatisch (fire-and-forget, `retry.max: 0`)
 - [x] Kernel-Mechanismus-Fix: `executeTool` inlined Datei-Inhalt als Message-Content wenn `output_type: "text"` – macht generell Tool→LLM-Ketten funktional (betrifft auch `pdf_extract_text → summarize`)
 - [x] `docs/MEMPALACE_INTEGRATION.md`
-- [x] Unit-Tests: 32 für persist script, 31 für recall script, 2 für Engine-Text-Inlining
-- [ ] Wing-Mapping per `context.yaml` konfigurierbar
+- [x] **Wing-Mapping per `context.yaml` konfigurierbar**: LLM-Patterns emittieren semantische `category`-Keys (`decisions` / `facts` / `findings` / `patterns` / `lessons` / `compliance` / `default`), Tool-Scripts resolven diese via `memory.wings`-Block in `.aios/context.yaml` (mit Upward-Walk bis zu 6 Parent-Levels), Fallback auf Default-Map. Explizite `wing: "wing_*"` Strings bleiben als Escape-Hatch für Migration. Source-Trace in jeder Persist-Summary.
+- [x] Unit-Tests: 57 für persist script (inkl. WingConfig-Loading, resolveWing, resolveItemWing), 39 für recall script (inkl. resolveQueryWing, category-Queries), 2 für Engine-Text-Inlining
 
 ### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer

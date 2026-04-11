@@ -34,7 +34,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
   findFirstJsonObject,
   loadMempalaceConfig,
+  loadWingConfig,
+  resolveWing,
   type MempalaceCmd,
+  type WingConfig,
 } from "./mempalace-persist.js";
 
 // ─── Types ─────────────────────────────────────────────────
@@ -43,7 +46,10 @@ type MemoryType = "decision" | "fact" | "finding" | "pattern" | "lesson";
 
 export interface SearchQuery {
   query: string;
+  /** Power-user: explicit MemPalace wing name (wing_*). */
   wing?: string;
+  /** Preferred: semantic category, resolved via context.yaml memory.wings. */
+  category?: string;
   room?: string;
   rationale?: string;
 }
@@ -123,6 +129,7 @@ export function extractRecallPlan(input: string): RecallPlan {
     queries.push({
       query: (q.query as string).trim(),
       wing: typeof q.wing === "string" && q.wing.trim() ? q.wing.trim() : undefined,
+      category: typeof q.category === "string" && q.category.trim() ? q.category.trim() : undefined,
       room: typeof q.room === "string" && q.room.trim() ? q.room.trim() : undefined,
       rationale: typeof q.rationale === "string" ? q.rationale : undefined,
     });
@@ -253,7 +260,23 @@ const MAX_QUERIES = 4;
 const MAX_HITS_PER_QUERY = 5;
 const MAX_TOTAL_HITS = 20;
 
-async function runSearches(queries: SearchQuery[], cmd: MempalaceCmd): Promise<RecallResult> {
+/**
+ * Resolve the final wing filter for a search query.
+ * Explicit `query.wing` wins; otherwise `query.category` is looked up
+ * in the per-context `memory.wings` map. Returns undefined for
+ * unfiltered searches (no wing restriction).
+ */
+export function resolveQueryWing(query: SearchQuery, cfg: WingConfig): string | undefined {
+  if (query.wing && query.wing.trim()) return query.wing.trim();
+  if (query.category && query.category.trim()) return resolveWing(query.category, cfg);
+  return undefined;
+}
+
+async function runSearches(
+  queries: SearchQuery[],
+  cmd: MempalaceCmd,
+  wingCfg: WingConfig,
+): Promise<RecallResult> {
   const result: RecallResult = {
     sections: { decisions: [], facts: [], findings: [], patterns_lessons: [] },
     total_queries: 0,
@@ -304,7 +327,8 @@ async function runSearches(queries: SearchQuery[], cmd: MempalaceCmd): Promise<R
           top_k: MAX_HITS_PER_QUERY,
           limit: MAX_HITS_PER_QUERY,
         };
-        if (q.wing) args.wing = q.wing;
+        const resolvedWing = resolveQueryWing(q, wingCfg);
+        if (resolvedWing) args.wing = resolvedWing;
         if (q.room) args.room = q.room;
         const res = await client.callTool({
           name: "mempalace_search",
@@ -366,7 +390,10 @@ export function formatContextBlock(result: RecallResult, queries: SearchQuery[])
   if (queries.length > 0) {
     lines.push("---", "", "_Suchanfragen:_");
     for (const q of queries.slice(0, MAX_QUERIES)) {
-      const filter = q.wing ? ` [${q.wing}${q.room ? "/" + q.room : ""}]` : "";
+      const wingLabel = q.wing ?? (q.category ? `category:${q.category}` : "");
+      const filter = wingLabel
+        ? ` [${wingLabel}${q.room ? "/" + q.room : ""}]`
+        : "";
       lines.push(`- \`${q.query}\`${filter}`);
     }
     lines.push("");
@@ -410,12 +437,14 @@ async function main(): Promise<void> {
   }
 
   const cmd = loadMempalaceConfig(process.cwd());
-  const result = await runSearches(plan.search_queries, cmd);
+  const wingCfg = loadWingConfig(process.cwd());
+  const result = await runSearches(plan.search_queries, cmd, wingCfg);
   const markdown = formatContextBlock(result, plan.search_queries);
   writeFileSync(outputFile, markdown);
 
   console.error(
-    `mempalace-recall: queries=${result.total_queries} hits=${result.total_hits}` +
+    `mempalace-recall: queries=${result.total_queries} hits=${result.total_hits} ` +
+      `wings=${wingCfg.source}` +
       (result.skipped_reason ? ` skipped="${result.skipped_reason}"` : ""),
   );
   process.exit(0);

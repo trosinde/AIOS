@@ -168,17 +168,66 @@ Sensitive Env-Vars (`ANTHROPIC_API_KEY`, `GH_TOKEN`, …) werden beim Spawn gest
 
 ## Wing-Mapping Konvention
 
-MemPalace organisiert Wissen in Wings (Großbereichen) und Rooms (Unterthemen). Konvention für AIOS:
+MemPalace organisiert Wissen in Wings (Großbereichen) und Rooms (Unterthemen). Die LLM-Patterns (`memory_store`, `memory_recall`) emittieren **semantische Kategorien**, nicht konkrete Wing-Namen. Die Tool-Scripts (`memory_store_persist`, `memory_recall_fetch`) übersetzen diese Kategorien in Wing-Namen – entweder per Default-Map oder per Override in der aktiven `.aios/context.yaml`.
 
-| Wing                      | Zweck                                         |
-|---------------------------|-----------------------------------------------|
-| `wing_aios_decisions`     | Architektur-Entscheidungen (ADRs)             |
-| `wing_aios_compliance`    | Compliance-Artefakte (IEC 62443, CRA)         |
-| `wing_aios_findings`      | Review-Findings aller Personas                |
-| `wing_aios_patterns`      | Gelernte Patterns und Best Practices          |
-| `wing_<projektname>`      | Projekt-spezifisches Wissen                   |
+### Kategorien → Wings (Defaults)
 
-Rooms innerhalb eines Wings sind freier – snake_case, thematisch (`authentication`, `mcp_integration`, `kernel_abi`, `threat_model`, …).
+| Kategorie     | Default-Wing              | Zweck                                   |
+|---------------|---------------------------|-----------------------------------------|
+| `decisions`   | `wing_aios_decisions`     | Architektur-Entscheidungen (ADRs)       |
+| `facts`       | `wing_aios`               | Harte Fakten, Constraints, Konfigs      |
+| `findings`    | `wing_aios_findings`      | Review-Findings aller Personas          |
+| `patterns`    | `wing_aios_patterns`      | Gelernte Patterns und Best Practices    |
+| `lessons`     | `wing_aios_patterns`      | Lessons Learned (alias von patterns)    |
+| `compliance`  | `wing_aios_compliance`    | Compliance-Artefakte (IEC 62443, CRA)   |
+| `default`     | `wing_aios`               | Fallback für unbekannte Kategorien      |
+
+### Per-Context-Override via `.aios/context.yaml`
+
+Jeder Kontext kann seine Kategorien auf beliebige Wing-Namen mappen. Das Tool-Script sucht `.aios/context.yaml` im CWD und bis zu 6 Parent-Levels aufwärts (damit Aufrufe aus Unterordnern noch den Projekt-Kontext finden).
+
+```yaml
+# .aios/context.yaml
+schema_version: "1.0"
+name: myproject
+description: "My Project"
+type: project
+# … andere Felder …
+
+memory:
+  wings:
+    decisions: wing_myproject_adrs
+    findings: wing_myproject_issues
+    patterns: wing_myproject_patterns
+    compliance: wing_myproject_iec62443
+    default: wing_myproject
+```
+
+Nicht im Mapping enthaltene Kategorien fallen zurück auf `DEFAULT_WINGS`. Fehlender `memory.wings`-Block oder fehlendes `context.yaml` → vollständige Default-Map wird verwendet.
+
+### Escape Hatch: Explizite Wing-Namen
+
+Beide Patterns akzeptieren statt `category` auch einen expliziten `wing: "wing_*"` String. Das wird durchgereicht ohne Resolution und ist als Escape-Hatch gedacht für Migration von Legacy-Daten mit fest vergebenen Wing-Namen. Im Normalfall: immer `category`.
+
+### Wing-Source-Trace
+
+Jede `memory_store_persist` Summary enthält eine `Wing mapping:` Zeile, die zeigt woher das Mapping kam:
+
+```
+- Wing mapping: context.yaml (/projects/myproject/.aios/context.yaml)
+```
+
+oder
+
+```
+- Wing mapping: built-in defaults
+```
+
+So ist immer nachvollziehbar, welche Konvention gerade greift.
+
+### Rooms
+
+Rooms innerhalb eines Wings sind freier – snake_case, thematisch (`authentication`, `mcp_integration`, `kernel_abi`, `threat_model`, …). Rooms werden NICHT per Config gemappt; der LLM wählt sie direkt.
 
 ## Referenz: Wichtige MemPalace-Tools
 

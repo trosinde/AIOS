@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -8,8 +8,13 @@ import {
   loadMempalaceConfig,
   parseDuplicateResponse,
   formatSummary,
+  loadWingConfig,
+  resolveWing,
+  resolveItemWing,
+  DEFAULT_WINGS,
   type MemoryItem,
   type PersistResult,
+  type WingConfig,
 } from "./mempalace-persist.js";
 
 describe("findFirstJsonObject", () => {
@@ -110,11 +115,32 @@ describe("extractMemoryItems", () => {
     expect(() => extractMemoryItems(`{"memory_items":"nope"}`)).toThrow(/memory_items/);
   });
 
-  it("throws on item with missing wing", () => {
+  it("throws on item with neither wing nor category", () => {
     const input = JSON.stringify({
       memory_items: [{ ...validItem, wing: "" }],
     });
-    expect(() => extractMemoryItems(input)).toThrow(/wing/);
+    expect(() => extractMemoryItems(input)).toThrow(/wing oder category/);
+  });
+
+  it("accepts item with only category (no wing)", () => {
+    const { wing, ...withoutWing } = validItem;
+    void wing;
+    const input = JSON.stringify({
+      memory_items: [{ ...withoutWing, category: "decisions" }],
+    });
+    const items = extractMemoryItems(input);
+    expect(items).toHaveLength(1);
+    expect(items[0].category).toBe("decisions");
+    expect(items[0].wing).toBeUndefined();
+  });
+
+  it("accepts item with both wing and category", () => {
+    const input = JSON.stringify({
+      memory_items: [{ ...validItem, category: "decisions" }],
+    });
+    const items = extractMemoryItems(input);
+    expect(items[0].wing).toBe("wing_aios_decisions");
+    expect(items[0].category).toBe("decisions");
   });
 
   it("throws on item with missing content", () => {
@@ -250,6 +276,234 @@ describe("parseDuplicateResponse", () => {
   });
 });
 
+describe("loadWingConfig", () => {
+  let tmp: string;
+  function cleanup(): void {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
+
+  it("returns defaults when no context.yaml exists anywhere upwards", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-empty-"));
+    try {
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.source).toBe("defaults");
+      expect(cfg.wings).toEqual({});
+      expect(cfg.contextPath).toBeUndefined();
+    } finally { cleanup(); }
+  });
+
+  it("reads memory.wings from .aios/context.yaml in cwd", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-direct-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: myproject",
+        "memory:",
+        "  wings:",
+        "    decisions: wing_myproject_adrs",
+        "    findings: wing_myproject_issues",
+        "    default: wing_myproject",
+      ].join("\n"));
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.source).toBe("context.yaml");
+      expect(cfg.wings.decisions).toBe("wing_myproject_adrs");
+      expect(cfg.wings.findings).toBe("wing_myproject_issues");
+      expect(cfg.wings.default).toBe("wing_myproject");
+      expect(cfg.contextPath).toContain("context.yaml");
+    } finally { cleanup(); }
+  });
+
+  it("walks upward from a subdirectory to find context.yaml", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-walkup-"));
+    try {
+      const sub = join(tmp, "src", "deep", "nested");
+      mkdirSync(sub, { recursive: true });
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: up",
+        "memory:",
+        "  wings:",
+        "    decisions: wing_up",
+      ].join("\n"));
+      const cfg = loadWingConfig(sub);
+      expect(cfg.source).toBe("context.yaml");
+      expect(cfg.wings.decisions).toBe("wing_up");
+    } finally { cleanup(); }
+  });
+
+  it("returns source=defaults when memory.wings is missing but file exists", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-nomemory-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: plain",
+      ].join("\n"));
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.source).toBe("defaults");
+      expect(cfg.wings).toEqual({});
+      expect(cfg.contextPath).toContain("context.yaml");
+    } finally { cleanup(); }
+  });
+
+  it("ignores non-string wing values", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-badtypes-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: mixed",
+        "memory:",
+        "  wings:",
+        "    decisions: wing_good",
+        "    findings: 42",
+        "    facts: null",
+        "    patterns: [not, a, string]",
+      ].join("\n"));
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.wings.decisions).toBe("wing_good");
+      expect(cfg.wings.findings).toBeUndefined();
+      expect(cfg.wings.facts).toBeUndefined();
+      expect(cfg.wings.patterns).toBeUndefined();
+    } finally { cleanup(); }
+  });
+
+  it("lowercases category keys for case-insensitive lookup", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-case-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: case",
+        "memory:",
+        "  wings:",
+        "    Decisions: wing_X",
+        "    FINDINGS: wing_Y",
+      ].join("\n"));
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.wings.decisions).toBe("wing_X");
+      expect(cfg.wings.findings).toBe("wing_Y");
+    } finally { cleanup(); }
+  });
+
+  it("falls back to defaults on malformed YAML", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-broken-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), "memory: [: : : }");
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.source).toBe("defaults");
+      expect(cfg.wings).toEqual({});
+    } finally { cleanup(); }
+  });
+
+  it("ignores memory.wings when it is an array (not object)", () => {
+    tmp = mkdtempSync(join(tmpdir(), "wing-array-"));
+    try {
+      mkdirSync(join(tmp, ".aios"));
+      writeFileSync(join(tmp, ".aios", "context.yaml"), [
+        "schema_version: \"1.0\"",
+        "name: arr",
+        "memory:",
+        "  wings: [a, b, c]",
+      ].join("\n"));
+      const cfg = loadWingConfig(tmp);
+      expect(cfg.wings).toEqual({});
+    } finally { cleanup(); }
+  });
+});
+
+describe("resolveWing", () => {
+  const ctxCfg: WingConfig = {
+    source: "context.yaml",
+    wings: {
+      decisions: "wing_myproject_adrs",
+      findings: "wing_myproject_issues",
+      default: "wing_myproject",
+    },
+  };
+  const emptyCfg: WingConfig = { source: "defaults", wings: {} };
+
+  it("uses per-context override when the key is present", () => {
+    expect(resolveWing("decisions", ctxCfg)).toBe("wing_myproject_adrs");
+    expect(resolveWing("findings", ctxCfg)).toBe("wing_myproject_issues");
+  });
+
+  it("falls back to DEFAULT_WINGS when the key is not in the override", () => {
+    expect(resolveWing("patterns", ctxCfg)).toBe(DEFAULT_WINGS.patterns);
+    expect(resolveWing("compliance", ctxCfg)).toBe(DEFAULT_WINGS.compliance);
+  });
+
+  it("uses DEFAULT_WINGS entirely when config is empty", () => {
+    expect(resolveWing("decisions", emptyCfg)).toBe("wing_aios_decisions");
+    expect(resolveWing("findings", emptyCfg)).toBe("wing_aios_findings");
+    expect(resolveWing("facts", emptyCfg)).toBe("wing_aios");
+  });
+
+  it("uses context.default for unknown categories when set", () => {
+    expect(resolveWing("unknown_thing", ctxCfg)).toBe("wing_myproject");
+  });
+
+  it("uses DEFAULT_WINGS.default for unknown categories when context has no default", () => {
+    const noDefault: WingConfig = { source: "context.yaml", wings: { decisions: "wing_x" } };
+    expect(resolveWing("unknown_thing", noDefault)).toBe(DEFAULT_WINGS.default);
+  });
+
+  it("treats case-insensitive lookup", () => {
+    expect(resolveWing("DECISIONS", ctxCfg)).toBe("wing_myproject_adrs");
+    expect(resolveWing("Decisions", ctxCfg)).toBe("wing_myproject_adrs");
+  });
+
+  it("passes through explicit wing_* names as escape hatch", () => {
+    expect(resolveWing("wing_custom_thing", ctxCfg)).toBe("wing_custom_thing");
+    expect(resolveWing("wing_legacy", emptyCfg)).toBe("wing_legacy");
+  });
+
+  it("returns default for empty category string", () => {
+    expect(resolveWing("", ctxCfg)).toBe("wing_myproject");
+    expect(resolveWing("   ", emptyCfg)).toBe(DEFAULT_WINGS.default);
+  });
+
+  it("lessons maps to the same wing as patterns (by default)", () => {
+    expect(resolveWing("lessons", emptyCfg)).toBe(DEFAULT_WINGS.lessons);
+    expect(resolveWing("lessons", emptyCfg)).toBe(DEFAULT_WINGS.patterns);
+  });
+});
+
+describe("resolveItemWing", () => {
+  const ctxCfg: WingConfig = {
+    source: "context.yaml",
+    wings: { decisions: "wing_myproject_adrs", default: "wing_myproject" },
+  };
+
+  const baseItem: MemoryItem = {
+    room: "r",
+    content: "c",
+    type: "decision",
+  };
+
+  it("prefers explicit wing over category", () => {
+    const item = { ...baseItem, wing: "wing_explicit", category: "decisions" };
+    expect(resolveItemWing(item, ctxCfg)).toBe("wing_explicit");
+  });
+
+  it("resolves category when no explicit wing is set", () => {
+    const item = { ...baseItem, category: "decisions" };
+    expect(resolveItemWing(item, ctxCfg)).toBe("wing_myproject_adrs");
+  });
+
+  it("uses context default when neither wing nor category set", () => {
+    expect(resolveItemWing(baseItem, ctxCfg)).toBe("wing_myproject");
+  });
+
+  it("ignores blank wing strings", () => {
+    const item = { ...baseItem, wing: "   ", category: "decisions" };
+    expect(resolveItemWing(item, ctxCfg)).toBe("wing_myproject_adrs");
+  });
+});
+
 describe("formatSummary", () => {
   it("formats a successful result", () => {
     const res: PersistResult = {
@@ -303,5 +557,24 @@ describe("formatSummary", () => {
     const out = formatSummary(res);
     expect(out.startsWith("# MemPalace Persist")).toBe(true);
     expect(out.endsWith("\n")).toBe(true);
+  });
+
+  it("shows wing mapping source: context.yaml with path", () => {
+    const res: PersistResult = {
+      total: 1, stored: 1, duplicates: 0, failed: 0, errors: [],
+      wing_source: "context.yaml",
+      wing_context_path: "/projects/myproject/.aios/context.yaml",
+    };
+    const out = formatSummary(res);
+    expect(out).toContain("Wing mapping: context.yaml (/projects/myproject/.aios/context.yaml)");
+  });
+
+  it("shows wing mapping source: built-in defaults", () => {
+    const res: PersistResult = {
+      total: 1, stored: 1, duplicates: 0, failed: 0, errors: [],
+      wing_source: "defaults",
+    };
+    const out = formatSummary(res);
+    expect(out).toContain("Wing mapping: built-in defaults");
   });
 });
