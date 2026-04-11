@@ -50,6 +50,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Skip if development has no commits ahead of main (e.g.
+          # after a hotfix went directly to main and development was
+          # fast-forwarded). gh pr create would otherwise error out
+          # with "No commits between main and development".
+          git fetch origin main --depth=1
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          if [ "$AHEAD" = "0" ]; then
+            echo "development is not ahead of main (ahead=0), nothing to promote."
+            exit 0
+          fi
           EXISTING=$(gh pr list --base main --head development --state open --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already exists, skipping."
@@ -58,5 +68,5 @@ jobs:
               --base main \
               --head development \
               --title "Promote development → main" \
-              --body "All CI checks passed on development. Ready for review and merge to main."
+              --body "All CI checks passed on development ($AHEAD commit(s) ahead of main). Ready for review and merge to main."
           fi
