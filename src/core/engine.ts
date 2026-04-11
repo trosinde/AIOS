@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
+import { PromptBuilder } from "../security/prompt-builder.js";
 
 /**
  * Engine – führt einen ExecutionPlan mechanisch aus.
@@ -30,6 +31,7 @@ export class Engine {
   private providerSelector?: ProviderSelector;
   private contextBuilder: ContextBuilder;
   private outputExtractor: OutputExtractor;
+  private promptBuilder: PromptBuilder;
 
   constructor(
     registry: PatternRegistry,
@@ -49,6 +51,7 @@ export class Engine {
     this.providerSelector = providerSelector;
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
+    this.promptBuilder = new PromptBuilder();
   }
 
   async execute(plan: ExecutionPlan, userInput: string): Promise<WorkflowResult> {
@@ -155,7 +158,15 @@ export class Engine {
         const capability = images.length > 0 ? "vision" : undefined;
         const providerToUse = this.resolveProvider(pattern, step, capability);
 
-        const response = await providerToUse.complete(systemPrompt, input, images.length > 0 ? images : undefined, ctx);
+        // Data/Instruction Separation: upstream step outputs + user input
+        // werden als untrusted data getagged, bevor sie ins LLM gehen.
+        const built = this.promptBuilder.build(systemPrompt, input, [], ctx.trace_id);
+        const response = await providerToUse.complete(
+          built.systemPrompt,
+          built.userMessage,
+          images.length > 0 ? images : undefined,
+          ctx,
+        );
 
         // Optional: Quality Gate
         if (step.quality_gate) {
@@ -269,8 +280,9 @@ export class Engine {
         try {
           items = JSON.parse(input);
           if (!Array.isArray(items)) items = [items];
-        } catch {
-          throw new Error("RAG index: Input muss JSON-Array von Items sein");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`RAG index: Input muss JSON-Array von Items sein (${msg})`);
         }
         const count = await this.ragService.index(collection, items);
         output = `${count} Chunks in Collection "${collection}" indexiert.`;
@@ -281,8 +293,9 @@ export class Engine {
         let params: { sourceCollection: string; sourceIds: string[]; topK?: number; minScore?: number };
         try {
           params = JSON.parse(input);
-        } catch {
-          throw new Error("RAG compare: Input muss JSON mit sourceCollection und sourceIds sein");
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`RAG compare: Input muss JSON mit sourceCollection und sourceIds sein (${msg})`);
         }
         const results = await this.ragService.compare(
           params.sourceCollection, params.sourceIds, collection,
@@ -646,9 +659,10 @@ export class Engine {
   private estimateCostCents(tokens?: { input: number; output: number }, providerName?: string): number {
     if (!tokens) return 0;
     const totalTokens = tokens.input + tokens.output;
-    const costPerMtok = providerName && this.config?.providers?.[providerName]?.cost_per_mtok
-      ? this.config.providers[providerName].cost_per_mtok!
-      : 0.1; // Conservative default: $0.10/Mtok
+    const configured = providerName
+      ? this.config?.providers?.[providerName]?.cost_per_mtok
+      : undefined;
+    const costPerMtok = configured ?? 0.1; // Conservative default: $0.10/Mtok
     return (totalTokens / 1_000_000) * costPerMtok * 100; // Convert $ to cents
   }
 

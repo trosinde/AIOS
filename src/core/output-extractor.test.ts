@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { OutputExtractor } from "./output-extractor.js";
+import { OutputExtractor, validateOutputExtraction } from "./output-extractor.js";
 import type { PatternMeta } from "../types.js";
 
 function baseMeta(overrides: Partial<PatternMeta> = {}): PatternMeta {
@@ -100,5 +100,52 @@ describe("OutputExtractor", () => {
       });
       expect(extractor.extractArtifacts("Kein Requirement hier", meta)).toEqual([]);
     });
+
+    it("cappt die Extraktion auf 100 KB gegen ReDoS", () => {
+      // Seed-Treffer am Anfang, dann 200 KB Müll hinterher.
+      const seed = "REQ-001: echt\n";
+      const filler = "x".repeat(200_000);
+      const meta = baseMeta({
+        output_extraction: {
+          artifact_pattern: "^(?<id>REQ-\\d+):\\s*(?<content>.+)$",
+          artifact_type: "requirement",
+        },
+      });
+      const artifacts = extractor.extractArtifacts(seed + filler, meta);
+      // Der Seed-Treffer wird gefunden, der 200 KB Müll wird vom Cap gestoppt.
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0].id).toBe("REQ-001");
+    });
+  });
+});
+
+describe("validateOutputExtraction", () => {
+  it("akzeptiert fehlende Config (no-op)", () => {
+    expect(() => validateOutputExtraction("p", undefined)).not.toThrow();
+    expect(() => validateOutputExtraction("p", {})).not.toThrow();
+  });
+
+  it("akzeptiert gültiges Regex mit (?<content>)", () => {
+    expect(() => validateOutputExtraction("p", {
+      artifact_pattern: "(?<content>.+)",
+    })).not.toThrow();
+  });
+
+  it("akzeptiert gültiges Regex mit (?<id>)", () => {
+    expect(() => validateOutputExtraction("p", {
+      artifact_pattern: "(?<id>REQ-\\d+)",
+    })).not.toThrow();
+  });
+
+  it("wirft bei ungültigem Regex", () => {
+    expect(() => validateOutputExtraction("p", {
+      artifact_pattern: "[invalid((",
+    })).toThrow(/ungültiges artifact_pattern/);
+  });
+
+  it("wirft bei fehlenden Named Groups", () => {
+    expect(() => validateOutputExtraction("p", {
+      artifact_pattern: "CRITICAL|HIGH",
+    })).toThrow(/Named Group/);
   });
 });
