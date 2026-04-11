@@ -120,7 +120,7 @@ program
   .option("--provider <name>", "LLM Provider überschreiben")
   .option("--quality <level>", "Quality Level überschreiben (minimal|standard|regulated)")
   .option("--cross", "Cross-Context Modus: Orchestriert über mehrere Kontexte")
-  .option("--context <name>", "Aufgabe an spezifischen Kontext delegieren")
+  .option("--target-context <name>", "Aufgabe an spezifischen Kontext delegieren")
   .action(async (taskParts: string[], opts) => {
     const stdinInput = await readStdin();
     const task = taskParts.join(" ");
@@ -204,15 +204,15 @@ program
     }
 
     // ─── Single-Context Modus ───────────────────────────
-    if (opts.context) {
+    if (opts.targetContext) {
       const { readRegistry } = await import("./context/registry.js");
       const { readManifest, assertPathWithinBase } = await import("./context/manifest.js");
       const { resolve: resolvePath } = await import("node:path");
 
       const registry = readRegistry();
-      const entry = registry.contexts.find((c) => c.name === opts.context);
+      const entry = registry.contexts.find((c) => c.name === opts.targetContext);
       if (!entry) {
-        console.error(chalk.red(`Kontext "${opts.context}" nicht gefunden.`));
+        console.error(chalk.red(`Kontext "${opts.targetContext}" nicht gefunden.`));
         process.exit(1);
       }
 
