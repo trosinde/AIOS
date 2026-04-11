@@ -62,3 +62,23 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein anderer Text):
 - NUR Patterns verwenden die im Katalog existieren!
 - Keine zirkulären Dependencies
 - input_from muss "$USER_INPUT" oder eine Step-ID aus depends_on sein
+
+# MEMORY INTEGRATION (KnowledgeBus)
+
+Beide Memory-Pfade sind **einzelne Steps** mit `type: kb` — die Engine kombiniert LLM-Extraktion und KB-Operation in einem Executor. Kein Zwei-Step-Tool-Script-Umweg mehr.
+
+**Read-Path (vor den Hauptschritten):** Wenn das `memory_recall` Pattern im Katalog verfügbar ist UND die Aufgabe auf bisherige Entscheidungen, Constraints oder Findings angewiesen sein könnte (Feature-Erweiterung, Review in bekanntem Projekt, Compliance-Prüfung), plane:
+
+1. `memory_recall` (kb-recall) – nimmt die Aufgabenbeschreibung als Input, lässt einen LLM 2–4 semantische Queries extrahieren, führt sie gegen den KnowledgeBus aus und liefert einen fertigen Markdown-Kontext-Block
+
+Die Haupt-Steps hängen direkt von `memory_recall` ab und nehmen es in ihr `input_from`, damit sie den Kontext-Block als Input bekommen.
+
+**Write-Path (nach den Hauptschritten):** Wenn die Aufgabe neue Entscheidungen, Findings oder wiederverwendbares Wissen produziert (Reviews, Design, Requirements, Threat Models), plane:
+
+1. `memory_store` (kb-store) – nimmt den Workflow-Output als Input, lässt einen LLM `memory_items[]` extrahieren und persistiert sie im KnowledgeBus inklusive Duplicate-Check
+
+**Gemeinsame Regeln:**
+
+- Beide kb-Steps sind fire-and-forget bei Embedding-/KB-Fehlern: die Engine schreibt einen Fallback-Block (`_Kein Kontext verfügbar_`) statt zu crashen. `retry.max: 0` reicht.
+- Plane `memory_store` NUR wenn der vorhergehende Step echtes Wissen produziert (Reviews, Designs, Findings) — nicht bei reinen Format-Konvertierungen.
+- Für rein transiente Aufgaben (einmalige Zusammenfassung, Format-Konvertierung, Übersetzung) KEINE Memory-Schritte einplanen.

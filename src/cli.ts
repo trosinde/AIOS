@@ -96,7 +96,8 @@ async function setupMcp(config: AiosConfig, registry: PatternRegistry): Promise<
       const excluded = serverCfg.exclude?.length ?? 0;
       totalTools += tools.length - excluded;
     } catch (err) {
-      console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${err instanceof Error ? err.message : err}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${errMsg}`);
     }
   }
   if (totalTools > 0) {
@@ -1066,9 +1067,9 @@ knowledgeCmd
     const content = await readStdin();
     if (!content) { console.error(chalk.red("Kein Input via stdin.")); process.exit(1); }
 
-    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
     const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
-    const id = bus.publish({
+    const id = await bus.publish({
       type: opts.type,
       tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : [],
       source_pattern: opts.pattern,
@@ -1078,7 +1079,7 @@ knowledgeCmd
     }, ctx);
 
     console.log(chalk.green(`Knowledge published: ${id}`));
-    bus.close();
+    await bus.close();
   });
 
 knowledgeCmd
@@ -1094,9 +1095,9 @@ knowledgeCmd
     const { KnowledgeBus } = await import("./core/knowledge-bus.js");
     const { randomUUID } = await import("crypto");
 
-    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
     const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
-    const results = bus.query({
+    const results = await bus.query({
       type: opts.type,
       tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined,
       source_pattern: opts.pattern,
@@ -1115,7 +1116,7 @@ knowledgeCmd
         console.log();
       }
     }
-    bus.close();
+    await bus.close();
   });
 
 knowledgeCmd
@@ -1127,9 +1128,9 @@ knowledgeCmd
     const { KnowledgeBus } = await import("./core/knowledge-bus.js");
     const { randomUUID } = await import("crypto");
 
-    const bus = new KnowledgeBus(join(process.env.HOME ?? ".", ".aios", "knowledge", "bus.db"));
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
     const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
-    const results = bus.search(queryParts.join(" "), ctx, parseInt(opts.limit));
+    const results = await bus.search(queryParts.join(" "), ctx, parseInt(opts.limit));
 
     if (results.length === 0) {
       console.error(chalk.yellow("Keine Treffer."));
@@ -1141,7 +1142,162 @@ knowledgeCmd
         console.log();
       }
     }
-    bus.close();
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("semantic-search <query...>")
+  .description("Semantische Vektorsuche (HNSW) im Knowledge Bus")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--top-k <n>", "Top-K Treffer", "10")
+  .option("--type <type>", "Nur diesen Typ")
+  .option("--wing <wing>", "Nur dieses Wing")
+  .option("--room <room>", "Nur diesen Room")
+  .action(async (queryParts: string[], opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const results = await bus.semanticSearch(queryParts.join(" "), ctx, {
+      top_k: parseInt(opts.topK),
+      type: opts.type,
+      wing: opts.wing,
+      room: opts.room,
+    });
+
+    if (results.length === 0) {
+      console.error(chalk.yellow("Keine semantischen Treffer."));
+    } else {
+      for (const msg of results) {
+        const meta = [msg.type, msg.wing && `wing:${msg.wing}`, msg.room && `room:${msg.room}`]
+          .filter(Boolean)
+          .join(" · ");
+        console.log(chalk.cyan(meta));
+        console.log(`  ${msg.content.slice(0, 300)}${msg.content.length > 300 ? "..." : ""}`);
+        console.log();
+      }
+    }
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("taxonomy")
+  .description("Wing/Room-Taxonomie des Knowledge Bus anzeigen")
+  .option("--context <id>", "Context-ID", "default")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const taxonomy = await bus.listTaxonomy(ctx);
+    if (taxonomy.length === 0) {
+      console.error(chalk.yellow("Keine Wings/Rooms im aktiven Context."));
+    } else {
+      let currentWing = "";
+      for (const entry of taxonomy) {
+        if (entry.wing !== currentWing) {
+          currentWing = entry.wing;
+          console.log(chalk.cyan(currentWing));
+        }
+        console.log(`  ${entry.room || "(no room)"}: ${entry.count}`);
+      }
+    }
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("diary")
+  .description("Diary-Einträge chronologisch lesen")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--since <ms>", "Nur seit Unix-Zeitstempel ms")
+  .option("--limit <n>", "Max Einträge", "50")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const entries = await bus.diaryRead(ctx, {
+      since: opts.since ? parseInt(opts.since) : undefined,
+      limit: parseInt(opts.limit),
+    });
+    if (entries.length === 0) {
+      console.error(chalk.yellow("Diary leer."));
+    } else {
+      for (const e of entries) {
+        const date = new Date(e.created_at).toISOString().slice(0, 19);
+        console.log(chalk.gray(`[${date}]`));
+        console.log(`  ${e.content}`);
+        console.log();
+      }
+    }
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("diary-write")
+  .description("Diary-Eintrag schreiben (stdin)")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--tags <tags>", "Komma-getrennte Tags", "")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+    const content = await readStdin();
+    if (!content) { console.error(chalk.red("Kein Input via stdin.")); process.exit(1); }
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const id = await bus.diaryWrite(content, ctx, {
+      tags: opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined,
+    });
+    console.log(chalk.green(`Diary entry written: ${id}`));
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("kg-add <subject> <predicate> <object>")
+  .description("Knowledge-Graph-Triple hinzufügen")
+  .option("--context <id>", "Context-ID", "default")
+  .action(async (subject, predicate, object, opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const id = await bus.kgAdd(subject, predicate, object, ctx);
+    console.log(chalk.green(`Triple added: ${id}`));
+    await bus.close();
+  });
+
+knowledgeCmd
+  .command("kg-query")
+  .description("Knowledge-Graph nach (subject?, predicate?, object?) Pattern abfragen")
+  .option("--context <id>", "Context-ID", "default")
+  .option("--subject <s>", "Subject-Filter")
+  .option("--predicate <p>", "Predicate-Filter")
+  .option("--object <o>", "Object-Filter")
+  .option("--limit <n>", "Max Ergebnisse", "100")
+  .action(async (opts) => {
+    const { KnowledgeBus } = await import("./core/knowledge-bus.js");
+    const { randomUUID } = await import("crypto");
+
+    const bus = await KnowledgeBus.create(join(process.env.HOME ?? ".", ".aios", "knowledge"));
+    const ctx = { trace_id: randomUUID(), context_id: opts.context, started_at: Date.now() };
+    const triples = await bus.kgQuery(
+      { subject: opts.subject, predicate: opts.predicate, object: opts.object },
+      ctx,
+      parseInt(opts.limit),
+    );
+    if (triples.length === 0) {
+      console.error(chalk.yellow("Keine Triples gefunden."));
+    } else {
+      for (const t of triples) {
+        console.log(`${chalk.cyan(t.subject)} ${chalk.gray(t.predicate)} ${t.object}`);
+      }
+    }
+    await bus.close();
   });
 
 // ─── aios service ────────────────────────────────────────

@@ -268,5 +268,8 @@ function normalizeContextConfig(obj: Record<string, unknown>): ContextConfig {
     ...(obj.knowledge && typeof obj.knowledge === "object" ? { knowledge: obj.knowledge as ContextConfig["knowledge"] } : {}),
     ...(obj.permissions && typeof obj.permissions === "object" ? { permissions: obj.permissions as ContextConfig["permissions"] } : {}),
     ...(Array.isArray(obj.required_traits) ? { required_traits: obj.required_traits as string[] } : {}),
+    ...(obj.memory && typeof obj.memory === "object" && !Array.isArray(obj.memory)
+      ? { memory: obj.memory as ContextConfig["memory"] }
+      : {}),
   };
 }

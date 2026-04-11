@@ -7,3 +7,6 @@ dist/
 .env
 azdo-config.json
 output/
+scripts/perf/results-*.json
+scripts/perf/kb-scenarios-*.json
+scripts/perf/mempalace-parity-*.json

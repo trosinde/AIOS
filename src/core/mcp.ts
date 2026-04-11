@@ -8,7 +8,7 @@ import type { PatternRegistry } from "./registry.js";
  * Strips stack traces, file paths, and internal identifiers
  * to prevent information disclosure.
  */
-function sanitizeErrorMessage(msg: string): string {
+export function sanitizeErrorMessage(msg: string): string {
   if (!msg) return "Unbekannter Fehler";
 
   // Try to extract the useful message from JSON error responses
@@ -36,6 +36,29 @@ function sanitizeErrorMessage(msg: string): string {
   sanitized = sanitized.replace(/\n\s*at .+/g, "");
 
   return sanitized.trim() || "Unbekannter Fehler";
+}
+
+/**
+ * Extract text from an MCP tool response content array.
+ * Defensive: MCP SDK types `content` loosely (unknown shape at runtime),
+ * so we type-guard every block before accessing `.text`.
+ */
+export function extractTextContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const block of content) {
+    if (
+      block !== null &&
+      typeof block === "object" &&
+      "type" in block &&
+      (block as { type: unknown }).type === "text" &&
+      "text" in block &&
+      typeof (block as { text: unknown }).text === "string"
+    ) {
+      parts.push((block as { text: string }).text);
+    }
+  }
+  return parts.join("\n");
 }
 
 export interface McpToolInfo {
@@ -76,9 +99,11 @@ export class McpManager {
       "AWS_SECRET_ACCESS_KEY", "AZURE_CLIENT_SECRET", "GH_TOKEN",
       "GITHUB_TOKEN", "NPM_TOKEN",
     ];
-    const baseEnv = Object.fromEntries(
-      Object.entries(process.env).filter(([k]) => !SENSITIVE_ENV_KEYS.includes(k)),
-    ) as Record<string, string>;
+    const baseEnv: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env)) {
+      if (SENSITIVE_ENV_KEYS.includes(k)) continue;
+      if (typeof v === "string") baseEnv[k] = v;
+    }
     const childEnv = serverCfg.env ? { ...baseEnv, ...serverCfg.env } : baseEnv;
 
     const transport = new StdioClientTransport({
@@ -127,19 +152,13 @@ export class McpManager {
     }
 
     const result = await client.callTool({ name: toolName, arguments: args });
+    const textContent = extractTextContent(result.content);
 
     if (result.isError) {
-      const errorText = (result.content as Array<{ type: string; text?: string }>)
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("\n");
-      throw new Error(`MCP-Tool "${toolName}" Fehler: ${sanitizeErrorMessage(errorText)}`);
+      throw new Error(`MCP-Tool "${toolName}" Fehler: ${sanitizeErrorMessage(textContent)}`);
     }
 
-    return (result.content as Array<{ type: string; text?: string }>)
-      .filter((c) => c.type === "text")
-      .map((c) => c.text)
-      .join("\n");
+    return textContent;
   }
 
   /** Alle Tools aller konfigurierten Server entdecken */
@@ -150,7 +169,8 @@ export class McpManager {
         const tools = await this.listTools(serverName);
         allTools.push(...tools);
       } catch (err) {
-        console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${err instanceof Error ? err.message : err}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${errMsg}`);
       }
     }
     return allTools;

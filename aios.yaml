@@ -133,9 +133,22 @@ paths:
   patterns: ./patterns
   personas: ./personas
 
+knowledge:
+  # Persistent memory store backed by LanceDB. Local, embedded, no
+  # external services required besides an embedding provider.
+  embedding_provider:
+    type: ollama          # ollama | stub
+    endpoint: http://localhost:11434
+    model: nomic-embed-text
+    dim: 768
+  # Threshold for cosine-based near-duplicate detection in checkDuplicate.
+  # 1.0 = exact match, 0.0 = anything counts as dup. Default works well
+  # for short factual statements.
+  duplicate_threshold: 0.92
+
 mcp:
   servers: {}
-  # MCP-Server werden über 'aios configure' oder ~/.aios/config.yaml konfiguriert.
+  # MCP-Server können über 'aios configure' oder ~/.aios/config.yaml konfiguriert werden.
   # Beispiel:
   #   azure-devops:
   #     command: node

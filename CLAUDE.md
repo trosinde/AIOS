@@ -308,6 +308,21 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] PromptBuilder-Integration für sichere LLM-Calls
 - [x] Beispiel-Kontexte: HR (Mitarbeiter, Abteilungen), Securitas (Findings), Network (Topologie)
 
+### Phase 4c – KnowledgeBus auf LanceDB (Persistentes Gedächtnis) ✅
+- [x] **Persistenter HNSW-Vektor-Store** via LanceDB (`@lancedb/lancedb@0.27.2`), Rust-Core, Node-native, embedded — kein externer Subprocess, keine zusätzliche Sprach-Runtime
+- [x] `src/core/knowledge-bus.ts`: async API (`publish`/`query`/`search`/`byTrace`/`stats`/`delete`) + additive Methoden `semanticSearch`, `checkDuplicate`, `publishMany`, `listTaxonomy`, `kgAdd`/`kgQuery`, `diaryWrite`/`diaryRead`
+- [x] `src/core/embedding-provider.ts`: `EmbeddingProvider` Interface, `OllamaEmbeddingProvider` (Default `nomic-embed-text`, 768 dim), `StubEmbeddingProvider` für Tests
+- [x] `src/core/wing-resolver.ts`: Wing/Room-Hierarchie und Category→Wing-Mapping; liest `ContextConfig.memory.wings` mit 6-Level-Parent-Walk
+- [x] `src/core/knowledge-bus-schema.ts`: zentrales Arrow-Schema für `messages` und `kg_triples` Tabellen
+- [x] `src/core/kcn.ts`: **Knowledge Compact Notation** — token-effizientes Wire-Format für recall-Output (~60% billiger als JSON)
+- [x] **Engine kb-Pattern-Type:** `executeKb` Executor in `src/core/engine.ts`, dispatched `kb_operation: "recall" | "store"` — kombiniert LLM-Extraktion (Pattern-System-Prompt) und KB-Calls in einem Step
+- [x] Patterns `memory_recall` und `memory_store` als `type: kb` (kein Tool-Script-Umweg)
+- [x] **Quality-Pipeline async**: `quality/pipeline.ts:consistency_check` nutzt `await knowledgeBus.query` parallel
+- [x] CLI: `aios knowledge publish/query/search/semantic-search/taxonomy/diary/diary-write/kg-add/kg-query` (alle async)
+- [x] Tests: 29 KnowledgeBus-Tests, 14 Wing-Resolver-Tests, 12 KCN-Tests
+- [x] Performance: 10 Vitest-Benchmarks (`src/core/knowledge-bus.bench.ts`) mit Failure-Thresholds, Scale-Tests (100k Items) in `scripts/perf/knowledge-bus-scale.ts`, 8-Szenarien-Suite in `scripts/perf/kb-perf-scenarios.ts` (recall@k, search_filter, concurrent, RSS-Sampling, sequential vs batched, leak detection), Baseline-Vergleich via `scripts/perf/compare-baseline.ts`
+- [x] `docs/KNOWLEDGE_BUS.md` als zentrale Doku
+
 ### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)

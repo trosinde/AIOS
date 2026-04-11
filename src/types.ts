@@ -51,7 +51,7 @@ export interface PatternMeta {
   };
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "kb" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
@@ -72,6 +72,15 @@ export interface PatternMeta {
   rag_collection?: string;
   rag_operation?: "search" | "index" | "compare";
   rag_overrides?: { topK?: number; minRelevance?: number };
+
+  // KnowledgeBus-Pattern Felder
+  // - "recall": LLM extracts 2-4 search queries from input → semanticSearch
+  //   each → returns formatted markdown context block
+  // - "store":  LLM extracts memory_items[] from input → publish each →
+  //   returns markdown summary
+  kb_operation?: "recall" | "store";
+  kb_top_k?: number;            // Default 5 per query for recall
+  kb_max_queries?: number;      // Default 4 for recall
 
   // Capability-Based Provider Selection: required capabilities per pattern
   requires?: TaskRequirements;
@@ -210,7 +219,16 @@ export interface Persona {
 
 // ─── Knowledge Base ───────────────────────────────────────
 
-export type KnowledgeType = "decision" | "fact" | "requirement" | "artifact";
+export type KnowledgeType =
+  | "decision"
+  | "fact"
+  | "requirement"
+  | "artifact"
+  // ─── Additive (KnowledgeBus v1.1) ───
+  | "finding"
+  | "pattern"
+  | "lesson"
+  | "diary";
 
 export interface KnowledgeItem {
   id: string;
@@ -237,6 +255,12 @@ export interface KernelMessage {
   content: string;
   format: "text" | "json" | "markdown";
   metadata?: Record<string, unknown>;
+
+  // ─── Additive fields (KnowledgeBus v1.1, LanceDB-backed) ───
+  // Optional. Older publishers omit them; newer ones (memory_store
+  // pattern) populate them via the wing-resolver.
+  wing?: string;
+  room?: string;
 }
 
 export interface KnowledgeQuery {
@@ -705,6 +729,17 @@ export interface ContextConfig {
 
   // ─── Required Traits (optional) ────────────────────
   required_traits?: string[];
+
+  // ─── KnowledgeBus Memory Wings (optional) ──────────
+  // Maps semantic categories (decisions, facts, findings, patterns,
+  // lessons, default) to wing names used by the LanceDB-backed
+  // KnowledgeBus. Read by `src/core/wing-resolver.ts` whenever a
+  // memory_store/memory_recall pattern emits a category, translated
+  // into the project-specific wing. Fully optional: when absent,
+  // built-in defaults (wing_aios_*) are used.
+  memory?: {
+    wings?: Record<string, string>;
+  };
 }
 
 /** @deprecated Use ContextConfig instead */

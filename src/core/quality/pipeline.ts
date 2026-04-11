@@ -87,9 +87,11 @@ export class QualityPipeline {
 
     if (options?.knowledgeBus && this.levelIncludes("standard", effectiveLevel)) {
       try {
-        relevantDecisions = options.knowledgeBus.query({ type: "decision", limit: 20 }, ctx);
-        relevantFacts = options.knowledgeBus.query({ type: "fact", limit: 20 }, ctx);
-        relevantRequirements = options.knowledgeBus.query({ type: "requirement", limit: 20 }, ctx);
+        [relevantDecisions, relevantFacts, relevantRequirements] = await Promise.all([
+          options.knowledgeBus.query({ type: "decision", limit: 20 }, ctx),
+          options.knowledgeBus.query({ type: "fact", limit: 20 }, ctx),
+          options.knowledgeBus.query({ type: "requirement", limit: 20 }, ctx),
+        ]);
       } catch {
         // KB not available, continue without
       }

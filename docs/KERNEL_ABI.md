@@ -195,6 +195,22 @@ interface WorkflowResult {
 | Router | `core/router.ts` | kernel-stable Output | Muss `ExecutionPlan` produzieren |
 | Engine | `core/engine.ts` | kernel-stable Contract | `execute(plan, input)` → `WorkflowResult` |
 | Provider Factory | `agents/provider.ts` | kernel-stable Interface | `LLMProvider` + `createProvider()` |
+| Knowledge Bus | `core/knowledge-bus.ts` | kernel-stable API (v1.1, async) | `publish/query/search/byTrace/stats/delete` + additive `semanticSearch/checkDuplicate/publishMany/listTaxonomy/kgAdd/kgQuery/diaryWrite/diaryRead` |
+
+### 4.1 Knowledge Bus v1.1 — async API
+
+Phase 4c migrated `KnowledgeBus` from a synchronous `better-sqlite3` backend to an asynchronous LanceDB backend. This is a **minor** ABI bump:
+
+- **Signature change:** `publish`, `query`, `search`, `byTrace`, `stats`, `delete`, `close` now return `Promise<...>`. All call sites must be `await`-ed.
+- **Constructor change:** the synchronous `new KnowledgeBus(path)` is replaced by `await KnowledgeBus.create(dir, embeddingProvider?)`. The path argument is now a directory, not a single file.
+- **Additive methods (no break):** `semanticSearch`, `checkDuplicate`, `publishMany`, `listTaxonomy`, `kgAdd`, `kgQuery`, `diaryWrite`, `diaryRead`, `ensureVectorIndex`.
+- **Additive `KernelMessage` fields:** `wing?: string`, `room?: string`. Existing publishers that don't set them remain valid.
+- **Additive `KnowledgeType` values:** `finding`, `pattern`, `lesson`, `diary` (in addition to the four pre-existing `decision`, `fact`, `requirement`, `artifact`).
+- **No removal:** every method that existed in the previous version still exists.
+
+Patterns that depended on synchronous behavior need to await the new async methods. There are no known external consumers of the old sync API; internal AIOS consumers (`quality/pipeline.ts`, `cli.ts knowledge` commands) were migrated in the same change.
+
+For the full reference, see [KNOWLEDGE_BUS.md](./KNOWLEDGE_BUS.md).
 
 ---
 
@@ -229,7 +245,7 @@ Explizit **nicht** Teil des ABI:
 - Logging-Format und -Kanäle
 - Config-Dateiformat (`aios.config.yaml`)
 - Persona-Definitionen und -Trait-Werte (→ siehe PERSONA_TRAITS.md)
-- Knowledge-Base-Schema (→ siehe IPC_PROTOCOL.md)
+- Knowledge-Base-Schema-Internals (→ siehe KNOWLEDGE_BUS.md; die `KernelMessage` *interface* ist stabil, das LanceDB-`messages`-Tabellen-Schema mit Spaltennamen ist es nicht)
 
 ---
 
