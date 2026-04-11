@@ -96,7 +96,18 @@ async function setupMcp(config: AiosConfig, registry: PatternRegistry): Promise<
       const excluded = serverCfg.exclude?.length ?? 0;
       totalTools += tools.length - excluded;
     } catch (err) {
-      console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${err instanceof Error ? err.message : err}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${errMsg}`);
+      // Surface install hint from aios.yaml when the server declares one.
+      // Keeps the kernel mechanism pure: the manager/CLI only render what
+      // the config provides, they do not know anything MemPalace-specific.
+      const serverCfg = config.mcp.servers[serverName];
+      if (serverCfg.install_hint) {
+        console.error(chalk.gray(`     → ${serverCfg.install_hint}`));
+      }
+      if (Array.isArray(serverCfg.install_commands) && serverCfg.install_commands.length > 0) {
+        console.error(chalk.gray(`     → Fix: aios mcp install ${serverName}`));
+      }
     }
   }
   if (totalTools > 0) {
@@ -1713,6 +1724,27 @@ program
   .action(async () => {
     const { startMCPServer } = await import("./mcp/server.js");
     await startMCPServer();
+  });
+
+// ─── aios mcp install <server> ───────────────────────────
+const mcpCmd = program
+  .command("mcp")
+  .description("MCP-Server Management");
+
+mcpCmd
+  .command("install [server]")
+  .description("Installiert MCP-Server laut install_commands in aios.yaml")
+  .option("--check", "Nur prüfen, nicht installieren")
+  .option("--non-interactive", "Keine Rückfragen (für CI / install.sh)")
+  .option("--only-installable", "Server ohne install_commands überspringen")
+  .action(async (server: string | undefined, opts: { check?: boolean; nonInteractive?: boolean; onlyInstallable?: boolean }) => {
+    const { runMcpInstall } = await import("./commands/mcp-install.js");
+    await runMcpInstall({
+      server,
+      check: opts.check,
+      nonInteractive: opts.nonInteractive,
+      onlyInstallable: opts.onlyInstallable,
+    });
   });
 
 // ─── Helper ─────────────────────────────────────────────

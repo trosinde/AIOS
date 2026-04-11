@@ -150,7 +150,19 @@ export class McpManager {
         const tools = await this.listTools(serverName);
         allTools.push(...tools);
       } catch (err) {
-        console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${err instanceof Error ? err.message : err}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`  ⚠️  MCP-Server "${serverName}" nicht erreichbar: ${errMsg}`);
+        // Surface the install hint from aios.yaml when the server
+        // declares one. This transforms a generic MCP error into an
+        // actionable "run this command" hint without any server-specific
+        // knowledge in the manager (mechanism, not policy).
+        const serverCfg = this.config.servers[serverName];
+        if (serverCfg.install_hint) {
+          console.error(`     → ${serverCfg.install_hint}`);
+        }
+        if (Array.isArray(serverCfg.install_commands) && serverCfg.install_commands.length > 0) {
+          console.error(`     → Fix: aios mcp install ${serverName}`);
+        }
       }
     }
     return allTools;

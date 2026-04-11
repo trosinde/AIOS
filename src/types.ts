@@ -394,6 +394,21 @@ export interface ToolsConfig {
 
 // ─── MCP ────────────────────────────────────────────────
 
+/**
+ * A single install attempt for a MCP server, tried in order by
+ * `McpServerConfig.install_commands`. The installer picks the first
+ * entry whose `detect` tool is available in PATH and runs its `run`
+ * command array.
+ */
+export interface McpInstallCommand {
+  /** CLI tool name that must be available in PATH for this entry to be used */
+  detect: string;
+  /** Argv-style command to execute (no shell interpolation) */
+  run: string[];
+  /** Optional human-readable label for logs */
+  label?: string;
+}
+
 export interface McpServerConfig {
   command: string;
   args?: string[];
@@ -403,6 +418,20 @@ export interface McpServerConfig {
   description?: string;    // Menschenlesbarer Name für Katalog
   exclude?: string[];      // Tool-Namen die nicht registriert werden
   proxy?: boolean;         // Tools via MCP-Server nach außen exponieren (default: true)
+
+  // ─── Install bootstrap (optional, additive) ─────────────
+  // Enables `aios mcp install <server>` and automatic install-hints when
+  // the server fails to start. All fields are optional. Kernel stays
+  // policy-free: it only runs what the YAML declares, does not know
+  // anything MemPalace-specific.
+  /** Argv-style command that exits 0 iff the server is already installed */
+  install_detect?: string[];
+  /** Human-readable one-line hint (shown when auto-install is unavailable) */
+  install_hint?: string;
+  /** Ordered list of install methods, first available one is used */
+  install_commands?: McpInstallCommand[];
+  /** Optional post-install command (e.g. `mempalace init`) */
+  post_install?: string[];
 }
 
 export interface McpConfig {

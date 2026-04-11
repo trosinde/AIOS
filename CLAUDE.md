@@ -317,7 +317,8 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] Kernel-Mechanismus-Fix: `executeTool` inlined Datei-Inhalt als Message-Content wenn `output_type: "text"` – macht generell Tool→LLM-Ketten funktional (betrifft auch `pdf_extract_text → summarize`)
 - [x] `docs/MEMPALACE_INTEGRATION.md`
 - [x] **Wing-Mapping per `context.yaml` konfigurierbar**: LLM-Patterns emittieren semantische `category`-Keys (`decisions` / `facts` / `findings` / `patterns` / `lessons` / `compliance` / `default`), Tool-Scripts resolven diese via `memory.wings`-Block in `.aios/context.yaml` (mit Upward-Walk bis zu 6 Parent-Levels), Fallback auf Default-Map. Explizite `wing: "wing_*"` Strings bleiben als Escape-Hatch für Migration. Source-Trace in jeder Persist-Summary.
-- [x] Unit-Tests: 57 für persist script (inkl. WingConfig-Loading, resolveWing, resolveItemWing), 39 für recall script (inkl. resolveQueryWing, category-Queries), 2 für Engine-Text-Inlining
+- [x] Unit-Tests: 57 für persist script (inkl. WingConfig-Loading, resolveWing, resolveItemWing), 39 für recall script (inkl. resolveQueryWing, category-Queries), 2 für Engine-Text-Inlining, 42 für mcp-install command
+- [x] **Implizite Installation via `aios mcp install`**: Deklarative Install-Policy pro MCP-Server in `aios.yaml` (`install_detect` / `install_commands` / `install_hint` / `post_install`), generischer Installer in `src/commands/mcp-install.ts` (Detection + Iteration durch install_commands nach Präferenz uv→pipx→pip). Aufgerufen von `install.sh` (non-interactive nach `aios configure`), `aios update` (Post-Build-Verify), oder manuell. `McpManager` zeigt `install_hint` + `Fix: aios mcp install <server>` prominent bei Connection-Fehlern. Kernel bleibt policy-frei: MemPalace-Spezifika liegen ausschließlich in `aios.yaml`.
 
 ### Noch offen (nach Phase 4b)
 - Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer

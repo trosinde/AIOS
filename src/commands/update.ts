@@ -166,6 +166,32 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     scanSpinner.warn("Kontext-Scan übersprungen");
   }
 
+  // Post-update: verify MCP server installs (MemPalace, etc.)
+  // Only runs for servers that declare install_detect/install_commands
+  // in aios.yaml. Other servers are untouched. Non-interactive by
+  // default when stdin is not a TTY (CI, pipelines).
+  try {
+    const { loadConfig } = await import("../utils/config.js");
+    const { installMcpServers } = await import("./mcp-install.js");
+    const cfg = loadConfig();
+    const servers = cfg.mcp?.servers ?? {};
+    const installable = Object.entries(servers).filter(([, s]) =>
+      Array.isArray(s.install_commands) && s.install_commands.length > 0,
+    );
+    if (installable.length > 0) {
+      const mcpSpinner = ora({ text: "Prüfe MCP-Server Installationen...", stream: process.stderr }).start();
+      mcpSpinner.stop();
+      console.error(chalk.cyan("\n  ▸ MCP-Server Verify"));
+      await installMcpServers(servers, {
+        onlyInstallable: true,
+        nonInteractive: !process.stdin.isTTY,
+      });
+    }
+  } catch (e) {
+    // Non-fatal: update still succeeded
+    console.error(chalk.gray(`  (MCP-Verify übersprungen: ${e instanceof Error ? e.message : e})`));
+  }
+
   // Summary
   const newVersion = readVersion(repoPath);
   console.error();

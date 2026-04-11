@@ -200,6 +200,18 @@ else
   warn "Starte eine neue Shell oder: source $RC_FILE"
 fi
 
+# ─── MCP Server Installation ─────────────────────────────
+# Installs external MCP servers declared in aios.yaml with
+# install_commands (e.g. MemPalace). Non-interactive and non-fatal:
+# a missing Python toolchain must not break the AIOS install.
+step "MCP-Server Installation (optional)"
+
+if "$WRAPPER" mcp install --non-interactive --only-installable 2>&1; then
+  ok "MCP-Server Bootstrap abgeschlossen"
+else
+  warn "MCP-Server Install teilweise fehlgeschlagen — kann später mit 'aios mcp install' nachgeholt werden"
+fi
+
 # ─── Configure ────────────────────────────────────────────
 step "Konfiguration"
 

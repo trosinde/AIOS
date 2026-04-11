@@ -61,25 +61,14 @@ Die Tool-Scripts brauchen einen eigenen MCP-Spawn weil Subprozesse keinen Zugrif
 
 ## Setup
 
-### 1. MemPalace installieren
+In den meisten Fällen musst du **nichts manuell tun** — die Install-Bootstrap-Mechanik von AIOS erledigt alles:
 
-```bash
-pip install mempalace
-# oder aus Source:
-# git clone https://github.com/milla-jovovich/mempalace && cd mempalace && pip install -e .
-```
+- `curl … install.sh | bash` → ruft am Ende `aios mcp install --non-interactive --only-installable` auf und installiert MemPalace automatisch (via `uv` → `pipx` → `pip --user`, je nachdem was verfügbar ist).
+- `aios update` → Post-Hook verifiziert nach dem Build, dass alle konfigurierten MCP-Server erreichbar sind. Fehlende werden nachinstalliert (interaktiv bei TTY, actionable Hint sonst).
+- `aios mcp install mempalace` → explizites Fallback, jederzeit aufrufbar.
+- `aios mcp install --check` → reiner Status-Check ohne Install.
 
-### 2. MemPalace initialisieren
-
-```bash
-mempalace init
-```
-
-Dies legt den lokalen Speicher an (ChromaDB + SQLite). Standardpfad ist systemabhängig – siehe `mempalace --help`.
-
-### 3. AIOS konfigurieren
-
-`aios.yaml` enthält bereits den MemPalace-Eintrag:
+Die MemPalace-Install-Policy liegt deklarativ in `aios.yaml`:
 
 ```yaml
 mcp:
@@ -89,10 +78,49 @@ mcp:
       args: ["-m", "mempalace.mcp_server"]
       category: knowledge
       prefix: mempalace
-      description: "MemPalace – Persistentes AI-Gedächtnis (lokal, ChromaDB + SQLite)"
+      description: "MemPalace – Persistentes AI-Gedächtnis"
+      install_detect: ["python", "-c", "import mempalace"]
+      install_hint: "pipx install mempalace  (oder: pip install --user mempalace)"
+      install_commands:
+        - detect: uv
+          label: "uv tool install"
+          run: ["uv", "tool", "install", "mempalace"]
+        - detect: pipx
+          label: "pipx install"
+          run: ["pipx", "install", "mempalace"]
+        - detect: python3
+          label: "python3 -m pip install --user"
+          run: ["python3", "-m", "pip", "install", "--user", "mempalace"]
+      post_install: ["python", "-m", "mempalace", "init"]
 ```
 
-Kein API-Key nötig – MemPalace läuft komplett lokal.
+Der Installer ist policy-frei: er läuft durch `install_commands` in Reihenfolge, nimmt das erste Entry dessen `detect`-Tool im `PATH` ist, und führt dessen `run`-Command aus. Danach `post_install` (bei MemPalace: `python -m mempalace init`). Zum Schluss wird `install_detect` nochmal geprüft.
+
+### Manueller Fallback
+
+Wenn du kein `uv`/`pipx`/`python3` im System hast oder den Install aus anderen Gründen selbst machen willst:
+
+```bash
+pipx install mempalace         # empfohlen: isoliertes Env
+# oder
+python3 -m pip install --user mempalace
+
+python -m mempalace init       # einmaliger Init (ChromaDB + SQLite anlegen)
+```
+
+MemPalace läuft danach rein lokal — kein API-Key, keine Netzwerk-Verbindung nötig.
+
+### Fehler-Hints
+
+Wenn MemPalace beim Start von AIOS nicht erreichbar ist, zeigt der `McpManager` automatisch den `install_hint` aus `aios.yaml` und den exakten Fix-Command:
+
+```
+⚠️  MCP-Server "mempalace" nicht erreichbar: MCP error -32000: Connection closed
+     → pipx install mempalace  (oder: pip install --user mempalace)
+     → Fix: aios mcp install mempalace
+```
+
+So ist der Fehler immer actionable, auch wenn du den Setup-Schritt vergessen hast.
 
 ### 4. Verifizieren
 
