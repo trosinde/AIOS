@@ -9,16 +9,29 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { stringify, parse } from "yaml";
 import { getAiosHome } from "../utils/config.js";
-import type { ContextManifest } from "../types.js";
+import type { ContextConfig } from "../types.js";
 
 const REGISTRY_FILE = "registry.yaml";
+
+export interface RegistryLink {
+  name: string;
+  relationship: string;
+}
+
+export interface RegistryServiceSummary {
+  name: string;
+  description: string;
+  record_count: number;
+}
 
 export interface RegistryEntry {
   name: string;
   path: string;
-  type: ContextManifest["type"];
+  type: ContextConfig["type"];
   description: string;
   capabilities: string[];
+  links?: RegistryLink[];
+  services?: RegistryServiceSummary[];
   last_updated: string;
 }
 
@@ -43,7 +56,11 @@ export function writeRegistry(registry: Registry): void {
 }
 
 /** Registriert oder aktualisiert einen Kontext in der Registry */
-export function registerContext(manifest: ContextManifest, contextPath: string): void {
+export function registerContext(
+  manifest: ContextConfig,
+  contextPath: string,
+  services?: RegistryServiceSummary[],
+): void {
   const registry = readRegistry();
   const absPath = resolve(contextPath);
   const idx = registry.contexts.findIndex((c) => c.path === absPath);
@@ -54,6 +71,8 @@ export function registerContext(manifest: ContextManifest, contextPath: string):
     type: manifest.type,
     description: manifest.description,
     capabilities: manifest.capabilities.map((c) => c.id),
+    links: (manifest.links ?? []).map((l) => ({ name: l.name, relationship: l.relationship })),
+    services,
     last_updated: new Date().toISOString(),
   };
 
@@ -80,11 +99,18 @@ export function buildContextCatalog(): string {
   if (registry.contexts.length === 0) return "Keine Kontexte registriert.";
 
   return registry.contexts
-    .map((c) => [
-      `## ${c.name} (${c.type})`,
-      `Pfad: ${c.path}`,
-      `Beschreibung: ${c.description}`,
-      `Fähigkeiten: ${c.capabilities.join(", ")}`,
-    ].join("\n"))
+    .map((c) => {
+      const lines = [
+        `## ${c.name} (${c.type})`,
+        `Pfad: ${c.path}`,
+        `Beschreibung: ${c.description}`,
+        `Fähigkeiten: ${c.capabilities.join(", ")}`,
+        `Verknüpfungen: ${c.links?.length ? c.links.map((l) => `${l.name} (${l.relationship})`).join(", ") : "keine"}`,
+      ];
+      if (c.services?.length) {
+        lines.push(`Services: ${c.services.map((s) => `${c.name}.${s.name} (${s.record_count} records)`).join(", ")}`);
+      }
+      return lines.join("\n");
+    })
     .join("\n\n");
 }

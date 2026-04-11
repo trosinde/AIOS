@@ -1,0 +1,11 @@
+version: "1.0"
+sources:
+  - file: employees.json
+    name: employees
+    description: "Mitarbeiterverzeichnis mit Kontaktdaten und Abteilungszuordnung"
+    key_fields: [name, personnel_number, department, email]
+
+  - file: departments.yaml
+    name: departments
+    description: "Abteilungen mit Leitung und Standort"
+    key_fields: [name, head]

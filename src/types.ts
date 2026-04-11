@@ -41,11 +41,17 @@ export interface PatternMeta {
   kernel_abi?: number;
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "image_generation" | "tts";  // Default: "llm"
   tool?: string;                   // CLI-Befehl (z.B. "mmdc")
   tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
   output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
+
+  // TTS-Pattern Felder
+  tts_voice?: string;              // Stimme (z.B. "alloy", "nova")
+  tts_model?: string;              // Modell (z.B. "tts-1", "tts-1-hd")
+  tts_format?: string;             // Audio-Format (z.B. "mp3", "wav")
+  tts_speed?: number;              // Geschwindigkeit (0.25 - 4.0)
 
   // MCP-Pattern Felder
   mcp_server?: string;             // Server-Name aus Config
@@ -354,7 +360,13 @@ export interface QualityResult {
   decision: "PASSED" | "BLOCKED" | "PASSED_WITH_FINDINGS";
 }
 
-// ─── Context Federation ──────────────────────────────────
+// ─── Context (Unified Schema) ────────────────────────────
+//
+// EIN Format, EIN Schema für .aios/context.yaml.
+// Ersetzt die drei vorherigen inkompatiblen Formate:
+//   - ContextManifest (Federation)
+//   - ContextConfig (Lightweight/Runtime)
+//   - AiosContext (Init-Wizard)
 
 export interface ContextCapability {
   id: string;
@@ -380,14 +392,84 @@ export interface ContextLink {
   relationship: "audits" | "consults" | "feeds" | "depends_on";
 }
 
-export interface ContextManifest {
+// ─── Data Manifest (User Space) ──────────────────────
+
+export interface DataSource {
+  file: string;                    // Relativer Pfad zur Datendatei
+  name: string;                    // Service-Name (snake_case)
+  description: string;
+  key_fields?: string[];           // Felder für direkte Suche
+}
+
+export interface DataManifest {
+  version: "1.0";
+  sources: DataSource[];
+}
+
+// ─── Auto-generierte Service Interfaces (User Space) ──
+
+export interface InferredField {
+  name: string;
+  type: "string" | "number" | "boolean" | "object" | "array";
+  sample?: string;
+}
+
+export interface ServiceEndpoint {
+  name: string;
+  description: string;
+  context: string;
+  data_file: string;
+  fields: InferredField[];
+  key_fields: string[];
+  record_count: number;
+  last_indexed: number;
+}
+
+export interface ServiceCallResult {
+  endpoint: string;
+  context: string;
+  query: Record<string, unknown>;
+  results: Record<string, unknown>[];
+  method: "direct" | "llm";
+  durationMs: number;
+}
+
+export interface ServiceRequest {
+  id: string;
+  trace_id: string;
+  source_context: string;
+  target_context: string;
+  endpoint: string;
+  input: string;
+  status: "pending" | "running" | "completed" | "failed";
+  created_at: number;
+  completed_at?: number;
+  response?: string;
+  error?: string;
+}
+
+export interface ComplianceStandard {
+  id: string;
+  level?: string;
+}
+
+/**
+ * Unified context.yaml schema.
+ * Jede .aios/context.yaml MUSS dieses Format verwenden.
+ */
+export interface ContextConfig {
   schema_version: string;
   name: string;
   description: string;
   type: "project" | "team" | "library";
+
+  // ─── Federation ────────────────────────────────────
   capabilities: ContextCapability[];
   exports: ContextExport[];
   accepts: ContextAccept[];
+  links: ContextLink[];
+
+  // ─── Directory & Provider Config ───────────────────
   config: {
     default_provider: string;
     patterns_dir: string;
@@ -400,8 +482,61 @@ export interface ContextManifest {
       default_persona?: string;
     };
   };
-  links: ContextLink[];
+
+  // ─── Project Details (optional, from init wizard) ──
+  project?: {
+    domain?: string;
+    language?: string;
+    repo?: string | null;
+  };
+
+  // ─── AIOS Installation Reference (optional) ───────
+  aios?: {
+    path?: string;
+    readOnly?: boolean;
+  };
+
+  // ─── Compliance (optional) ─────────────────────────
+  compliance?: {
+    standards: ComplianceStandard[];
+    requireTraceability?: boolean;
+    requireTestCoverage?: boolean;
+    minimumCoverage?: number;
+  };
+
+  // ─── Personas (optional) ───────────────────────────
+  personas?: {
+    active: string[];
+    inactive?: string[];
+  };
+
+  // ─── Provider Routing (optional) ───────────────────
+  providers?: {
+    routing?: Record<string, string>;
+  };
+
+  // ─── Knowledge (optional) ──────────────────────────
+  knowledge?: {
+    autoIndex?: string[];
+    autoExtract?: boolean;
+    backend?: "sqlite";
+    isolation?: "strict" | "relaxed";
+    retention_days?: number;
+  };
+
+  // ─── Runtime Permissions (optional) ────────────────
+  permissions?: {
+    allow_ipc?: boolean;
+    allow_tool_execution?: boolean;
+    allowed_tools?: string[];
+  };
+
+  // ─── Required Traits (optional) ────────────────────
+  required_traits?: string[];
 }
+
+/** @deprecated Use ContextConfig instead */
+export type ContextManifest = ContextConfig;
 
 // ─── Cross-Context Execution ─────────────────────────────
 

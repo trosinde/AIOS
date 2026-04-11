@@ -12,7 +12,7 @@ Then the next project starts. You start from scratch. Copy-paste prompts, manual
 
 The realization: the problem isn't AI — the problem is that there's no operating system for AI agents. What Unix is for processes is missing for AI contexts: isolation, shared resources, stable interfaces.
 
-AIOS separates the **kernel** (orchestration, providers, patterns) from the **user space** (project-local `.aios/` contexts). Run `aios init` — and the project has its own AI context, backed by 61+ patterns and 14+ personas from the kernel.
+AIOS separates the **kernel** (orchestration, providers, patterns) from the **user space** (project-local `.aios/` contexts). Run `aios init` — and the project has its own AI context, backed by 62+ patterns and 14+ personas from the kernel.
 
 ---
 
@@ -30,7 +30,7 @@ Three layers, clear separation:
 
 ## What You Get
 
-- **61+ patterns** — analysis, review, generation, reporting, RAG, vision, procurement, storytelling, and more
+- **62+ patterns** — analysis, review, generation, reporting, RAG, vision, procurement, storytelling, and more
 - **14+ specialized personas** — Architect, Developer, Security Expert, Tech Writer, Requirements Engineer, Product Owner, and more
 - **4 LLM providers** — Anthropic, Ollama, Gemini, OpenAI — with automatic cost-based selection
 - **MCP server integration** — PDF, Azure DevOps, Outlook, and more auto-registered as patterns
@@ -97,6 +97,7 @@ AIOS plans the workflow automatically — parallel where possible, sequential wh
 | Document | Content |
 |----------|---------|
 | [Getting Started](docs/getting-started.md) | Installation, first commands, verification |
+| [**CLI Commands**](docs/CLI_COMMANDS.md) | Complete reference of all `aios` commands, options, and examples |
 | [User Guide](docs/user-guide.md) | CLI reference, patterns, chat, pipes, MCP, RAG, vision |
 | [Configuration](docs/configuration.md) | aios.yaml, providers, MCP, RAG, environment variables |
 | [Architecture](docs/architecture.md) | Components, data flow, dynamic orchestration |

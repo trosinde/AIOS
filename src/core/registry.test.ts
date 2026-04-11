@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { join } from "path";
+import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { PatternRegistry } from "./registry.js";
 
 const PATTERNS_DIR = join(process.cwd(), "patterns");
@@ -205,5 +206,97 @@ describe("PatternRegistry", () => {
 
   it("hat 28 Patterns geladen (26 alt + 2 diagram)", () => {
     expect(registry.list().length).toBeGreaterThanOrEqual(28);
+  });
+
+  // ─── Multi-Directory Pattern Resolution ─────────────────
+
+  describe("Multi-Directory Support", () => {
+    const tmpBase = join(process.cwd(), "tmp-test-patterns");
+    const dirA = join(tmpBase, "dir-a");
+    const dirB = join(tmpBase, "dir-b");
+
+    function writePattern(dir: string, name: string, description: string): void {
+      const patternDir = join(dir, name);
+      mkdirSync(patternDir, { recursive: true });
+      writeFileSync(join(patternDir, "system.md"), [
+        "---",
+        "kernel_abi: 1",
+        `name: ${name}`,
+        `description: "${description}"`,
+        "category: test",
+        "input_type: text",
+        "output_type: text",
+        "tags: []",
+        "---",
+        "",
+        `Prompt for ${name} from ${description}`,
+      ].join("\n"));
+    }
+
+    beforeEach(() => {
+      mkdirSync(dirA, { recursive: true });
+      mkdirSync(dirB, { recursive: true });
+    });
+
+    afterEach(() => {
+      rmSync(tmpBase, { recursive: true, force: true });
+    });
+
+    it("lädt Patterns aus mehreren Verzeichnissen", () => {
+      writePattern(dirA, "pattern_a", "dir-a");
+      writePattern(dirB, "pattern_b", "dir-b");
+
+      const reg = new PatternRegistry([dirA, dirB]);
+      expect(reg.get("pattern_a")).toBeDefined();
+      expect(reg.get("pattern_b")).toBeDefined();
+    });
+
+    it("höhere Priorität überschreibt niedrigere (erstes Dir gewinnt)", () => {
+      writePattern(dirA, "shared_pattern", "high-priority");
+      writePattern(dirB, "shared_pattern", "low-priority");
+
+      const reg = new PatternRegistry([dirA, dirB]);
+      const p = reg.get("shared_pattern")!;
+      expect(p.meta.description).toBe("high-priority");
+      expect(p.systemPrompt).toContain("high-priority");
+    });
+
+    it("patternsDir gibt erstes Verzeichnis zurück (Backward-Compat)", () => {
+      const reg = new PatternRegistry([dirA, dirB]);
+      expect(reg.patternsDir).toBe(dirA);
+    });
+
+    it("patternsDirs gibt alle Verzeichnisse zurück", () => {
+      const reg = new PatternRegistry([dirA, dirB]);
+      expect(reg.patternsDirs).toEqual([dirA, dirB]);
+    });
+
+    it("leeres Array erzeugt leere Registry", () => {
+      const reg = new PatternRegistry([]);
+      expect(reg.list()).toEqual([]);
+      expect(reg.patternsDir).toBe("");
+    });
+
+    it("einzelner String funktioniert weiterhin", () => {
+      writePattern(dirA, "solo_pattern", "solo");
+      const reg = new PatternRegistry(dirA);
+      expect(reg.get("solo_pattern")).toBeDefined();
+      expect(reg.patternsDir).toBe(dirA);
+      expect(reg.patternsDirs).toEqual([dirA]);
+    });
+
+    it("ignoriert nicht-existierende Verzeichnisse im Array", () => {
+      writePattern(dirA, "pattern_a", "dir-a");
+      const reg = new PatternRegistry([dirA, "/tmp/nonexistent_xyz_98765"]);
+      expect(reg.get("pattern_a")).toBeDefined();
+      expect(reg.list().length).toBe(1);
+    });
+
+    it("behandelt doppelte Verzeichnisse ohne Fehler", () => {
+      writePattern(dirA, "pattern_a", "dir-a");
+      const reg = new PatternRegistry([dirA, dirA]);
+      expect(reg.get("pattern_a")).toBeDefined();
+      expect(reg.list().length).toBe(1);
+    });
   });
 });

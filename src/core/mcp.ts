@@ -3,6 +3,41 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { McpConfig, McpServerConfig } from "../types.js";
 import type { PatternRegistry } from "./registry.js";
 
+/**
+ * Sanitize error messages from downstream MCP servers.
+ * Strips stack traces, file paths, and internal identifiers
+ * to prevent information disclosure.
+ */
+function sanitizeErrorMessage(msg: string): string {
+  if (!msg) return "Unbekannter Fehler";
+
+  // Try to extract the useful message from JSON error responses
+  try {
+    const parsed = JSON.parse(msg);
+    if (parsed.error && typeof parsed.error === "string") {
+      // Extract just the human-readable message from TFS error format
+      const match = parsed.error.match(/"message":"([^"]+)"/);
+      if (match) return match[1];
+      // Strip internal type names and stack traces
+      return parsed.error
+        .replace(/\{[^}]*"typeName":[^}]*\}/g, "")
+        .replace(/,"typeKey":[^,}]*/g, "")
+        .replace(/,"errorCode":\d+/g, "")
+        .replace(/\{"\$id":"\d+",?"innerException":null,?"message":"/g, "")
+        .replace(/"\}$/g, "")
+        .trim();
+    }
+  } catch { /* not JSON, use as-is */ }
+
+  // Strip file paths (Unix and Windows)
+  let sanitized = msg.replace(/(?:\/[\w.-]+)+\.\w+(?::\d+(?::\d+)?)?/g, "[path]");
+  sanitized = sanitized.replace(/[A-Z]:\\[\w\\.-]+\.\w+(?::\d+(?::\d+)?)?/g, "[path]");
+  // Strip stack traces (lines starting with "at ")
+  sanitized = sanitized.replace(/\n\s*at .+/g, "");
+
+  return sanitized.trim() || "Unbekannter Fehler";
+}
+
 export interface McpToolInfo {
   serverName: string;
   name: string;
@@ -35,10 +70,21 @@ export class McpManager {
     const serverCfg = this.config.servers[serverName];
     if (!serverCfg) throw new Error(`MCP-Server "${serverName}" nicht konfiguriert`);
 
+    // Build env with sensitive keys stripped (defense-in-depth)
+    const SENSITIVE_ENV_KEYS = [
+      "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_API_KEY",
+      "AWS_SECRET_ACCESS_KEY", "AZURE_CLIENT_SECRET", "GH_TOKEN",
+      "GITHUB_TOKEN", "NPM_TOKEN",
+    ];
+    const baseEnv = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !SENSITIVE_ENV_KEYS.includes(k)),
+    ) as Record<string, string>;
+    const childEnv = serverCfg.env ? { ...baseEnv, ...serverCfg.env } : baseEnv;
+
     const transport = new StdioClientTransport({
       command: serverCfg.command,
       args: serverCfg.args,
-      env: serverCfg.env ? { ...process.env, ...serverCfg.env } as Record<string, string> : undefined,
+      env: childEnv,
     });
 
     const client = new Client({ name: "aios", version: "0.1.0" });
@@ -87,7 +133,7 @@ export class McpManager {
         .filter((c) => c.type === "text")
         .map((c) => c.text)
         .join("\n");
-      throw new Error(`MCP-Tool "${toolName}" Fehler: ${errorText || "Unbekannter Fehler"}`);
+      throw new Error(`MCP-Tool "${toolName}" Fehler: ${sanitizeErrorMessage(errorText)}`);
     }
 
     return (result.content as Array<{ type: string; text?: string }>)

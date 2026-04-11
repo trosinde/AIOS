@@ -6,3 +6,4 @@ dist/
 !src/**
 .env
 azdo-config.json
+output/

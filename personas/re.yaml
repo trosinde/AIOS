@@ -80,11 +80,14 @@ communicates_with:
   - tester
   - security_expert
   - quality_manager
+  - project_controller
 subscribes_to:
   - stakeholder-feedback
   - requirement-updated
   - design-created        # Rückwärts-Traceability: Design → REQ prüfen
   - test-failed           # Fehlgeschlagener Test → REQ-Lücke?
+  - resource-bottleneck-detected  # Kapazitaetsengpass → Scope-Reduktion pruefen
+  - schedule-risk-detected        # Zeitrisiko → Priorisierung neu bewerten
 publishes_to:
   - requirement-created
   - requirement-changed

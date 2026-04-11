@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 npx tsx src/cli.ts patterns list
 ```
 
-You should see 34+ patterns grouped by category (analysis, generation, review, etc.).
+You should see 35+ patterns grouped by category (analysis, generation, review, etc.).
 
 ## First Run
 

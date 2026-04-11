@@ -22,6 +22,7 @@ communicates_with:
   - security_expert
   - devops_engineer
   - developer
+  - project_controller
 subscribes_to:
   - quality-gate-passed
   - quality-gate-failed
@@ -29,6 +30,9 @@ subscribes_to:
   - vulnerability-assessed
   - sbom-generated
   - documentation-published
+  - capacity-forecast-updated
+  - schedule-risk-detected
+  - release-date-at-risk
 publishes_to:
   - release-planned
   - release-approved

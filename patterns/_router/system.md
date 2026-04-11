@@ -53,7 +53,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein anderer Text):
 
 - Einfache Aufgabe (Zusammenfassung, einzelne Frage) → EIN Step, type "pipe"
 - Code Review → scatter_gather mit 2-3 parallelen Reviews + aggregate_reviews
-- Feature-Entwicklung → dag: Requirements → Design → Code+Tests parallel → Reviews → Report
+- Feature-Entwicklung → `dev_process` Pattern verwenden (saga: Requirements → Design → Code → Test → Docs mit Quality Gates)
 - Reguliert (IEC 62443, CRA) → saga mit Quality Gates, Retry und compliance_report am Ende
 - NUR Patterns verwenden die im Katalog existieren!
 - Keine zirkulären Dependencies

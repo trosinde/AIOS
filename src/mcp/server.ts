@@ -24,10 +24,12 @@ import { Engine } from "../core/engine.js";
 import { createProvider } from "../agents/provider.js";
 import { ProviderSelector } from "../agents/provider-selector.js";
 import { loadConfig } from "../utils/config.js";
+import { buildContextAwareRegistry } from "../utils/registry-factory.js";
 import { McpManager } from "../core/mcp.js";
 import type { McpToolInfo } from "../core/mcp.js";
-import type { AiosConfig } from "../types.js";
+import type { AiosConfig, ExecutionContext } from "../types.js";
 import type { LLMProvider } from "../agents/provider.js";
+import { randomUUID } from "crypto";
 
 /** Suppress all stderr output in MCP mode (would corrupt JSON-RPC protocol) */
 function silenceStderr(): void {
@@ -66,6 +68,40 @@ interface ProxiedTool {
   originalName: string;
   description: string;
   inputSchema: object;
+}
+
+/**
+ * Validate proxy arguments against the tool's input schema.
+ * Detects common type mismatches (e.g., object-typed fields passed as JSON strings)
+ * that would cause cryptic downstream errors like TF400645.
+ */
+function sanitizeProxyArgs(
+  args: Record<string, unknown>,
+  inputSchema: object,
+): Record<string, unknown> {
+  const schema = inputSchema as {
+    properties?: Record<string, { type?: string }>;
+  };
+  if (!schema.properties) return args;
+
+  const result = { ...args };
+  for (const [key, prop] of Object.entries(schema.properties)) {
+    if (key in result && prop.type === "object" && typeof result[key] === "string") {
+      // Attempt to parse JSON string → object (common LLM mistake)
+      try {
+        const parsed = JSON.parse(result[key] as string);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          result[key] = parsed;
+        }
+      } catch {
+        throw new Error(
+          `Parameter "${key}" muss ein Objekt sein, kein JSON-String. ` +
+          `Übergib ein Objekt wie {"key": "value"} statt eines serialisierten Strings.`,
+        );
+      }
+    }
+  }
+  return result;
 }
 
 export async function startMCPServer(): Promise<void> {
@@ -114,7 +150,7 @@ export async function startMCPServer(): Promise<void> {
 
   silenceStderr();
 
-  const registry = new PatternRegistry(config.paths.patterns);
+  const registry = buildContextAwareRegistry(config.paths.patterns);
   const providerName = config.defaults.provider;
   const providerCfg = config.providers[providerName];
   if (!providerCfg) {
@@ -215,6 +251,13 @@ export async function startMCPServer(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
+    // Create ExecutionContext per request (kernel ABI contract)
+    const ctx: ExecutionContext = {
+      trace_id: randomUUID(),
+      context_id: "mcp",
+      started_at: Date.now(),
+    };
+
     try {
       switch (name) {
         case "aios_run": {
@@ -247,7 +290,7 @@ export async function startMCPServer(): Promise<void> {
             ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
             : pattern.systemPrompt;
 
-          const result = await runProvider.complete(fullPrompt, input);
+          const result = await runProvider.complete(fullPrompt, input, undefined, ctx);
           return {
             content: [{ type: "text" as const, text: result.content }],
           };
@@ -259,7 +302,7 @@ export async function startMCPServer(): Promise<void> {
 
           const router = new Router(registry, provider);
           const engine = new Engine(registry, provider, config, personas, undefined, undefined, selector);
-          const plan = await router.planWorkflow(task);
+          const plan = await router.planWorkflow(task, undefined, ctx);
 
           if (dryRun) {
             return {
@@ -287,7 +330,7 @@ export async function startMCPServer(): Promise<void> {
         case "aios_plan": {
           const task = args?.task as string;
           const router = new Router(registry, provider);
-          const plan = await router.planWorkflow(task);
+          const plan = await router.planWorkflow(task, undefined, ctx);
           return {
             content: [{ type: "text" as const, text: JSON.stringify(plan, null, 2) }],
           };
@@ -297,10 +340,15 @@ export async function startMCPServer(): Promise<void> {
           // Check if this is a proxied MCP tool
           const proxied = proxiedTools.get(name);
           if (proxied && mcpManager) {
+            // Validate arguments: ensure object-typed schema fields are not passed as strings
+            const sanitizedArgs = sanitizeProxyArgs(
+              (args ?? {}) as Record<string, unknown>,
+              proxied.inputSchema,
+            );
             const result = await mcpManager.callTool(
               proxied.serverName,
               proxied.originalName,
-              (args ?? {}) as Record<string, unknown>,
+              sanitizedArgs,
             );
             return {
               content: [{ type: "text" as const, text: result }],

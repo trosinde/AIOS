@@ -18,7 +18,7 @@ const DEFAULT_CONFIG: AiosConfig = {
   },
   tools: {
     output_dir: "./output",
-    allowed: ["mmdc", "render-image", "prettier", "eslint", "ruff", "black"],
+    allowed: ["mmdc", "render-image", "prettier", "eslint", "ruff", "black", "tsx"],
   },
   mcp: { servers: {} },
 };

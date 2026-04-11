@@ -37,7 +37,7 @@ Foundation    Patterns      Personas      Workflows     Knowledge     Compliance
 **Goal:** Comprehensive pattern library with discovery, parameterization, and tool patterns.
 
 - [x] Pattern specification format (YAML frontmatter + Markdown)
-- [x] 35 patterns in 9 categories
+- [x] 36 patterns in 9 categories
 - [x] Pattern discovery: `aios patterns list`, `aios patterns search <query>`
 - [x] Pattern composition via pipes: `aios run p1 | aios run p2`
 - [x] Pattern parameterization: `aios run review_code --language=python`

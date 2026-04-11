@@ -25,11 +25,14 @@ communicates_with:
   - quality_manager
   - hmi_designer
   - product_owner
+  - project_controller
 subscribes_to:
   - stakeholder-feedback
   - requirement-updated
   - design-created
   - test-failed
+  - resource-bottleneck-detected
+  - schedule-risk-detected
 publishes_to:
   - requirement-created
   - requirement-changed

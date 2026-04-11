@@ -20,12 +20,12 @@ import {
   mergeWithDefaults,
 } from "./manifest.js";
 import { registerContext } from "./registry.js";
-import type { ContextManifest } from "../types.js";
+import type { ContextConfig } from "../types.js";
 
 export interface InitOptions {
   name?: string;
   description?: string;
-  type?: ContextManifest["type"];
+  type?: ContextConfig["type"];
   template?: "project" | "team" | "library";
   upgrade?: boolean;
   nonInteractive?: boolean;
@@ -79,6 +79,9 @@ async function createNewContext(dir: string, opts: InitOptions): Promise<void> {
   console.error(chalk.green(`✅ Kontext "${name}" initialisiert in ${dir}`));
   console.error(chalk.gray(`   Manifest: .aios/context.yaml`));
   console.error(chalk.gray(`   Typ: ${type}`));
+  if (manifest.capabilities.length > 0) {
+    console.error(chalk.cyan(`   Fähigkeiten: ${manifest.capabilities.map((c) => c.id).join(", ")}`));
+  }
   console.error(chalk.gray(`\n   Nächste Schritte:`));
   console.error(chalk.gray(`   1. Editiere .aios/context.yaml – beschreibe Fähigkeiten und Exports`));
   console.error(chalk.gray(`   2. Lege Patterns in .aios/patterns/ ab`));
@@ -140,7 +143,7 @@ async function migrateFromLegacy(dir: string, opts: InitOptions): Promise<void> 
 }
 
 /** Wendet Template-spezifische Defaults an */
-function applyTemplate(manifest: ContextManifest, template: string): void {
+function applyTemplate(manifest: ContextConfig, template: string): void {
   switch (template) {
     case "team":
       manifest.config.team = {

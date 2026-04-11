@@ -10,9 +10,11 @@ import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
+import { createTTSProvider } from "./agents/tts-provider.js";
 import { ProviderSelector } from "./agents/provider-selector.js";
 import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
+import { buildContextAwareRegistry } from "./utils/registry-factory.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
 import { QualityPipeline } from "./core/quality/pipeline.js";
@@ -110,7 +112,7 @@ program
 
       const registry = readRegistry();
       if (registry.contexts.length === 0) {
-        console.error(chalk.red("Keine Kontexte registriert. Erstelle mit: aios federation-init"));
+        console.error(chalk.red("Keine Kontexte registriert. Registriere mit: aios context scan <pfad>"));
         process.exit(1);
       }
 
@@ -118,7 +120,7 @@ program
       const catalog = buildContextCatalog();
 
       // Load cross-router pattern
-      const pRegistry = new PatternRegistry(config.paths.patterns);
+      const pRegistry = buildContextAwareRegistry(config.paths.patterns);
       const crossRouter = pRegistry.get("_cross_router");
       if (!crossRouter) {
         console.error(chalk.red("Cross-Router-Pattern nicht gefunden."));
@@ -221,7 +223,7 @@ program
     }
 
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -285,7 +287,7 @@ program
     }
 
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const pattern = registry.get(patternName);
     if (!pattern) {
@@ -384,6 +386,25 @@ program
         }
         process.stdout.write(out.output);
       }
+    } else if (pattern.meta.type === "tts") {
+      // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector);
+      const ttsPlan = {
+        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
+        plan: {
+          type: "pipe" as const,
+          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+        },
+        reasoning: "Direct TTS execution",
+      };
+      const result = await engine.execute(ttsPlan, input);
+      const out = result.results.get("run");
+      if (out) {
+        if (out.outputType === "file" && out.filePath) {
+          console.error(chalk.green(`🔊 Audio erzeugt: ${out.filePath}`));
+        }
+        process.stdout.write(out.output);
+      }
     } else if (pattern.meta.input_type === "image") {
       // Vision-Pattern: Dateipfade aus stdin lesen, als Base64 an Vision-Provider
       const filePaths = input.trim().split(/\n/).map(l => l.trim()).filter(Boolean);
@@ -451,6 +472,69 @@ program
     await mcpManager?.shutdown();
   });
 
+// ─── aios speak (Text-to-Speech Shortcut) ──────────────
+program
+  .command("speak [text...]")
+  .description("Text in Sprache umwandeln (OpenAI TTS)")
+  .option("--voice <voice>", "Stimme: alloy, echo, fable, onyx, nova, shimmer", "alloy")
+  .option("--model <model>", "TTS-Modell: tts-1 oder tts-1-hd", "tts-1")
+  .option("--format <format>", "Audio-Format: mp3, wav, opus, aac", "mp3")
+  .option("--speed <speed>", "Geschwindigkeit (0.25 - 4.0)", "1.0")
+  .option("--output <path>", "Ausgabedatei (Standard: output/speak-<timestamp>.<format>)")
+  .action(async (textParts: string[], opts) => {
+    // Input: CLI-Argument oder stdin
+    let text = textParts.join(" ").trim();
+    if (!text) {
+      text = (await readStdin())?.trim() ?? "";
+    }
+    if (!text) {
+      console.error(chalk.red("Kein Text angegeben. Nutze: aios speak \"Hallo Welt\" oder echo \"Text\" | aios speak"));
+      process.exit(1);
+    }
+
+    const config = loadConfig();
+    const outputDir = config.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    const voice = opts.voice;
+    const model = opts.model;
+    const format = opts.format;
+    const speed = parseFloat(opts.speed);
+
+    try {
+      const ttsProvider = createTTSProvider();
+      const { randomUUID } = await import("crypto");
+      const ctx = { trace_id: randomUUID(), context_id: "cli", started_at: Date.now() };
+
+      console.error(chalk.gray(`🔊 TTS: Voice=${voice}, Model=${model}, Format=${format}, Speed=${speed}x`));
+      console.error(chalk.gray(`   Text: "${text.length > 80 ? text.slice(0, 80) + "..." : text}"`));
+
+      const result = await ttsProvider.synthesize(text, { voice, model, format, speed }, ctx);
+
+      // Ausgabedatei bestimmen — bei --output Pfad validieren
+      let outputPath: string;
+      if (opts.output) {
+        const { resolve } = await import("path");
+        const resolved = resolve(opts.output);
+        const cwd = resolve(".");
+        if (!resolved.startsWith(cwd)) {
+          console.error(chalk.red("Ausgabepfad muss innerhalb des Arbeitsverzeichnisses liegen."));
+          process.exit(1);
+        }
+        outputPath = resolved;
+      } else {
+        outputPath = join(outputDir, `speak-${Date.now()}.${result.format}`);
+      }
+
+      writeFileSync(outputPath, result.audioData);
+      const sizeKB = (result.audioData.length / 1024).toFixed(1);
+      console.error(chalk.green(`✅ Audio gespeichert: ${outputPath} (${sizeKB} KB)`));
+    } catch (error) {
+      console.error(chalk.red(`TTS-Fehler: ${error instanceof Error ? error.message : String(error)}`));
+      process.exit(1);
+    }
+  });
+
 // ─── aios plan (nur planen) ──────────────────────────────
 program
   .command("plan <task...>")
@@ -458,7 +542,7 @@ program
   .option("--provider <name>", "LLM Provider überschreiben")
   .action(async (taskParts: string[], opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -480,7 +564,7 @@ program
   .option("--provider <name>", "LLM Provider überschreiben")
   .action(async (opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const providerName = opts.provider || config.defaults.provider;
     const providerCfg = config.providers[providerName];
@@ -500,38 +584,8 @@ program
     await mcpManager?.shutdown();
   });
 
-// ─── aios federation init ───────────────────────────────
-program
-  .command("federation-init")
-  .description("AIOS-Kontext für Cross-Context Federation initialisieren oder erweitern")
-  .option("--name <name>", "Kontext-Name")
-  .option("--description <desc>", "Beschreibung")
-  .option("--type <type>", "Typ: project | team | library", "project")
-  .option("--template <tpl>", "Template: project | team | library")
-  .option("--upgrade", "Nur fehlende Felder ergänzen")
-  .action(async (opts) => {
-    const { initContext } = await import("./context/init.js");
-    await initContext(process.cwd(), opts);
-  });
-
 // ─── aios context ───────────────────────────────────────
 const contextCmd = program.command("context").description("Context-Verwaltung");
-
-contextCmd
-  .command("init <name>")
-  .description("Neuen Context erstellen")
-  .option("--local", "Context im aktuellen Verzeichnis (.aios/) erstellen")
-  .action(async (name: string, opts) => {
-    const { ContextManager } = await import("./core/context.js");
-    const cm = new ContextManager();
-    try {
-      const path = cm.init(name, opts.local);
-      console.log(chalk.green(`Context "${name}" erstellt: ${path}`));
-    } catch (err) {
-      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-      process.exit(1);
-    }
-  });
 
 contextCmd
   .command("switch <name>")
@@ -559,7 +613,7 @@ contextCmd
 
     if (contexts.length === 0) {
       console.log(chalk.gray("  Keine Contexts. Standard: default"));
-      console.log(chalk.gray("  Erstelle mit: aios context init <name>"));
+      console.log(chalk.gray("  Erstelle mit: aios init"));
       return;
     }
 
@@ -583,9 +637,68 @@ contextCmd
     console.log(chalk.gray(`Quelle: ${active.source === "project" ? "Projekt-lokal (.aios/)" : "Global (~/.aios/contexts/)"}`));
     console.log(chalk.gray(`Pfad: ${active.path}`));
     if (active.config.description) console.log(chalk.gray(`Beschreibung: ${active.config.description}`));
-    if (active.config.domain) console.log(chalk.gray(`Domain: ${active.config.domain}`));
+    if (active.config.project?.domain) console.log(chalk.gray(`Domain: ${active.config.project.domain}`));
     if (active.config.required_traits?.length) {
       console.log(chalk.gray(`Required Traits: ${active.config.required_traits.join(", ")}`));
+    }
+
+    // Show federation links if manifest exists
+    try {
+      const { readManifest, hasContext } = await import("./context/manifest.js");
+      if (hasContext(active.path)) {
+        const manifest = readManifest(active.path);
+        if (manifest.links?.length) {
+          console.log(chalk.gray(`Links: ${manifest.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+      }
+    } catch {
+      // No manifest available – skip links display
+    }
+  });
+
+// ─── aios context rename <new-name> ─────────────────────
+contextCmd
+  .command("rename <new-name>")
+  .description("Aktiven Context umbenennen")
+  .action(async (newName: string) => {
+    const { ContextManager } = await import("./core/context.js");
+    const { readRegistry, writeRegistry } = await import("./context/registry.js");
+    const cm = new ContextManager();
+    const active = cm.resolveActive();
+
+    if (active.name === "default") {
+      console.error(chalk.red("Der Default-Context kann nicht umbenannt werden."));
+      process.exit(1);
+    }
+
+    try {
+      const result = cm.rename(active.name, newName);
+
+      // Update global registry (best-effort, rename already succeeded)
+      try {
+        const registry = readRegistry();
+        const entry = registry.contexts.find((c) => c.name === active.name);
+        if (entry) {
+          entry.name = newName;
+          entry.path = result.path;
+          entry.last_updated = new Date().toISOString();
+          for (const other of registry.contexts) {
+            if (other.links) {
+              for (const link of other.links) {
+                if (link.name === active.name) link.name = newName;
+              }
+            }
+          }
+          writeRegistry(registry);
+        }
+      } catch {
+        console.error(chalk.yellow("Context umbenannt, aber Registry-Update fehlgeschlagen. Führe 'aios context scan' aus."));
+      }
+
+      console.error(chalk.green(`Context umbenannt: ${active.name} → ${newName}`));
+    } catch (err) {
+      console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
     }
   });
 
@@ -610,7 +723,7 @@ contextCmd
       const { readManifest, hasContext } = await import("./context/manifest.js");
       if (!hasContext(process.cwd())) {
         console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
-        console.error(chalk.gray("Erstelle mit: aios federation-init"));
+        console.error(chalk.gray("Erstelle mit: aios init"));
         process.exit(1);
       }
       const manifest = readManifest(process.cwd());
@@ -631,7 +744,7 @@ contextCmd
     }
 
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
-    const { readRegistry } = await import("./context/registry.js");
+    const { readRegistry, registerContext } = await import("./context/registry.js");
     const { resolve } = await import("node:path");
 
     if (!hasContext(process.cwd())) {
@@ -670,6 +783,7 @@ contextCmd
     });
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpft: ${manifest.name} → ${targetName} (${opts.relationship})`));
   });
 
@@ -679,6 +793,7 @@ contextCmd
   .description("Verknüpfung zu anderem Kontext entfernen")
   .action(async (target: string) => {
     const { readManifest, writeManifest, hasContext } = await import("./context/manifest.js");
+    const { registerContext } = await import("./context/registry.js");
     if (!hasContext(process.cwd())) {
       console.error(chalk.red("Kein AIOS-Kontext im aktuellen Verzeichnis."));
       process.exit(1);
@@ -696,6 +811,7 @@ contextCmd
     }
 
     writeManifest(process.cwd(), manifest);
+    registerContext(manifest, process.cwd());
     console.error(chalk.green(`✅ Verknüpfung zu "${target}" entfernt.`));
   });
 
@@ -708,7 +824,7 @@ contextCmd
     const registry = readRegistry();
     if (registry.contexts.length === 0) {
       console.error(chalk.yellow("Keine Kontexte in der Federation-Registry."));
-      console.error(chalk.gray("Erstelle mit: aios federation-init"));
+      console.error(chalk.gray("Registriere mit: aios context scan <pfad>"));
       return;
     }
     for (const c of registry.contexts) {
@@ -719,8 +835,73 @@ contextCmd
       if (c.capabilities.length > 0) {
         console.log(chalk.gray(`  Capabilities: ${c.capabilities.join(", ")}`));
       }
+      if (c.links?.length) {
+        console.log(chalk.gray(`  Links: ${c.links.map((l: { name: string; relationship: string }) => `${l.name} (${l.relationship})`).join(", ")}`));
+      }
       console.log();
     }
+  });
+
+// ─── aios context scan ──────────────────────────────────
+contextCmd
+  .command("scan [paths...]")
+  .description("Dateisystem nach Kontexten durchsuchen und Registry aktualisieren")
+  .option("--depth <n>", "Maximale Suchtiefe", "3")
+  .action(async (paths: string[], opts) => {
+    const { scanContexts } = await import("./context/scanner.js");
+    const { getAiosHome } = await import("./utils/config.js");
+
+    const searchPaths = paths.length > 0
+      ? paths
+      : [process.cwd(), getAiosHome()];
+
+    const depth = parseInt(opts.depth, 10);
+    console.error(chalk.gray("Scanne nach Kontexten..."));
+
+    const result = scanContexts(searchPaths, Number.isNaN(depth) ? 3 : depth);
+
+    console.error(chalk.green("✓ Scan abgeschlossen"));
+
+    if (result.discovered.length > 0) {
+      console.error(chalk.green(`\n  Neu entdeckt (${result.discovered.length}):`));
+      for (const ctx of result.discovered) {
+        console.error(chalk.green(`    + ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
+        if (ctx.entry.links?.length) {
+          console.error(chalk.gray(`      Links: ${ctx.entry.links.map((l) => `${l.name} (${l.relationship})`).join(", ")}`));
+        }
+        console.error(chalk.gray(`      Pfad: ${ctx.path}`));
+      }
+    }
+
+    if (result.updated.length > 0) {
+      console.error(chalk.blue(`\n  Aktualisiert (${result.updated.length}):`));
+      for (const ctx of result.updated) {
+        console.error(chalk.blue(`    ~ ${ctx.entry.name}`) + chalk.gray(` (${ctx.entry.type}) — ${ctx.entry.description}`));
+        if (ctx.entry.capabilities.length > 0) {
+          console.error(chalk.cyan(`      Fähigkeiten: ${ctx.entry.capabilities.join(", ")}`));
+        }
+      }
+    }
+
+    if (result.stale.length > 0) {
+      console.error(chalk.yellow(`\n  Entfernt (nicht mehr vorhanden) (${result.stale.length}):`));
+      for (const ctx of result.stale) {
+        console.error(chalk.yellow(`    - ${ctx.name}`) + chalk.gray(` (${ctx.path})`));
+      }
+    }
+
+    if (result.brokenLinks.length > 0) {
+      console.error(chalk.red(`\n  Defekte Links (${result.brokenLinks.length}):`));
+      for (const bl of result.brokenLinks) {
+        console.error(chalk.red(`    ✗ ${bl.context} → ${bl.linkName} (${bl.path})`));
+      }
+    }
+
+    const total = result.discovered.length + result.updated.length;
+    console.error(chalk.gray(`\n  ${total} Kontext(e) in Registry, ${result.stale.length} entfernt, ${result.brokenLinks.length} defekte Links`));
   });
 
 // ─── aios persona ───────────────────────────────────────
@@ -873,6 +1054,196 @@ knowledgeCmd
     bus.close();
   });
 
+// ─── aios service ────────────────────────────────────────
+const serviceCmd = program.command("service").description("Service Interface Verwaltung");
+
+serviceCmd
+  .command("init [path]")
+  .description("Service-Interface für bestehenden Kontext einrichten")
+  .action(async (contextPath?: string) => {
+    const { initServiceInterface } = await import("./service/service-init.js");
+    const cwd = contextPath ? join(process.cwd(), contextPath) : process.cwd();
+
+    try {
+      const result = initServiceInterface(cwd);
+
+      if (!result.manifestCreated) {
+        console.error(chalk.yellow(result.message));
+        return;
+      }
+
+      console.error(chalk.green(`✅ ${result.message}`));
+
+      if (result.dataFilesCreated.length > 0) {
+        console.error(chalk.gray("\nErstellt Template-Dateien:"));
+        for (const f of result.dataFilesCreated) {
+          console.error(chalk.gray(`  → data/${f} (bitte mit echten Daten ersetzen)`));
+        }
+      }
+
+      if (result.sourcesDetected.length > 0) {
+        console.error(chalk.gray("\nErkannte Services:"));
+        for (const s of result.sourcesDetected) {
+          console.error(chalk.gray(`  → ${s.name}: ${s.description}`));
+          if (s.key_fields?.length) {
+            console.error(chalk.gray(`    key_fields: ${s.key_fields.join(", ")}`));
+          }
+        }
+      }
+
+      console.error(chalk.gray("\nNächste Schritte:"));
+      console.error(chalk.gray("  1. Template-Daten in data/ mit echten Daten ersetzen"));
+      console.error(chalk.gray("  2. data/manifest.yaml anpassen (key_fields, descriptions)"));
+      console.error(chalk.gray("  3. 'aios service list' um Endpoints zu prüfen"));
+    } catch (err) {
+      console.error(chalk.red(`Fehler: ${err instanceof Error ? err.message : err}`));
+      process.exit(1);
+    }
+  });
+
+serviceCmd
+  .command("list")
+  .description("Alle verfügbaren Service-Endpoints auflisten")
+  .action(async () => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      const endpoints = bus.discoverAll();
+
+      if (endpoints.length === 0) {
+        console.error(chalk.yellow("Keine Service-Endpoints gefunden."));
+        console.error(chalk.gray("Erstelle data/manifest.yaml in einem Kontext-Verzeichnis."));
+        return;
+      }
+
+      for (const ep of endpoints) {
+        console.log(chalk.bold(`  ${ep.context}.${ep.name}`) + chalk.gray(`  ${ep.description} (${ep.record_count} records)`));
+        console.log(chalk.gray(`    → key_fields: ${ep.key_fields.join(", ")}`));
+        console.log(chalk.gray(`    → fields: ${ep.fields.map((f) => `${f.name}:${f.type}`).join(", ")}`));
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("show <endpoint>")
+  .description("Service-Endpoint Details anzeigen (Format: context.endpoint)")
+  .action(async (endpointArg: string) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+
+    const dotIdx = endpointArg.indexOf(".");
+    if (dotIdx < 0) {
+      console.error(chalk.red("Format: <context>.<endpoint> (z.B. hr.employees)"));
+      process.exit(1);
+    }
+
+    const contextName = endpointArg.slice(0, dotIdx);
+    const endpointName = endpointArg.slice(dotIdx + 1);
+
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      const endpoints = bus.discoverForContext(contextName);
+      const ep = endpoints.find((e) => e.name === endpointName);
+
+      if (!ep) {
+        console.error(chalk.red(`Endpoint "${endpointName}" nicht im Kontext "${contextName}" gefunden.`));
+        const available = endpoints.map((e) => `${contextName}.${e.name}`).join(", ");
+        if (available) console.error(chalk.gray(`Verfügbar: ${available}`));
+        process.exit(1);
+      }
+
+      console.log(chalk.bold(`\nEndpoint: ${ep.context}.${ep.name}`));
+      console.log(`Beschreibung: ${ep.description}`);
+      console.log(`Datendatei: ${ep.data_file}`);
+      console.log(`Datensätze: ${ep.record_count}`);
+      console.log(`Key-Fields: ${ep.key_fields.join(", ")}`);
+      console.log(chalk.bold("\nSchema:"));
+      for (const field of ep.fields) {
+        console.log(`  ${field.name}: ${field.type}${field.sample ? chalk.gray(` (z.B. "${field.sample}")`) : ""}`);
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("call <endpoint> [input]")
+  .description("Service-Endpoint aufrufen (Format: context.endpoint)")
+  .option("--provider <name>", "Provider für LLM-Fallback überschreiben")
+  .action(async (endpointArg: string, inputArg: string | undefined) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const { randomUUID } = await import("crypto");
+
+    const dotIdx = endpointArg.indexOf(".");
+    if (dotIdx < 0) {
+      console.error(chalk.red("Format: <context>.<endpoint> (z.B. hr.employees)"));
+      process.exit(1);
+    }
+
+    const contextName = endpointArg.slice(0, dotIdx);
+    const endpointName = endpointArg.slice(dotIdx + 1);
+
+    // Read input from argument or stdin
+    let inputStr = inputArg;
+    if (!inputStr) {
+      inputStr = await readStdin();
+    }
+    if (!inputStr) {
+      console.error(chalk.red("Kein Input angegeben. Nutze: aios service call ctx.endpoint '{\"key\": \"value\"}'"));
+      process.exit(1);
+    }
+
+    let query: Record<string, unknown>;
+    try {
+      query = JSON.parse(inputStr) as Record<string, unknown>;
+    } catch {
+      console.error(chalk.red("Input muss gültiges JSON sein."));
+      process.exit(1);
+    }
+
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    const ctx = {
+      trace_id: randomUUID(),
+      context_id: "cli",
+      started_at: Date.now(),
+    };
+
+    try {
+      const result = await bus.call(contextName, endpointName, query, ctx);
+      console.error(chalk.gray(`[${result.method}] ${result.results.length} Treffer (${result.durationMs}ms)`));
+      console.log(JSON.stringify(result.results, null, 2));
+    } catch (err) {
+      console.error(chalk.red(`Fehler: ${err instanceof Error ? err.message : err}`));
+      process.exit(1);
+    } finally {
+      bus.close();
+    }
+  });
+
+serviceCmd
+  .command("refresh [context]")
+  .description("Service-Cache neu generieren")
+  .action(async (contextName?: string) => {
+    const { ServiceBus } = await import("./service/service-bus.js");
+    const { getAiosHome } = await import("./utils/config.js");
+    const bus = new ServiceBus(join(getAiosHome(), "knowledge", "services.db"));
+    try {
+      if (contextName) {
+        const endpoints = bus.discoverForContext(contextName);
+        console.log(chalk.green(`✅ ${endpoints.length} Endpoints für "${contextName}" neu generiert.`));
+      } else {
+        const endpoints = bus.discoverAll();
+        console.log(chalk.green(`✅ ${endpoints.length} Endpoints insgesamt neu generiert.`));
+      }
+    } finally {
+      bus.close();
+    }
+  });
+
 // ─── aios patterns ───────────────────────────────────────
 const patternsCmd = program.command("patterns").description("Pattern-Verwaltung");
 
@@ -883,7 +1254,7 @@ patternsCmd
   .option("--category <cat>", "Nach Kategorie filtern")
   .action(async (opts) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const patterns = opts.category
       ? registry.byCategory(opts.category)
@@ -926,7 +1297,7 @@ patternsCmd
   .description("Patterns durchsuchen (Name, Beschreibung, Tags)")
   .action(async (queryParts: string[]) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const results = registry.search(queryParts.join(" "));
 
@@ -950,7 +1321,7 @@ patternsCmd
   .description("Pattern-Details anzeigen")
   .action(async (name: string) => {
     const config = loadConfig();
-    const registry = new PatternRegistry(config.paths.patterns);
+    const registry = buildContextAwareRegistry(config.paths.patterns);
     const mcpManager = await setupMcp(config, registry);
     const p = registry.get(name);
     if (!p) { console.error(chalk.red("Nicht gefunden.")); await mcpManager?.shutdown(); process.exit(1); }
@@ -1135,6 +1506,14 @@ program
       patchClaudeMd: true,
     });
 
+    // ─── Register in federation registry (best-effort) ──────
+    try {
+      const { registerContext } = await import("./context/registry.js");
+      registerContext(context, cwd);
+    } catch {
+      // Registry registration is best-effort
+    }
+
     // ─── Summary ────────────────────────────────────────────
     console.error();
     console.error(chalk.green("  ✓ Project initialized!"));
@@ -1225,6 +1604,16 @@ program
   .action(async () => {
     const { runConfigure } = await import("./commands/configure.js");
     await runConfigure();
+  });
+
+// ─── aios update ────────────────────────────────────────
+program
+  .command("update")
+  .description("AIOS auf die neueste Version aktualisieren")
+  .option("--check", "Nur prüfen ob Updates verfügbar sind")
+  .action(async (opts) => {
+    const { runUpdate } = await import("./commands/update.js");
+    await runUpdate(opts);
   });
 
 // ─── aios mcp-server ─────────────────────────────────────

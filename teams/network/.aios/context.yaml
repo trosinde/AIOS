@@ -1,0 +1,37 @@
+schema_version: "1.0"
+name: network
+description: "Network-Team – Infrastruktur, Firewalls, Segmentierung, Monitoring"
+type: team
+capabilities:
+  - id: network_design
+    description: "Netzwerk-Architekturen entwerfen und bewerten"
+    input_types:
+      - requirements
+      - topology
+    output_type: design
+  - id: network_monitoring
+    description: "Monitoring und Alerting konfigurieren"
+    input_types:
+      - topology
+      - config
+    output_type: config
+exports:
+  - type: network_topology
+    scope: shared
+    description: "Netzwerk-Topologien und Konfigurationen"
+accepts:
+  - type: security_findings
+    description: "Sicherheitsbefunde zur Umsetzung"
+config:
+  default_provider: claude
+  patterns_dir: ./patterns
+  personas_dir: ./personas
+  knowledge_dir: ./knowledge
+  team:
+    personas:
+      - network_security_expert
+    default_persona: network_security_expert
+links:
+  - name: securitas
+    path: /home/user/AIOS/teams/securitas
+    relationship: consults

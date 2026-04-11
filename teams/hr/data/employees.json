@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Max Mustermann",
+    "personnel_number": "P-1042",
+    "department": "Engineering",
+    "role": "Senior Developer",
+    "email": "max.mustermann@firma.de",
+    "location": "Berlin",
+    "start_date": "2020-03-15"
+  },
+  {
+    "name": "Lisa Schmidt",
+    "personnel_number": "P-1078",
+    "department": "HR",
+    "role": "HR Manager",
+    "email": "lisa.schmidt@firma.de",
+    "location": "Berlin",
+    "start_date": "2019-01-10"
+  },
+  {
+    "name": "Tom Müller",
+    "personnel_number": "P-1099",
+    "department": "Engineering",
+    "role": "DevOps Engineer",
+    "email": "tom.mueller@firma.de",
+    "location": "München",
+    "start_date": "2021-06-01"
+  },
+  {
+    "name": "Anna Weber",
+    "personnel_number": "P-1105",
+    "department": "Security",
+    "role": "Security Analyst",
+    "email": "anna.weber@firma.de",
+    "location": "Berlin",
+    "start_date": "2022-02-14"
+  },
+  {
+    "name": "Stefan Koch",
+    "personnel_number": "P-1112",
+    "department": "Network",
+    "role": "Network Administrator",
+    "email": "stefan.koch@firma.de",
+    "location": "München",
+    "start_date": "2021-09-01"
+  }
+]

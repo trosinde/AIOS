@@ -1,0 +1,41 @@
+schema_version: "1.0"
+name: securitas
+description: "Security-Team – Audits, Penetration Testing, Threat Modeling, Compliance"
+type: team
+capabilities:
+  - id: security_audit
+    description: "Sicherheitsaudits und Schwachstellenanalysen"
+    input_types:
+      - code
+      - architecture
+      - config
+    output_type: report
+  - id: threat_modeling
+    description: "STRIDE/DREAD Threat Models erstellen"
+    input_types:
+      - architecture
+      - requirements
+    output_type: threat_model
+exports:
+  - type: security_findings
+    scope: shared
+    description: "Sicherheitsbefunde und Empfehlungen"
+accepts:
+  - type: code_review_request
+    description: "Code oder Architektur zur Sicherheitsprüfung"
+  - type: network_topology
+    description: "Netzwerk-Topologien zur Analyse"
+config:
+  default_provider: claude
+  patterns_dir: ./patterns
+  personas_dir: ./personas
+  knowledge_dir: ./knowledge
+  team:
+    personas:
+      - security_expert
+      - penetration_tester
+    default_persona: security_expert
+links:
+  - name: network
+    path: /home/user/AIOS/teams/network
+    relationship: consults
