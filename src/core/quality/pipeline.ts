@@ -16,14 +16,7 @@ import type {
   QualityResult,
   AuditEntry,
 } from "../../types.js";
-import {
-  SelfCheckPolicy,
-  ConsistencyCheckPolicy,
-  PeerReviewPolicy,
-  ComplianceCheckPolicy,
-  TraceabilityCheckPolicy,
-  QualityGatePolicy,
-} from "./policies.js";
+import { SelfCheckPolicy, QualityGatePolicy } from "./policies.js";
 
 /**
  * QualityPipeline — runs quality policies against pattern output.
@@ -37,58 +30,25 @@ export class QualityPipeline {
   constructor(
     config: QualityConfig,
     provider: LLMProvider,
-    personaRegistry?: PersonaRegistry,
-    aiosConfig?: AiosConfig,
+    _personaRegistry?: PersonaRegistry,
+    _aiosConfig?: AiosConfig,
   ) {
     this.config = config;
     this.level = config.level;
 
-    const getPersonaPrompt = (id: string) => personaRegistry?.get(id)?.system_prompt;
-
-    // Build policy chain based on level
-    const selfCheckCfg = config.policies.self_check;
-    if (selfCheckCfg?.enabled !== false) {
-      // Self-check can use a different (cheaper) provider
-      const selfCheckProvider = selfCheckCfg?.provider && aiosConfig?.providers[selfCheckCfg.provider]
-        ? this.createProviderFromConfig(selfCheckCfg.provider, aiosConfig)
-        : provider;
-      this.policies.push(new SelfCheckPolicy(selfCheckProvider ?? provider));
+    // MVP: nur SelfCheck + QualityGate. Die ursprünglich geplanten
+    // Policies (Consistency, PeerReview, Compliance, Traceability) kommen
+    // in einem Follow-up-PR sobald ein konkreter Compliance-Kontext (CRA,
+    // IEC 62443) den Bedarf nachweist.
+    if (config.policies.self_check?.enabled !== false) {
+      this.policies.push(new SelfCheckPolicy(provider));
     }
 
-    if (this.levelIncludes("standard")) {
-      if (config.policies.consistency_check?.enabled !== false) {
-        this.policies.push(new ConsistencyCheckPolicy(provider));
-      }
-      if (config.policies.peer_review?.enabled !== false) {
-        const peerProvider = config.policies.peer_review?.provider && aiosConfig?.providers[config.policies.peer_review.provider]
-          ? this.createProviderFromConfig(config.policies.peer_review.provider, aiosConfig)
-          : provider;
-        this.policies.push(new PeerReviewPolicy(
-          peerProvider ?? provider,
-          getPersonaPrompt,
-          config.policies.peer_review?.review_map,
-        ));
-      }
-    }
-
-    if (this.levelIncludes("regulated")) {
-      if (config.policies.compliance_check?.enabled !== false) {
-        this.policies.push(new ComplianceCheckPolicy(
-          provider,
-          config.policies.compliance_check?.standards,
-        ));
-      }
-      if (config.policies.traceability_check?.enabled !== false) {
-        this.policies.push(new TraceabilityCheckPolicy(
-          config.policies.traceability_check?.enforce_coverage,
-        ));
-      }
-      if (config.policies.quality_gate?.enabled !== false) {
-        this.policies.push(new QualityGatePolicy(
-          config.policies.quality_gate?.block_on,
-          config.policies.quality_gate?.require_sign_off,
-        ));
-      }
+    if (config.policies.quality_gate?.enabled !== false) {
+      this.policies.push(new QualityGatePolicy(
+        config.policies.quality_gate?.block_on,
+        config.policies.quality_gate?.require_sign_off,
+      ));
     }
   }
 
@@ -323,15 +283,6 @@ export class QualityPipeline {
     return 2; // standard & regulated
   }
 
-  private createProviderFromConfig(name: string, config: AiosConfig): LLMProvider | undefined {
-    try {
-      // Dynamic import would be circular, so we just return undefined
-      // and let the caller fall back to the main provider
-      return undefined;
-    } catch {
-      return undefined;
-    }
-  }
 }
 
 function hashString(s: string): string {
