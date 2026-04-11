@@ -1,0 +1,27 @@
+kernel_abi: 1
+name: mermaid
+binary: mmdc
+version_min: "10.0.0"
+version_command: ["--version"]
+capabilities:
+  - file_read
+  - file_write
+
+operations:
+  render:
+    description: "Rendert Mermaid-Quellcode zu einer Bild-Datei (SVG/PNG/PDF)"
+    inputs:
+      source:
+        type: file
+        ext: [mmd, txt]
+        must_exist: true
+    outputs:
+      target:
+        type: file
+        ext: [svg, png, pdf]
+    argv: ["-i", "$source", "-o", "$target", "-t", "dark", "-b", "transparent"]
+
+sandbox:
+  timeout_sec: 60
+  max_output_mb: 50
+  cwd: context_tmp

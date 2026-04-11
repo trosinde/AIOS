@@ -8,6 +8,9 @@ import { PatternRegistry } from "./core/registry.js";
 import { PersonaRegistry } from "./core/personas.js";
 import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
+import { DriverRegistry } from "./core/driver-registry.js";
+import { PolicyEngine } from "./security/policy-engine.js";
+import { AuditLogger } from "./security/audit-logger.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
@@ -80,6 +83,16 @@ function buildQualityPipeline(
   }
 
   return new QualityPipeline(effectiveConfig, provider, personas, config);
+}
+
+/**
+ * Phase 5.2: DriverRegistry aufbauen. Sucht in dieser Reihenfolge:
+ *   1. ~/.aios/kernel/drivers/  (globale User-Overrides)
+ *   2. ./drivers/               (Repo- oder Projekt-lokale Driver)
+ * Scheitert still wenn keine Driver vorhanden — dann gilt Legacy-Pfad.
+ */
+function buildDriverRegistry(): DriverRegistry {
+  return new DriverRegistry({ repoRoot: process.cwd() });
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -270,7 +283,13 @@ program
     const selector = buildProviderSelector(config);
     const stepExecutor = buildStepExecutor(config);
     const qualityPipeline = buildQualityPipeline(config, provider, personas, opts.quality as QualityLevel | undefined);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline);
+    const driverRegistry = buildDriverRegistry();
+    const auditLogger = new AuditLogger();
+    // Phase 5.3: PolicyEngine läuft mit leerem Policy-Set (default-allow).
+    // Compliance-Tags + Driver-Capabilities werden orthogonal trotzdem geprüft.
+    // Strikte Integrity-Policies sind opt-in (eigenes Ticket Phase 5.4).
+    const policyEngine = new PolicyEngine([], auditLogger);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline, undefined, driverRegistry, policyEngine, auditLogger);
 
     if (qualityPipeline) {
       console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
@@ -612,7 +631,13 @@ program
     const selector = buildProviderSelector(config);
     const stepExecutor = buildStepExecutor(config);
     const router = new Router(registry, provider);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
+    const driverRegistry = buildDriverRegistry();
+    const auditLogger = new AuditLogger();
+    // Phase 5.3: PolicyEngine läuft mit leerem Policy-Set (default-allow).
+    // Compliance-Tags + Driver-Capabilities werden orthogonal trotzdem geprüft.
+    // Strikte Integrity-Policies sind opt-in (eigenes Ticket Phase 5.4).
+    const policyEngine = new PolicyEngine([], auditLogger);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger);
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();

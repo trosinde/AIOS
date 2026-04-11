@@ -1,7 +1,8 @@
 import chalk from "chalk";
 import { execFile } from "child_process";
-import { writeFileSync, mkdirSync, unlinkSync, readFileSync } from "fs";
+import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { DriverRegistry } from "./driver-registry.js";
 import type { LLMProvider } from "../agents/provider.js";
 import type { ProviderSelector } from "../agents/provider-selector.js";
 import { createTTSProvider, type TTSProvider } from "../agents/tts-provider.js";
@@ -19,6 +20,11 @@ import type { StepExecutor } from "./executor.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
 import { PromptBuilder } from "../security/prompt-builder.js";
+import type { PolicyEngine, PolicyAction } from "../security/policy-engine.js";
+import type { AuditLogger } from "../security/audit-logger.js";
+import { userInputTaint, derivedTaint, type TaintLabel } from "../security/taint-tracker.js";
+import { tmpdir } from "os";
+import { resolve as resolvePath, isAbsolute } from "path";
 
 /**
  * Strip prototype-pollution sinks from parsed JSON before it crosses
@@ -66,6 +72,10 @@ export class Engine {
   private contextBuilder: ContextBuilder;
   private outputExtractor: OutputExtractor;
   private promptBuilder: PromptBuilder;
+  private driverRegistry?: DriverRegistry;
+  private policyEngine?: PolicyEngine;
+  private auditLogger?: AuditLogger;
+  private stepTaints = new Map<string, TaintLabel>();
 
   constructor(
     registry: PatternRegistry,
@@ -78,6 +88,9 @@ export class Engine {
     stepExecutor?: StepExecutor,
     qualityPipeline?: QualityPipeline,
     knowledgeBus?: KnowledgeBus,
+    driverRegistry?: DriverRegistry,
+    policyEngine?: PolicyEngine,
+    auditLogger?: AuditLogger,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -89,6 +102,9 @@ export class Engine {
     this.stepExecutor = stepExecutor;
     this.qualityPipeline = qualityPipeline;
     this.knowledgeBus = knowledgeBus;
+    this.driverRegistry = driverRegistry;
+    this.policyEngine = policyEngine;
+    this.auditLogger = auditLogger;
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
     this.promptBuilder = new PromptBuilder();
@@ -101,11 +117,19 @@ export class Engine {
     const feedback = new Map<string, string>();
     const start = Date.now();
 
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
     const ctx: ExecutionContext = {
       trace_id: randomUUID(),
       context_id: "default",
       started_at: start,
+      compliance_tags: [],
+      allowed_driver_capabilities: ["file_read", "file_write"],
+      sandbox_roots: {
+        tmp: tmpdir(),
+        output: isAbsolute(outputDir) ? outputDir : resolvePath(outputDir),
+      },
     };
+    this.stepTaints.clear();
 
     plan.plan.steps.forEach((s) => { status.set(s.id, "pending"); retries.set(s.id, 0); });
 
@@ -153,6 +177,24 @@ export class Engine {
       const pattern = this.registry.get(step.pattern);
       if (!pattern) throw new Error(`Pattern "${step.pattern}" nicht gefunden`);
 
+      // Phase 5.3 Schritt A+B: Policy-Check VOR Pattern-Dispatch
+      // Input-Taint = derived(taints aller depends_on) bzw. userInputTaint() für Wurzel-Steps
+      const inputTaint = this.computeInputTaint(step);
+      const policyAction = this.policyActionFor(pattern.meta.type ?? "llm");
+      if (this.policyEngine && policyAction) {
+        const decision = this.policyEngine.check(policyAction, inputTaint, ctx.trace_id, {
+          patternComplianceTags: pattern.meta.compliance_tags,
+          contextComplianceTags: ctx.compliance_tags,
+          patternName: pattern.meta.name,
+        });
+        if (!decision.allowed) {
+          throw new Error(
+            `Policy-Verletzung: ${decision.reason ?? "blockiert"} ` +
+            `(Pattern "${pattern.meta.name}", Action ${policyAction})`,
+          );
+        }
+      }
+
       // Input aus Dependencies + User-Input zusammenbauen
       // MCP-Patterns bekommen rohen Input (JSON), LLM-Patterns den formatierten
       const fb = feedback.get(step.id);
@@ -177,8 +219,11 @@ export class Engine {
         message = await this.executeMcpTool(step, pattern, input, t0);
       } else if (pattern.meta.type === "tool") {
         // ── Tool-Pattern: CLI-Tool ausführen ──
-        console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [TOOL: ${pattern.meta.tool}]`));
-        message = await this.executeTool(step, pattern, input, t0);
+        const label = pattern.meta.driver
+          ? `DRIVER: ${pattern.meta.driver}/${pattern.meta.operation}`
+          : `TOOL: ${pattern.meta.tool}`;
+        console.error(chalk.gray(`  🔧 ${step.id} → ${step.pattern} [${label}]`));
+        message = await this.executeTool(step, pattern, input, t0, ctx);
       } else if (pattern.meta.type === "image_generation") {
         // ── Image-Generation-Pattern: Gemini Nano Banana ──
         console.error(chalk.gray(`  🎨 ${step.id} → ${step.pattern} [IMAGE]`));
@@ -308,6 +353,10 @@ export class Engine {
       }
 
       results.set(step.id, message);
+      // Output-Taint: derived(input-taints) — Engine-Pattern verliert Trust nach LLM
+      const outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
+      this.stepTaints.set(step.id, outTaint);
+      this.auditLogger?.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
@@ -644,6 +693,42 @@ export class Engine {
     return this.buildMessage(step, pattern, lines.join("\n"), t0, "text");
   }
 
+  // ─── Phase 5.3: Taint Propagation + Policy Mapping ─────────
+
+  /**
+   * Berechnet die Eingabe-Taint eines Steps:
+   *  - Wurzel-Step (keine depends_on, oder $USER_INPUT) → userInputTaint
+   *  - Sonst → derivedTaint aus den Output-Taints aller Dependencies
+   */
+  private computeInputTaint(step: ExecutionStep): TaintLabel {
+    const upstreamIds = step.depends_on ?? [];
+    const upstream = upstreamIds
+      .map(id => this.stepTaints.get(id))
+      .filter((t): t is TaintLabel => Boolean(t));
+    if (upstream.length === 0) {
+      return userInputTaint(`step:${step.id}`);
+    }
+    return derivedTaint(upstream, `merge:${step.id}`);
+  }
+
+  /** Map Pattern-Type → PolicyAction für check() */
+  private policyActionFor(type: string): PolicyAction | undefined {
+    switch (type) {
+      case "tool":
+      case "image_generation":
+      case "tts":
+        return "execute_tool_pattern";
+      case "mcp":
+        return "execute_mcp_pattern";
+      case "llm":
+      case "kb":
+      case "rag":
+        return "execute_llm_pattern";
+      default:
+        return undefined;
+    }
+  }
+
   // ─── MCP Tool Execution ──────────────────────────────────────
 
   private async executeMcpTool(
@@ -694,10 +779,21 @@ export class Engine {
     step: ExecutionStep,
     pattern: Pattern,
     input: string,
-    t0: number
+    t0: number,
+    ctx?: ExecutionContext,
   ): Promise<StepMessage> {
+    // Phase 5.2: Driver-Dispatch hat Vorrang vor Legacy tool/tool_args
+    if (pattern.meta.driver) {
+      return this.executeDriverOperation(step, pattern, input, t0, ctx);
+    }
+
     const tool = pattern.meta.tool;
     if (!tool) throw new Error(`Tool-Pattern "${pattern.meta.name}" hat kein tool definiert`);
+
+    console.error(chalk.yellow(
+      `  ⚠ Pattern "${pattern.meta.name}" nutzt legacy tool/tool_args. ` +
+      `Migrate zu driver/operation (Phase 5.2).`
+    ));
 
     // Security: Allowlist prüfen
     const allowed = this.config?.tools?.allowed ?? [];
@@ -783,9 +879,9 @@ export class Engine {
     }
   }
 
-  private execFileAsync(cmd: string, args: string[]): Promise<string> {
+  private execFileAsync(cmd: string, args: string[], timeoutMs = 60_000): Promise<string> {
     return new Promise((resolve, reject) => {
-      execFile(cmd, args, { timeout: 60_000 }, (error, stdout, stderr) => {
+      execFile(cmd, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
         if (error) {
           reject(new Error(`${cmd} fehlgeschlagen: ${stderr || error.message}`));
         } else {
@@ -793,6 +889,178 @@ export class Engine {
         }
       });
     });
+  }
+
+  /**
+   * Phase 5.2: Führt eine Operation eines Tool-Drivers aus.
+   * Der Kernel kennt nur Schema + argv-Template; die konkrete Tool-Semantik
+   * steht in drivers/<name>/driver.yaml (User Space).
+   */
+  private async executeDriverOperation(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number,
+    ctx?: ExecutionContext,
+  ): Promise<StepMessage> {
+    if (!this.driverRegistry) {
+      throw new Error(
+        `Pattern "${pattern.meta.name}" benötigt DriverRegistry, ` +
+        `aber Engine wurde ohne Driver-Registry konstruiert.`,
+      );
+    }
+    const driverName = pattern.meta.driver!;
+    const operationName = pattern.meta.operation;
+    if (!operationName) {
+      throw new Error(
+        `Pattern "${pattern.meta.name}" hat driver=${driverName}, aber kein operation-Feld gesetzt.`,
+      );
+    }
+    const loaded = this.driverRegistry.get(driverName);
+    if (!loaded) {
+      throw new Error(`Driver "${driverName}" nicht gefunden. Driver verfügbar: ${this.driverRegistry.list().map(d => d.def.name).join(", ") || "keine"}`);
+    }
+
+    // Phase 5.3 Schritt C: Driver-Capabilities gegen Context-Allowance prüfen
+    if (this.policyEngine && ctx) {
+      const capDecision = this.policyEngine.checkDriverCapabilities(
+        loaded.def.capabilities,
+        ctx,
+        driverName,
+        ctx.trace_id,
+      );
+      if (!capDecision.allowed) {
+        throw new Error(`Capability-Verletzung: ${capDecision.reason ?? "blockiert"}`);
+      }
+    }
+
+    // Verfügbarkeit + Version prüfen (gecached)
+    this.driverRegistry.assertAvailable(driverName);
+
+    const op = loaded.def.operations[operationName];
+    if (!op) {
+      throw new Error(
+        `Operation "${operationName}" in Driver "${driverName}" nicht definiert. ` +
+        `Verfügbar: ${Object.keys(loaded.def.operations).join(", ")}`,
+      );
+    }
+
+    // Output-Verzeichnis
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    // Input-Binding: Phase-5.2 POC-Konvention
+    //   - Wenn op.inputs genau EIN file-Binding hat, wird der Step-Input
+    //     in eine Temp-Datei geschrieben und an diesen Key gebunden.
+    //   - Für komplexere Bindings (mehrere Inputs, file_list, string)
+    //     folgen eigene Conventions in Phase 5.2d.
+    const timestamp = Date.now();
+    const ext = pattern.meta.input_format ?? "txt";
+    const outExt = pattern.meta.output_format?.[0] ?? "bin";
+    const tmpInput = join(outputDir, `${step.id}-${timestamp}.${ext}`);
+    const outputFile = join(outputDir, `${step.id}-${timestamp}.${outExt}`);
+
+    const inputBindings = op.inputs ?? {};
+    const inputKeys = Object.keys(inputBindings);
+    const singleFileInput = inputKeys.length === 1
+      && inputBindings[inputKeys[0]].type === "file";
+    if (!singleFileInput) {
+      throw new Error(
+        `Phase-5.2-POC: Driver "${driverName}" Operation "${operationName}" ` +
+        `muss genau ein file-Input-Binding haben (hat: ${inputKeys.join(", ") || "keine"}). ` +
+        `Complex-Bindings kommen in Phase 5.2d.`,
+      );
+    }
+    const inputKey = inputKeys[0];
+
+    writeFileSync(tmpInput, input, "utf-8");
+
+    // Output-Binding: erstes Output-Key bekommt outputFile
+    const outputBindings = op.outputs ?? {};
+    const outputKey = Object.keys(outputBindings)[0];
+    if (!outputKey) {
+      throw new Error(
+        `Driver "${driverName}" Operation "${operationName}" hat kein Output-Binding.`,
+      );
+    }
+
+    try {
+      const { argv, outputFiles } = this.driverRegistry.resolveArgv(
+        driverName,
+        operationName,
+        { [inputKey]: tmpInput },
+        { [outputKey]: outputFile },
+      );
+
+      // Phase 5.3 Schritt D: Sandbox-Pfad-Enforcement
+      // Alle resolved Input-/Output-Pfade müssen innerhalb der erlaubten
+      // Sandbox-Roots des Contexts liegen (Default: tmp/output).
+      if (ctx?.sandbox_roots) {
+        const roots = [ctx.sandbox_roots.tmp, ctx.sandbox_roots.output].filter(Boolean);
+        const checkPath = (p: string, label: string) => {
+          const abs = isAbsolute(p) ? p : resolvePath(p);
+          const inside = roots.some(root => abs === root || abs.startsWith(root + "/") || abs.startsWith(root + "\\"));
+          if (!inside) {
+            throw new Error(
+              `Sandbox-Verletzung: ${label}-Pfad "${abs}" liegt außerhalb der Sandbox-Roots [${roots.join(", ")}]`,
+            );
+          }
+        };
+        checkPath(tmpInput, "Input");
+        checkPath(outputFiles[outputKey], "Output");
+      }
+
+      const timeoutMs = (loaded.def.sandbox?.timeout_sec ?? 60) * 1000;
+      await this.execFileAsync(loaded.def.binary, argv, timeoutMs);
+
+      const producedPath = outputFiles[outputKey];
+      const produced = existsSync(producedPath);
+      if (!produced) {
+        throw new Error(
+          `Driver "${driverName}" Operation "${operationName}" hat kein Output ${producedPath} erzeugt`,
+        );
+      }
+
+      // Phase 5.3 Schritt D: max_output_mb-Check nach Execution
+      const maxMb = loaded.def.sandbox?.max_output_mb;
+      if (maxMb !== undefined) {
+        const { statSync } = await import("fs");
+        const sizeMb = statSync(producedPath).size / (1024 * 1024);
+        if (sizeMb > maxMb) {
+          try { unlinkSync(producedPath); } catch { /* ignore */ }
+          throw new Error(
+            `Sandbox-Verletzung: Output ${producedPath} ist ${sizeMb.toFixed(1)}MB, max_output_mb=${maxMb}`,
+          );
+        }
+      }
+
+      const isTextOutput = pattern.meta.output_type === "text";
+      let content: string;
+      let kind: "text" | "file";
+      if (isTextOutput) {
+        try {
+          content = readFileSync(producedPath, "utf-8");
+          kind = "text";
+        } catch {
+          content = `Datei erzeugt: ${producedPath}`;
+          kind = "file";
+        }
+      } else {
+        content = `Datei erzeugt: ${producedPath}`;
+        kind = "file";
+      }
+
+      return this.buildMessage(
+        step,
+        pattern,
+        content,
+        t0,
+        kind,
+        kind === "file" ? producedPath : undefined,
+      );
+    } finally {
+      try { unlinkSync(tmpInput); } catch { /* ignore */ }
+    }
   }
 
   // ─── Image Generation ──────────────────────────────────────────

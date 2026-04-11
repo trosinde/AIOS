@@ -1,12 +1,12 @@
 ---
 kernel_abi: 1
 name: render_diagram
-version: "1.0"
+version: "1.1"
 description: Rendert Mermaid-Code zu SVG/PNG Datei via mermaid-cli (mmdc)
 category: tool
 type: tool
-tool: mmdc
-tool_args: ["-i", "$INPUT", "-o", "$OUTPUT", "-t", "dark", "-b", "transparent"]
+driver: mermaid
+operation: render
 input_type: mermaid_code
 input_format: mmd
 output_type: file
