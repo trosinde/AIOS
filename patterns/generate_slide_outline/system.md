@@ -1,17 +1,15 @@
 ---
+kernel_abi: 1
 name: generate_slide_outline
-display_name: "Slide Outline Generator"
-description: "Erzeugt eine vollständige Folienstruktur aus dem Story Spine: Folientitel (action-oriented), One-Idea-per-Slide, Speaker Notes und Hinweise auf visuelle Unterstützung. Kein Design, nur Struktur."
+description: "Erzeugt eine vollständige Folienstruktur aus dem Story Spine: Folientitel, Speaker Notes, visuelle Hinweise."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: story_spine
 output_type: slide_outline
-
+can_follow: [build_story_spine]
 parallelizable_with: [presentation_critique]
-depends_on: [build_story_spine]
-
 tags: [presentation, slides, outline, structure]
 ---
 

@@ -1,17 +1,15 @@
 ---
+kernel_abi: 1
 name: presentation_critique
-display_name: "Presentation Critic"
-description: "Kritisches Review einer Präsentationsstruktur oder eines Slide Outlines. Findet Story-Lücken, Zielgruppen-Mismatches und Stellen die den Entscheidungsprozess blockieren. Kategorisierte Findings: Story-Killer / Major / Minor."
+description: "Kritisches Review einer Präsentationsstruktur. Findet Story-Lücken, Zielgruppen-Mismatches, kategorisierte Findings."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: slide_outline_or_story_spine
 output_type: critique_findings
-
+can_follow: [build_story_spine]
 parallelizable_with: [generate_slide_outline]
-depends_on: [build_story_spine]
-
 tags: [presentation, review, critique, quality]
 ---
 

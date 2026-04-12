@@ -8,7 +8,7 @@ type: llm
 input_type: image
 output_type: text
 tags: [pdf, ocr, vision]
-can_follow: [pdf/pdf_thumbnails]
+can_follow: []
 ---
 
 # IDENTITY and PURPOSE

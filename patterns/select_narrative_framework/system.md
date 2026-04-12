@@ -1,17 +1,14 @@
 ---
+kernel_abi: 1
 name: select_narrative_framework
-display_name: "Narrative Framework Selector"
-description: "Wählt das optimale Storytelling-Framework basierend auf Audience Profile und Präsentationskontext. Begründet die Wahl und liefert das Framework-Template zum Befüllen."
+description: "Wählt das optimale Storytelling-Framework basierend auf Audience Profile und Präsentationskontext."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: audience_profile
 output_type: framework_selection
-
-parallelizable_with: []
-depends_on: [analyze_audience]
-
+can_follow: [analyze_audience]
 tags: [presentation, storytelling, framework, narrative]
 ---
 

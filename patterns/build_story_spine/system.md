@@ -1,17 +1,14 @@
 ---
+kernel_abi: 1
 name: build_story_spine
-display_name: "Story Spine Builder"
-description: "Baut den narrativen Kern der Präsentation: Roter Faden als Prosa, Kernbotschaft, emotionaler Hook und 'Cost of Inaction'. Kein Folienentwurf — nur das Narrativ."
+description: "Baut den narrativen Kern der Präsentation: Roter Faden als Prosa, Kernbotschaft, emotionaler Hook und 'Cost of Inaction'."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: framework_selection_and_content
 output_type: story_spine
-
-parallelizable_with: []
-depends_on: [select_narrative_framework]
-
+can_follow: [select_narrative_framework]
 tags: [presentation, storytelling, narrative, story]
 ---
 
