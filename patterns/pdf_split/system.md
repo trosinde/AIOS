@@ -1,12 +1,11 @@
 ---
 kernel_abi: 1
 name: pdf_split
-version: "1.0"
+version: "2.0"
 description: "Teilt eine PDF in einzelne Seiten oder Seitenbereiche auf"
 category: pdf
-type: tool
-tool: tsx
-tool_args: ["tools/pdf-tools.ts", "split", "$INPUT", "$OUTPUT"]
+type: internal
+internal_op: pdf_split
 input_type: file_path
 input_format: txt
 output_type: file

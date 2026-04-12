@@ -383,88 +383,26 @@ program
     const selector = buildProviderSelector(config);
     const stepExecutor = buildStepExecutor(config);
 
-    if (pattern.meta.type === "rag") {
-      // RAG-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
-      const ragPlan = {
+    const engineDispatchTypes = ["rag", "mcp", "tool", "internal", "image_generation", "tts", "kb"];
+    if (engineDispatchTypes.includes(pattern.meta.type ?? "")) {
+      const driverRegistry = buildDriverRegistry();
+      const auditLogger = new AuditLogger();
+      const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
+      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+      const directPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
           type: "pipe" as const,
           steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
         },
-        reasoning: "Direct RAG execution",
+        reasoning: `Direct ${pattern.meta.type} execution`,
       };
-      const result = await engine.execute(ragPlan, input);
-      const out = result.results.get("run");
-      if (out) process.stdout.write(out.content);
-    } else if (pattern.meta.type === "mcp") {
-      // MCP-Pattern: Über Engine ausführen
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
-      const mcpPlan = {
-        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
-        plan: {
-          type: "pipe" as const,
-          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
-        },
-        reasoning: "Direct MCP tool execution",
-      };
-      const result = await engine.execute(mcpPlan, input);
-      const out = result.results.get("run");
-      if (out) process.stdout.write(out.content);
-    } else if (pattern.meta.type === "tool") {
-      // Tool-Pattern: Über Engine ausführen (mit Allowlist-Check)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
-      const toolPlan = {
-        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
-        plan: {
-          type: "pipe" as const,
-          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
-        },
-        reasoning: "Direct tool execution",
-      };
-      const result = await engine.execute(toolPlan, input);
+      const result = await engine.execute(directPlan, input);
       const out = result.results.get("run");
       if (out) {
         if (out.contentKind === "file" && out.filePath) {
-          console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
-        }
-        process.stdout.write(out.content);
-      }
-    } else if (pattern.meta.type === "image_generation") {
-      // Image-Generation-Pattern: Über Engine ausführen (speichert Bilder in output/)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
-      const imgPlan = {
-        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
-        plan: {
-          type: "pipe" as const,
-          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
-        },
-        reasoning: "Direct image generation",
-      };
-      const result = await engine.execute(imgPlan, input);
-      const out = result.results.get("run");
-      if (out) {
-        if (out.contentKind === "file" && out.filePath) {
-          console.error(chalk.green(`📁 Datei erzeugt: ${out.filePath}`));
-        }
-        process.stdout.write(out.content);
-      }
-    } else if (pattern.meta.type === "tts") {
-      // TTS-Pattern: Über Engine ausführen (speichert Audio in output/)
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor);
-      const ttsPlan = {
-        analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
-        plan: {
-          type: "pipe" as const,
-          steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
-        },
-        reasoning: "Direct TTS execution",
-      };
-      const result = await engine.execute(ttsPlan, input);
-      const out = result.results.get("run");
-      if (out) {
-        if (out.contentKind === "file" && out.filePath) {
-          console.error(chalk.green(`🔊 Audio erzeugt: ${out.filePath}`));
+          const icon = pattern.meta.type === "tts" ? "🔊 Audio" : "📁 Datei";
+          console.error(chalk.green(`${icon} erzeugt: ${out.filePath}`));
         }
         process.stdout.write(out.content);
       }

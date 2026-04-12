@@ -68,9 +68,10 @@ export interface PatternMeta {
   };
 
   // Tool-Pattern Felder
-  type?: "llm" | "tool" | "mcp" | "rag" | "kb" | "image_generation" | "tts";  // Default: "llm"
+  type?: "llm" | "tool" | "mcp" | "rag" | "kb" | "image_generation" | "tts" | "internal";  // Default: "llm"
   tool?: string;                   // LEGACY: CLI-Befehl (z.B. "mmdc") — wird durch driver/operation ersetzt
   tool_args?: string[];            // LEGACY: Args-Template: ["$INPUT", "-o", "$OUTPUT"]
+  internal_op?: string;            // Operation-Key für type: "internal" (z.B. "pdf_merge")
   driver?: string;                 // Name eines Tool-Drivers aus drivers/<name>/driver.yaml
   operation?: string;              // Operation-Key aus driver.yaml operations-Block
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
@@ -737,6 +738,13 @@ export interface ContextConfig {
     backend?: "sqlite";
     isolation?: "strict" | "relaxed";
     retention_days?: number;
+  };
+
+  // ─── Security (optional) ────────────────────────────
+  security?: {
+    /** "strict" aktiviert DEFAULT_POLICIES (Integrity-Checks für tool/mcp/knowledge/compliance).
+     *  "relaxed" (Default) = leeres Policy-Set, nur Compliance-Tags + Driver-Caps geprüft. */
+    integrity_policies?: "strict" | "relaxed";
   };
 
   // ─── Runtime Permissions (optional) ────────────────

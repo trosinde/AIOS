@@ -1,12 +1,11 @@
 ---
 kernel_abi: 1
 name: pdf_convert
-version: "1.0"
+version: "2.0"
 description: "Konvertiert Bilder (PNG/JPG) zu PDF"
 category: pdf
-type: tool
-tool: tsx
-tool_args: ["tools/pdf-tools.ts", "img-to-pdf", "$INPUT", "$OUTPUT"]
+type: internal
+internal_op: pdf_img_to_pdf
 input_type: file_list
 input_format: txt
 output_type: file

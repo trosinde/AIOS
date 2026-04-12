@@ -329,8 +329,18 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] **5.2 Tool Driver Registry (POC)**: `DriverDefinition` ABI-Types in `src/types.ts`, `src/core/driver-registry.ts` (4-Ebenen-Lookup, kernel_abi-Hard-Fail, Lazy-Version-Check, argv-Schema-Validierung, Shell-Metachar-Block, Path-Traversal-Guard), erster Driver `drivers/mermaid/driver.yaml`, Engine-Dispatch `executeDriverOperation`, `render_diagram` migriert, Legacy-Deprecation-Warning
 - [x] **5.3 Compliance & Sandbox Layer**: `PolicyEngine` an Engine angehängt (Taint-Propagation `userInputTaint→derivedTaint` pro Step, Audit-Trail), `compliance_tags` + `trust_boundary` in PatternMeta (Pattern↔Context Tag-Matching), `checkDriverCapabilities` (Default-Deny `network`/`spawn`), Sandbox-Pfad-Root-Enforcement + `max_output_mb`-Cap, CLI default-allow (strict opt-in Phase 5.4)
 
+### Phase 5.4 – Strict Policies Opt-in + Internal Pattern Type ✅
+- [x] `security.integrity_policies: "strict" | "relaxed"` in ContextConfig — Context-Level Flag für DEFAULT_POLICIES
+- [x] `buildSecurityLayer()` in CLI liest aktiven Context und baut PolicyEngine kontextabhängig auf
+- [x] `contextConfig` an Engine durchgereicht für context_id + compliance_tags in ExecutionContext
+- [x] Neuer Pattern-Typ `type: "internal"` + `internal_op` — Kernel dispatcht zu internen TypeScript-Funktionen statt Subprozess
+- [x] `src/core/pdf-operations.ts`: 4 PDF-Operationen (merge, split, extract-text, img-to-pdf) als interne Module
+- [x] Sandbox-Root-Enforcement via `setAllowedRoots()` für interne Operationen
+- [x] 4 Patterns migriert (pdf_merge, pdf_split, pdf_extract_text, pdf_convert) von `type: tool`/`tool: tsx` zu `type: internal`
+- [x] `aios run` Direct-Run-Pfad konsolidiert: alle nicht-LLM-Typen nutzen vollständige Engine mit PolicyEngine + DriverRegistry
+- [x] Tests: 9 PDF-Ops-Tests, 7 Strict-Policy-Tests, 3 Engine-Internal-Tests (834 gesamt)
+
 ### Noch offen (nach Phase 5)
-- Phase 5.4: Strikte Integrity-Policies als opt-in (Config-Flag per Context), Migration `tsx tools/pdf-tools.ts`-Patterns zu internen Modulen
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)
 - Phase 7: Stable Kernel ABI v1.0 Freeze
 

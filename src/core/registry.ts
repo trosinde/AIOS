@@ -67,6 +67,7 @@ export class PatternRegistry {
       tool_args: data.tool_args,
       driver: data.driver,
       operation: data.operation,
+      internal_op: data.internal_op,
       compliance_tags: data.compliance_tags,
       trust_boundary: data.trust_boundary,
       input_format: data.input_format,
@@ -196,7 +197,7 @@ export class PatternRegistry {
     for (const p of this.patterns.values()) {
       if (p.meta.internal) continue;
 
-      const typeBadge = p.meta.type === "mcp" ? "MCP" : p.meta.type === "tool" ? "TOOL" : "LLM";
+      const typeBadge = p.meta.type === "mcp" ? "MCP" : p.meta.type === "tool" ? "TOOL" : p.meta.type === "internal" ? "INTERNAL" : "LLM";
       const available = p.meta.type === "tool" && p.meta.tool
         ? (this.isToolAvailable(p.meta.tool) ? "" : " [NICHT VERFÜGBAR]")
         : "";
