@@ -323,8 +323,13 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] Performance: 10 Vitest-Benchmarks (`src/core/knowledge-bus.bench.ts`) mit Failure-Thresholds, Scale-Tests (100k Items) in `scripts/perf/knowledge-bus-scale.ts`, 8-Szenarien-Suite in `scripts/perf/kb-perf-scenarios.ts` (recall@k, search_filter, concurrent, RSS-Sampling, sequential vs batched, leak detection), Baseline-Vergleich via `scripts/perf/compare-baseline.ts`
 - [x] `docs/KNOWLEDGE_BUS.md` als zentrale Doku
 
-### Noch offen (nach Phase 4b)
-- Phase 5: Migration bestehender Agents + Tool-Driver-Registry + Compliance-Layer
+### Phase 5 – Agent Migration, Tool-Driver-Registry, Compliance-Layer ✅
+- [x] **5.1 Persona Trait Migration**: alle 15 Personas um Base Trait Protocol ergänzt (`scripts/migrate-persona-traits.ts`), CI-Gate-Test `src/core/personas.traits.test.ts`
+- [x] **5.2 Tool Driver Registry (POC)**: `DriverDefinition` ABI-Types in `src/types.ts`, `src/core/driver-registry.ts` (4-Ebenen-Lookup, kernel_abi-Hard-Fail, Lazy-Version-Check, argv-Schema-Validierung, Shell-Metachar-Block, Path-Traversal-Guard), erster Driver `drivers/mermaid/driver.yaml`, Engine-Dispatch `executeDriverOperation`, `render_diagram` migriert, Legacy-Deprecation-Warning
+- [x] **5.3 Compliance & Sandbox Layer**: `PolicyEngine` an Engine angehängt (Taint-Propagation `userInputTaint→derivedTaint` pro Step, Audit-Trail), `compliance_tags` + `trust_boundary` in PatternMeta (Pattern↔Context Tag-Matching), `checkDriverCapabilities` (Default-Deny `network`/`spawn`), Sandbox-Pfad-Root-Enforcement + `max_output_mb`-Cap, CLI default-allow (strict opt-in Phase 5.4)
+
+### Noch offen (nach Phase 5)
+- Phase 5.4: Strikte Integrity-Policies als opt-in (Config-Flag per Context), Migration `tsx tools/pdf-tools.ts`-Patterns zu internen Modulen
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)
 - Phase 7: Stable Kernel ABI v1.0 Freeze
 
