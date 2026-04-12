@@ -4,6 +4,17 @@ export interface ExecutionContext {
   trace_id: string;      // UUID v4, vom Kernel vergeben
   context_id: string;    // Aktiver User-Space-Kontext
   started_at: number;    // Unix timestamp ms
+
+  // Phase 5.3 Compliance + Sandbox – additive Felder, kernel-stable
+  /** Compliance-Tags, die der aktive Context bedient (z.B. ["cra", "iec62443"]) */
+  compliance_tags?: string[];
+  /** Driver-Capabilities die in diesem Context erlaubt sind (Default: file_read, file_write) */
+  allowed_driver_capabilities?: ("file_read" | "file_write" | "network" | "spawn")[];
+  /** Pfad-Roots für Sandbox-Enforcement bei Driver-Calls */
+  sandbox_roots?: {
+    tmp: string;
+    output: string;
+  };
 }
 
 // ─── Selection Strategy ─────────────────────────────────
@@ -40,6 +51,12 @@ export interface PatternMeta {
   internal?: boolean;
   kernel_abi?: number;
 
+  // Phase 5.3: Compliance + Trust-Boundary
+  /** Compliance-Tags die das Pattern erfordert (z.B. ["cra"]) — Engine prüft gegen Context */
+  compliance_tags?: string[];
+  /** Trust-Boundary: input = nimmt User-Input, internal = nur intern, output = liefert externes Artefakt */
+  trust_boundary?: "input" | "internal" | "output";
+
   /**
    * Optionale Extraktion-Konfiguration für strukturierte Outputs.
    * Definiert Regex-Patterns um Artefakte aus dem LLM-Output zu extrahieren.
@@ -52,8 +69,10 @@ export interface PatternMeta {
 
   // Tool-Pattern Felder
   type?: "llm" | "tool" | "mcp" | "rag" | "kb" | "image_generation" | "tts";  // Default: "llm"
-  tool?: string;                   // CLI-Befehl (z.B. "mmdc")
-  tool_args?: string[];            // Args-Template: ["$INPUT", "-o", "$OUTPUT"]
+  tool?: string;                   // LEGACY: CLI-Befehl (z.B. "mmdc") — wird durch driver/operation ersetzt
+  tool_args?: string[];            // LEGACY: Args-Template: ["$INPUT", "-o", "$OUTPUT"]
+  driver?: string;                 // Name eines Tool-Drivers aus drivers/<name>/driver.yaml
+  operation?: string;              // Operation-Key aus driver.yaml operations-Block
   input_format?: string;           // Erwartetes Input-Format (z.B. "mermaid")
   output_format?: string[];        // Mögliche Output-Formate (z.B. ["svg", "png"])
 
@@ -798,4 +817,64 @@ export interface AiosConfig {
   rag?: import("./rag/types.js").RagConfig;
   escalation?: EscalationConfig;
   quality?: QualityConfig;
+}
+
+// ─── Tool Driver Registry (kernel-stable ABI) ──────────────────────
+
+/**
+ * Grobe Capability-Klassen. Feingranulare Policy (welche Pfade, welche
+ * Hosts) wird vom Context geliefert, nicht vom Driver selbst.
+ */
+export type DriverCapability = "file_read" | "file_write" | "network" | "spawn";
+
+/**
+ * Typ eines einzelnen Input- oder Output-Bindings einer Driver-Operation.
+ * Kernel erzwingt diese Validierung; Driver deklariert nur.
+ */
+export interface DriverBinding {
+  type: "file" | "file_list" | "directory" | "string" | "number";
+  ext?: string | string[];          // Nur für file/file_list: erlaubte Extensions (ohne Punkt)
+  must_exist?: boolean;             // Nur file/file_list: Datei muss existieren (Default: true für Inputs, false für Outputs)
+  writable?: boolean;               // Nur directory: parent muss beschreibbar sein
+  min?: number;                     // Nur file_list: Mindestanzahl
+  max?: number;                     // Nur file_list: Höchstanzahl
+  default?: string | number;        // Fallback wenn Pattern kein Binding liefert
+}
+
+export interface DriverOperation {
+  description?: string;
+  inputs?: Record<string, DriverBinding>;
+  outputs?: Record<string, DriverBinding>;
+  /**
+   * Argv-Template. Tokens `$name` werden gegen Inputs/Outputs aufgelöst.
+   * `$name` bei file_list expandiert zu mehreren argv-Elementen.
+   * Literale Tokens werden 1:1 durchgereicht. Keine Shell-Interpolation.
+   */
+  argv: string[];
+}
+
+export interface DriverSandbox {
+  timeout_sec?: number;             // Default: 60
+  max_output_mb?: number;           // Default: 100
+  cwd?: "context_tmp" | "context_output" | "driver_dir";  // Default: context_tmp
+}
+
+export interface DriverDefinition {
+  kernel_abi: number;
+  name: string;
+  binary: string;                   // Name des externen CLI-Tools (z.B. "mmdc")
+  version_min?: string;             // SemVer Min-Version, Hard-Fail bei Load wenn unterschritten
+  version_command?: string[];       // Default: ["--version"]; Output wird nach SemVer gescannt
+  capabilities: DriverCapability[];
+  operations: Record<string, DriverOperation>;
+  sandbox?: DriverSandbox;
+}
+
+/**
+ * Geladener Driver inkl. Source-Info und aufgelöster Binary-Version.
+ */
+export interface LoadedDriver {
+  def: DriverDefinition;
+  sourcePath: string;               // Absolute Pfad zur driver.yaml
+  detectedVersion?: string;         // Vom version_command geparst
 }

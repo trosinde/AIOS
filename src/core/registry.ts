@@ -65,6 +65,10 @@ export class PatternRegistry {
       type: data.type ?? "llm",
       tool: data.tool,
       tool_args: data.tool_args,
+      driver: data.driver,
+      operation: data.operation,
+      compliance_tags: data.compliance_tags,
+      trust_boundary: data.trust_boundary,
       input_format: data.input_format,
       output_format: data.output_format,
       requires: data.requires,
@@ -214,7 +218,8 @@ export class PatternRegistry {
           }
         }
       }
-      if (p.meta.tool) lines.push(`   CLI-Tool: ${p.meta.tool}`);
+      if (p.meta.driver) lines.push(`   Driver: ${p.meta.driver}/${p.meta.operation ?? "?"}`);
+      else if (p.meta.tool) lines.push(`   CLI-Tool: ${p.meta.tool}`);
       if (p.meta.persona) lines.push(`   Persona: ${p.meta.persona}`);
       if (p.meta.parallelizable_with?.length)
         lines.push(`   Parallel mit: ${p.meta.parallelizable_with.join(", ")}`);

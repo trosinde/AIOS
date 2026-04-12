@@ -152,12 +152,11 @@ describe("PatternRegistry", () => {
 
   // ─── Tool-Pattern Tests ────────────────────────────────
 
-  it("parst type: tool korrekt", () => {
+  it("parst type: tool mit driver/operation korrekt", () => {
     const p = registry.get("render_diagram")!;
     expect(p.meta.type).toBe("tool");
-    expect(p.meta.tool).toBe("mmdc");
-    expect(p.meta.tool_args).toBeDefined();
-    expect(p.meta.tool_args).toContain("$INPUT");
+    expect(p.meta.driver).toBe("mermaid");
+    expect(p.meta.operation).toBe("render");
   });
 
   it("parst type: llm als Default", () => {
@@ -196,7 +195,7 @@ describe("PatternRegistry", () => {
     const catalog = registry.buildCatalog();
     expect(catalog).toContain("Typ: TOOL");
     expect(catalog).toContain("Typ: LLM");
-    expect(catalog).toContain("CLI-Tool: mmdc");
+    expect(catalog).toContain("Driver: mermaid/render");
   });
 
   it("categories() enthält tool-Kategorie", () => {
