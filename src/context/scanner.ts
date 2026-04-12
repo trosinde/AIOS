@@ -48,10 +48,15 @@ export function scanContexts(searchPaths: string[], maxDepth = 3): ScanResult {
     findContexts(absPath, 0, maxDepth, foundPaths);
   }
 
-  // Register new / update existing
+  // Register new / update existing — deduplicate by name (first path wins)
+  const registeredNames = new Set<string>();
   for (const contextPath of foundPaths) {
     try {
       const manifest = readManifest(contextPath);
+
+      if (registeredNames.has(manifest.name)) continue;
+      registeredNames.add(manifest.name);
+
       registerContext(manifest, contextPath);
 
       // Re-read the entry to get the full RegistryEntry
@@ -87,14 +92,17 @@ export function scanContexts(searchPaths: string[], maxDepth = 3): ScanResult {
     writeRegistry(updatedRegistry);
   }
 
-  // Validate links
+  // Validate links — resolve by name in registry, fall back to path check
   const finalRegistry = readRegistry();
+  const registryNames = new Set(finalRegistry.contexts.map((c) => c.name));
   for (const entry of finalRegistry.contexts) {
     if (!entry.links?.length) continue;
     try {
       const manifest = readManifest(entry.path);
       for (const link of manifest.links) {
-        if (!hasContext(link.path)) {
+        const resolvedByName = registryNames.has(link.name);
+        const resolvedByPath = hasContext(resolve(entry.path, link.path));
+        if (!resolvedByName && !resolvedByPath) {
           result.brokenLinks.push({
             context: entry.name,
             linkName: link.name,

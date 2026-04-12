@@ -33,5 +33,5 @@ config:
     default_persona: network_security_expert
 links:
   - name: securitas
-    path: /home/user/AIOS/teams/securitas
+    path: ../securitas
     relationship: consults
