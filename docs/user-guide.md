@@ -2,7 +2,7 @@
 
 # AIOS User Guide
 
-Throughout this guide, `aios` is shorthand for `npx tsx src/cli.ts`.
+> **Voraussetzung:** AIOS ist installiert und konfiguriert. Falls nicht: [Getting Started](getting-started.md).
 
 ---
 
