@@ -72,11 +72,16 @@ jobs:
           fi
           EXISTING=$(gh pr list --base main --head development --state open --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
-            echo "PR #$EXISTING already exists, skipping."
+            echo "PR #$EXISTING already exists."
+            PR_NUM="$EXISTING"
           else
-            gh pr create \
+            PR_NUM=$(gh pr create \
               --base main \
               --head development \
               --title "Promote development → main" \
-              --body "All CI checks passed on development ($AHEAD commit(s) ahead of main). Ready for review and merge to main."
+              --body "All CI checks passed on development ($AHEAD commit(s) ahead of main)." \
+              | grep -oP '#\K[0-9]+' || true)
+          fi
+          if [ -n "$PR_NUM" ]; then
+            gh pr merge "$PR_NUM" --merge --admin
           fi
