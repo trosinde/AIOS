@@ -241,6 +241,7 @@ aios context show                        # Show active context
 aios knowledge publish --type <type>     # Publish knowledge item (stdin)
 aios knowledge query [--type] [--tags]   # Query knowledge bus
 aios knowledge search <query>            # Full-text search
+aios knowledge migrate                   # Legacy SQLite → LanceDB migration
 aios service init [path]                 # Bootstrap service interface für Kontext
 aios service list                        # Alle Service-Endpoints auflisten
 aios service show <ctx>.<endpoint>       # Endpoint-Details + Schema anzeigen

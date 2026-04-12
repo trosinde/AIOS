@@ -9,7 +9,7 @@ import { PersonaRegistry } from "./core/personas.js";
 import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
 import { DriverRegistry } from "./core/driver-registry.js";
-import { PolicyEngine } from "./security/policy-engine.js";
+import { PolicyEngine, DEFAULT_POLICIES } from "./security/policy-engine.js";
 import { AuditLogger } from "./security/audit-logger.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
@@ -93,6 +93,20 @@ function buildQualityPipeline(
  */
 function buildDriverRegistry(): DriverRegistry {
   return new DriverRegistry({ repoRoot: process.cwd() });
+}
+
+/**
+ * Phase 5.4: PolicyEngine + ContextConfig kontextabhängig aufbauen.
+ * Liest security.integrity_policies aus dem aktiven Context:
+ *   "strict"  → DEFAULT_POLICIES (Integrity-Checks für tool/mcp/knowledge)
+ *   "relaxed" → leeres Policy-Set (Default, CLI-kompatibel)
+ */
+function buildSecurityLayer(auditLogger: AuditLogger): { policyEngine: PolicyEngine; contextConfig: import("./types.js").ContextConfig } {
+  const cm = new ContextManager();
+  const ctx = cm.resolveActive();
+  const mode = ctx.config.security?.integrity_policies ?? "relaxed";
+  const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
+  return { policyEngine: new PolicyEngine(policies, auditLogger), contextConfig: ctx.config };
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -285,11 +299,8 @@ program
     const qualityPipeline = buildQualityPipeline(config, provider, personas, opts.quality as QualityLevel | undefined);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    // Phase 5.3: PolicyEngine läuft mit leerem Policy-Set (default-allow).
-    // Compliance-Tags + Driver-Capabilities werden orthogonal trotzdem geprüft.
-    // Strikte Integrity-Policies sind opt-in (eigenes Ticket Phase 5.4).
-    const policyEngine = new PolicyEngine([], auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline, undefined, driverRegistry, policyEngine, auditLogger);
+    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
 
     if (qualityPipeline) {
       console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
@@ -633,11 +644,8 @@ program
     const router = new Router(registry, provider);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    // Phase 5.3: PolicyEngine läuft mit leerem Policy-Set (default-allow).
-    // Compliance-Tags + Driver-Capabilities werden orthogonal trotzdem geprüft.
-    // Strikte Integrity-Policies sind opt-in (eigenes Ticket Phase 5.4).
-    const policyEngine = new PolicyEngine([], auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger);
+    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();
@@ -1323,6 +1331,16 @@ knowledgeCmd
       }
     }
     await bus.close();
+  });
+
+knowledgeCmd
+  .command("migrate")
+  .description("Legacy-SQLite-Daten (bus.db) nach LanceDB migrieren")
+  .option("--context <id>", "Context-ID für importierte Einträge", "default")
+  .option("--dry-run", "Nur zählen, nichts schreiben")
+  .action(async (opts) => {
+    const { runKnowledgeMigrate } = await import("./commands/knowledge-migrate.js");
+    await runKnowledgeMigrate({ context: opts.context, dryRun: opts.dryRun });
   });
 
 // ─── aios service ────────────────────────────────────────
