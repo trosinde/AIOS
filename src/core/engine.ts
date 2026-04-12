@@ -13,7 +13,7 @@ import type { QualityPipeline } from "./quality/pipeline.js";
 import type { KnowledgeBus } from "./knowledge-bus.js";
 import { loadWingConfig, resolveItemWing } from "./wing-resolver.js";
 import { encodeMessages as encodeKcnMessages } from "./kcn.js";
-import type { AiosConfig, ExecutionContext, ExecutionPlan, ExecutionStep, KernelMessage, KnowledgeType, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
+import type { AiosConfig, ContextConfig, ExecutionContext, ExecutionPlan, ExecutionStep, KernelMessage, KnowledgeType, Pattern, SelectionStrategy, StepMessage, StepStatus, WorkflowResult } from "../types.js";
 import { randomUUID } from "crypto";
 import type { PersonaRegistry } from "./personas.js";
 import type { StepExecutor } from "./executor.js";
@@ -23,6 +23,7 @@ import { PromptBuilder } from "../security/prompt-builder.js";
 import type { PolicyEngine, PolicyAction } from "../security/policy-engine.js";
 import type { AuditLogger } from "../security/audit-logger.js";
 import { userInputTaint, derivedTaint, type TaintLabel } from "../security/taint-tracker.js";
+import { INTERNAL_OPS } from "./pdf-operations.js";
 import { tmpdir } from "os";
 import { resolve as resolvePath, isAbsolute } from "path";
 
@@ -75,6 +76,7 @@ export class Engine {
   private driverRegistry?: DriverRegistry;
   private policyEngine?: PolicyEngine;
   private auditLogger?: AuditLogger;
+  private contextConfig?: ContextConfig;
   private stepTaints = new Map<string, TaintLabel>();
 
   constructor(
@@ -91,6 +93,7 @@ export class Engine {
     driverRegistry?: DriverRegistry,
     policyEngine?: PolicyEngine,
     auditLogger?: AuditLogger,
+    contextConfig?: ContextConfig,
   ) {
     this.registry = registry;
     this.provider = provider;
@@ -105,6 +108,7 @@ export class Engine {
     this.driverRegistry = driverRegistry;
     this.policyEngine = policyEngine;
     this.auditLogger = auditLogger;
+    this.contextConfig = contextConfig;
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
     this.promptBuilder = new PromptBuilder();
@@ -118,16 +122,18 @@ export class Engine {
     const start = Date.now();
 
     const outputDir = this.config?.tools?.output_dir ?? "./output";
+    const cc = this.contextConfig;
+    const sandboxRoots = {
+      tmp: tmpdir(),
+      output: isAbsolute(outputDir) ? outputDir : resolvePath(outputDir),
+    };
     const ctx: ExecutionContext = {
       trace_id: randomUUID(),
-      context_id: "default",
+      context_id: cc?.name ?? "default",
       started_at: start,
-      compliance_tags: [],
+      compliance_tags: cc?.compliance?.standards?.map(s => s.id) ?? [],
       allowed_driver_capabilities: ["file_read", "file_write"],
-      sandbox_roots: {
-        tmp: tmpdir(),
-        output: isAbsolute(outputDir) ? outputDir : resolvePath(outputDir),
-      },
+      sandbox_roots: sandboxRoots,
     };
     this.stepTaints.clear();
 
@@ -198,7 +204,8 @@ export class Engine {
       // Input aus Dependencies + User-Input zusammenbauen
       // MCP-Patterns bekommen rohen Input (JSON), LLM-Patterns den formatierten
       const fb = feedback.get(step.id);
-      const input = pattern.meta.type === "mcp"
+      const needsRawInput = pattern.meta.type === "mcp" || pattern.meta.type === "internal" || pattern.meta.type === "tool";
+      const input = needsRawInput
         ? this.contextBuilder.buildRaw(step, userInput, results) +
           (fb ? "\n\n## ⚠️ FEEDBACK AUS VORHERIGEM VERSUCH\n\n" + fb : "")
         : this.contextBuilder.build(step, userInput, results, fb);
@@ -217,6 +224,10 @@ export class Engine {
         // ── MCP-Pattern: MCP-Server Tool aufrufen ──
         console.error(chalk.gray(`  🔌 ${step.id} → ${step.pattern} [MCP: ${pattern.meta.mcp_server}/${pattern.meta.mcp_tool}]`));
         message = await this.executeMcpTool(step, pattern, input, t0);
+      } else if (pattern.meta.type === "internal") {
+        // ── Internal-Pattern: direkt aufrufen, kein Subprocess ──
+        console.error(chalk.gray(`  📦 ${step.id} → ${step.pattern} [INTERNAL: ${pattern.meta.internal_op}]`));
+        message = await this.executeInternal(step, pattern, input, t0, ctx);
       } else if (pattern.meta.type === "tool") {
         // ── Tool-Pattern: CLI-Tool ausführen ──
         const label = pattern.meta.driver
@@ -715,6 +726,7 @@ export class Engine {
   private policyActionFor(type: string): PolicyAction | undefined {
     switch (type) {
       case "tool":
+      case "internal":
       case "image_generation":
       case "tts":
         return "execute_tool_pattern";
@@ -771,6 +783,57 @@ export class Engine {
       filePaths[0],
       filePaths.length > 0 ? filePaths : undefined,
     );
+  }
+
+  // ─── Internal Module Execution ────────────────────────────
+
+  private async executeInternal(
+    step: ExecutionStep,
+    pattern: Pattern,
+    input: string,
+    t0: number,
+    ctx?: ExecutionContext,
+  ): Promise<StepMessage> {
+    const op = pattern.meta.internal_op;
+    if (!op) throw new Error(`Internal-Pattern "${pattern.meta.name}" hat kein internal_op definiert`);
+
+    const fn = INTERNAL_OPS[op];
+    if (!fn) throw new Error(`Unbekannte interne Operation: "${op}". Verfügbar: ${Object.keys(INTERNAL_OPS).join(", ")}`);
+
+    const outputDir = this.config?.tools?.output_dir ?? "./output";
+    mkdirSync(outputDir, { recursive: true });
+
+    const allowedRoots = ctx?.sandbox_roots
+      ? [ctx.sandbox_roots.tmp, ctx.sandbox_roots.output]
+      : undefined;
+
+    const timestamp = Date.now();
+    const ext = pattern.meta.input_format ?? "txt";
+    const outExt = pattern.meta.output_format?.[0] ?? "txt";
+    const tmpInput = join(outputDir, `${step.id}-${timestamp}.${ext}`);
+    const outputFile = join(outputDir, `${step.id}-${timestamp}.${outExt}`);
+
+    writeFileSync(tmpInput, input, "utf-8");
+
+    try {
+      // H2+H3 fix: Sandbox-Roots an interne Ops weitergeben
+      const { setAllowedRoots } = await import("./pdf-operations.js");
+      setAllowedRoots(allowedRoots);
+      const result = await fn(tmpInput, outputFile);
+      setAllowedRoots(undefined);
+
+      return this.buildMessage(
+        step,
+        pattern,
+        result.content,
+        t0,
+        result.kind,
+        result.kind === "file" ? (result.filePaths?.[0] ?? outputFile) : undefined,
+        result.filePaths,
+      );
+    } finally {
+      try { unlinkSync(tmpInput); } catch { /* ignore */ }
+    }
   }
 
   // ─── Tool Execution (generisch) ────────────────────────────

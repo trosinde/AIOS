@@ -1,12 +1,11 @@
 ---
 kernel_abi: 1
 name: pdf_merge
-version: "1.0"
+version: "2.0"
 description: "Führt mehrere PDF-Dateien zu einem Dokument zusammen"
 category: pdf
-type: tool
-tool: tsx
-tool_args: ["tools/pdf-tools.ts", "merge", "$INPUT", "$OUTPUT"]
+type: internal
+internal_op: pdf_merge
 input_type: file_list
 input_format: txt
 output_type: file

@@ -292,10 +292,27 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     if (migration.backupPath) {
       console.error(
         chalk.yellow(
-          `    ⚠ Alte SQLite-KB unter ${migration.backupPath} gesichert — manuelle Re-Embedding-Migration ist (noch) nicht automatisch.`,
+          `    ⚠ Alte SQLite-KB unter ${migration.backupPath} gesichert.`,
         ),
       );
     }
+  }
+
+  // Migrate legacy KB data into LanceDB (no-op when no legacy DB found)
+  try {
+    const { runKnowledgeMigrate } = await import("./knowledge-migrate.js");
+    await runKnowledgeMigrate({ context: "default" });
+  } catch (e) {
+    console.error(
+      chalk.yellow(
+        `    ⚠ Automatische Datenmigration fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+    console.error(
+      chalk.cyan(
+        '    → Versuche es manuell mit "aios knowledge migrate"',
+      ),
+    );
   }
 
   // Sync patterns & personas (new ones only, don't overwrite existing)

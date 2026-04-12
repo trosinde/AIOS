@@ -195,6 +195,7 @@ describe("PatternRegistry", () => {
     const catalog = registry.buildCatalog();
     expect(catalog).toContain("Typ: TOOL");
     expect(catalog).toContain("Typ: LLM");
+    expect(catalog).toContain("Typ: INTERNAL");
     expect(catalog).toContain("Driver: mermaid/render");
   });
 

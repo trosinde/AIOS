@@ -1,12 +1,11 @@
 ---
 kernel_abi: 1
 name: pdf_extract_text
-version: "1.0"
+version: "2.0"
 description: "Extrahiert Text aus einer PDF-Datei"
 category: pdf
-type: tool
-tool: tsx
-tool_args: ["tools/pdf-tools.ts", "extract-text", "$INPUT", "$OUTPUT"]
+type: internal
+internal_op: pdf_extract_text
 input_type: file_path
 input_format: txt
 output_type: text
