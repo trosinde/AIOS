@@ -58,13 +58,13 @@ jobs:
 
       - name: Create PR to main
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ADMIN_PAT }}
         run: |
           # Skip if development has no commits ahead of main (e.g.
           # after a hotfix went directly to main and development was
           # fast-forwarded). gh pr create would otherwise error out
           # with "No commits between main and development".
-          git fetch origin main --depth=1
+          git fetch origin main
           AHEAD=$(git rev-list --count origin/main..HEAD)
           if [ "$AHEAD" = "0" ]; then
             echo "development is not ahead of main (ahead=0), nothing to promote."
