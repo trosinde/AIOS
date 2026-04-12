@@ -37,5 +37,5 @@ config:
     default_persona: security_expert
 links:
   - name: network
-    path: /home/user/AIOS/teams/network
+    path: ../network
     relationship: consults

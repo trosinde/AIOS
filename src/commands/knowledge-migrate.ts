@@ -35,6 +35,14 @@ interface LegacyKnowledgeRow {
 interface MigrateOptions {
   context?: string;
   dryRun?: boolean;
+  quiet?: boolean;
+}
+
+export interface MigrateResult {
+  found: boolean;
+  migrated: number;
+  skipped: number;
+  failed: number;
 }
 
 const CATEGORY_FROM_TYPE: Record<string, string> = {
@@ -98,7 +106,8 @@ function readLegacyKnowledgeRows(dbPath: string): LegacyKnowledgeRow[] {
   }
 }
 
-export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void> {
+export async function runKnowledgeMigrate(options: MigrateOptions): Promise<MigrateResult> {
+  const noResult: MigrateResult = { found: false, migrated: 0, skipped: 0, failed: 0 };
   const aiosHome = join(process.env.HOME ?? homedir(), ".aios");
   const wingCfg = loadWingConfig();
 
@@ -106,52 +115,63 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
   const legacyKbPath = findLegacyKnowledgeDb(aiosHome);
 
   if (!legacyBusPath && !legacyKbPath) {
-    console.error(chalk.yellow("Keine Legacy-Datenbank gefunden."));
-    console.error(
-      chalk.gray(
-        "Gesucht in:\n" +
-          "  ~/.aios/knowledge/bus.db.pre-lance.bak\n" +
-          "  ~/.aios/knowledge/bus.db\n" +
-          "  ~/.aios/knowledge.pre-lance.bak\n" +
-          "  ~/.aios/knowledge.db",
-      ),
-    );
-    return;
+    if (!options.quiet) {
+      console.error(chalk.yellow("Keine Legacy-Datenbank gefunden."));
+      console.error(
+        chalk.gray(
+          "Gesucht in:\n" +
+            "  ~/.aios/knowledge/bus.db.pre-lance.bak\n" +
+            "  ~/.aios/knowledge/bus.db\n" +
+            "  ~/.aios/knowledge.pre-lance.bak\n" +
+            "  ~/.aios/knowledge.db",
+        ),
+      );
+    }
+    return noResult;
   }
 
+  const quiet = options.quiet ?? false;
   let busRows: LegacyBusRow[] = [];
   let kbRows: LegacyKnowledgeRow[] = [];
 
   if (legacyBusPath) {
-    const spinner = ora({
-      text: `Lese Legacy-KnowledgeBus: ${legacyBusPath}`,
-      stream: process.stderr,
-    }).start();
-    try {
-      busRows = readLegacyBusRows(legacyBusPath);
-      spinner.succeed(`${busRows.length} Messages in ${legacyBusPath}`);
-    } catch (e) {
-      spinner.fail(`Fehler beim Lesen: ${e instanceof Error ? e.message : String(e)}`);
+    if (quiet) {
+      try { busRows = readLegacyBusRows(legacyBusPath); } catch { /* ignore */ }
+    } else {
+      const spinner = ora({
+        text: `Lese Legacy-KnowledgeBus: ${legacyBusPath}`,
+        stream: process.stderr,
+      }).start();
+      try {
+        busRows = readLegacyBusRows(legacyBusPath);
+        spinner.succeed(`${busRows.length} Messages in ${legacyBusPath}`);
+      } catch (e) {
+        spinner.fail(`Fehler beim Lesen: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
 
   if (legacyKbPath) {
-    const spinner = ora({
-      text: `Lese Legacy-KnowledgeBase: ${legacyKbPath}`,
-      stream: process.stderr,
-    }).start();
-    try {
-      kbRows = readLegacyKnowledgeRows(legacyKbPath);
-      spinner.succeed(`${kbRows.length} Items in ${legacyKbPath}`);
-    } catch (e) {
-      spinner.fail(`Fehler beim Lesen: ${e instanceof Error ? e.message : String(e)}`);
+    if (quiet) {
+      try { kbRows = readLegacyKnowledgeRows(legacyKbPath); } catch { /* ignore */ }
+    } else {
+      const spinner = ora({
+        text: `Lese Legacy-KnowledgeBase: ${legacyKbPath}`,
+        stream: process.stderr,
+      }).start();
+      try {
+        kbRows = readLegacyKnowledgeRows(legacyKbPath);
+        spinner.succeed(`${kbRows.length} Items in ${legacyKbPath}`);
+      } catch (e) {
+        spinner.fail(`Fehler beim Lesen: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
 
   const totalRows = busRows.length + kbRows.length;
   if (totalRows === 0) {
-    console.error(chalk.yellow("Legacy-Datenbanken sind leer — nichts zu migrieren."));
-    return;
+    if (!quiet) console.error(chalk.yellow("Legacy-Datenbanken sind leer — nichts zu migrieren."));
+    return { found: true, migrated: 0, skipped: 0, failed: 0 };
   }
 
   if (options.dryRun) {
@@ -168,7 +188,7 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
       for (const r of kbRows) types.set(r.type, (types.get(r.type) ?? 0) + 1);
       for (const [t, c] of types) console.error(chalk.gray(`    ${t}: ${c}`));
     }
-    return;
+    return { found: true, migrated: 0, skipped: 0, failed: 0 };
   }
 
   const { KnowledgeBus } = await import("../core/knowledge-bus.js");
@@ -191,7 +211,7 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
 
   // Migrate KnowledgeBus rows
   if (busRows.length > 0) {
-    const spinner = ora({
+    const spinner = quiet ? null : ora({
       text: `Migriere KnowledgeBus-Messages (0/${busRows.length})...`,
       stream: process.stderr,
     }).start();
@@ -248,26 +268,26 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
         migrated++;
       } catch (e) {
         failed++;
-        if (failed <= 3) {
-          spinner.clear();
+        if (!quiet && failed <= 3) {
+          spinner?.clear();
           console.error(
             chalk.red(`  Fehler bei Row ${row.id}: ${e instanceof Error ? e.message : String(e)}`),
           );
         }
       }
 
-      if ((i + 1) % 10 === 0 || i === busRows.length - 1) {
+      if (spinner && ((i + 1) % 10 === 0 || i === busRows.length - 1)) {
         spinner.text = `Migriere KnowledgeBus-Messages (${i + 1}/${busRows.length})...`;
       }
     }
-    spinner.succeed(`KnowledgeBus: ${migrated} migriert, ${skippedDup} Duplikate übersprungen`);
+    spinner?.succeed(`KnowledgeBus: ${migrated} migriert, ${skippedDup} Duplikate übersprungen`);
   }
 
   // Migrate KnowledgeBase rows
   if (kbRows.length > 0) {
     const kbMigrated0 = migrated;
     const kbSkipped0 = skippedDup;
-    const spinner = ora({
+    const spinner = quiet ? null : ora({
       text: `Migriere KnowledgeBase-Items (0/${kbRows.length})...`,
       stream: process.stderr,
     }).start();
@@ -317,31 +337,35 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
         migrated++;
       } catch (e) {
         failed++;
-        if (failed <= 3) {
-          spinner.clear();
+        if (!quiet && failed <= 3) {
+          spinner?.clear();
           console.error(
             chalk.red(`  Fehler bei Item ${row.id}: ${e instanceof Error ? e.message : String(e)}`),
           );
         }
       }
 
-      if ((i + 1) % 10 === 0 || i === kbRows.length - 1) {
+      if (spinner && ((i + 1) % 10 === 0 || i === kbRows.length - 1)) {
         spinner.text = `Migriere KnowledgeBase-Items (${i + 1}/${kbRows.length})...`;
       }
     }
-    spinner.succeed(
+    spinner?.succeed(
       `KnowledgeBase: ${migrated - kbMigrated0} migriert, ${skippedDup - kbSkipped0} Duplikate übersprungen`,
     );
   }
 
   // Build vector index if enough data
   if (migrated >= 256) {
-    const indexSpinner = ora({
-      text: "Baue HNSW-Vektor-Index...",
-      stream: process.stderr,
-    }).start();
-    await bus.ensureVectorIndex();
-    indexSpinner.succeed("HNSW-Index aktualisiert");
+    if (!quiet) {
+      const indexSpinner = ora({
+        text: "Baue HNSW-Vektor-Index...",
+        stream: process.stderr,
+      }).start();
+      await bus.ensureVectorIndex();
+      indexSpinner.succeed("HNSW-Index aktualisiert");
+    } else {
+      await bus.ensureVectorIndex();
+    }
   }
 
   } finally {
@@ -349,15 +373,19 @@ export async function runKnowledgeMigrate(options: MigrateOptions): Promise<void
   }
 
   // Summary
-  console.error();
-  console.error(chalk.green.bold("  Migration abgeschlossen"));
-  console.error(chalk.gray(`  Migriert:  ${migrated}`));
-  console.error(chalk.gray(`  Duplikate: ${skippedDup} (übersprungen)`));
-  if (failed > 0) {
-    console.error(chalk.yellow(`  Fehler:    ${failed}`));
+  if (!quiet) {
+    console.error();
+    console.error(chalk.green.bold("  Migration abgeschlossen"));
+    console.error(chalk.gray(`  Migriert:  ${migrated}`));
+    console.error(chalk.gray(`  Duplikate: ${skippedDup} (übersprungen)`));
+    if (failed > 0) {
+      console.error(chalk.yellow(`  Fehler:    ${failed}`));
+    }
+    console.error();
+    if (migrated > 0) {
+      console.error(chalk.gray('  Teste mit: aios knowledge search "<suchbegriff>"'));
+    }
   }
-  console.error();
-  if (migrated > 0) {
-    console.error(chalk.gray('  Teste mit: aios knowledge search "<suchbegriff>"'));
-  }
+
+  return { found: true, migrated, skipped: skippedDup, failed };
 }

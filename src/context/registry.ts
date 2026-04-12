@@ -63,7 +63,6 @@ export function registerContext(
 ): void {
   const registry = readRegistry();
   const absPath = resolve(contextPath);
-  const idx = registry.contexts.findIndex((c) => c.path === absPath);
 
   const entry: RegistryEntry = {
     name: manifest.name,
@@ -76,11 +75,11 @@ export function registerContext(
     last_updated: new Date().toISOString(),
   };
 
-  if (idx >= 0) {
-    registry.contexts[idx] = entry;
-  } else {
-    registry.contexts.push(entry);
-  }
+  // Remove any existing entries with same path OR same name (dedup)
+  registry.contexts = registry.contexts.filter(
+    (c) => c.path !== absPath && c.name !== manifest.name,
+  );
+  registry.contexts.push(entry);
 
   writeRegistry(registry);
 }

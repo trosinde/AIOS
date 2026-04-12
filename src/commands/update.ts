@@ -299,14 +299,23 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   }
 
   // Migrate legacy KB data into LanceDB (no-op when no legacy DB found)
+  const dataMigrationSpinner = ora({
+    text: "Migriere Legacy-Knowledge-Daten...",
+    stream: process.stderr,
+  }).start();
   try {
     const { runKnowledgeMigrate } = await import("./knowledge-migrate.js");
-    await runKnowledgeMigrate({ context: "default" });
+    const result = await runKnowledgeMigrate({ context: "default", quiet: true });
+    if (result.found) {
+      dataMigrationSpinner.succeed(
+        `Knowledge-Daten migriert (${result.migrated} neu, ${result.skipped} Duplikate)`,
+      );
+    } else {
+      dataMigrationSpinner.succeed("Keine Legacy-Knowledge-Daten gefunden");
+    }
   } catch (e) {
-    console.error(
-      chalk.yellow(
-        `    ⚠ Automatische Datenmigration fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`,
-      ),
+    dataMigrationSpinner.warn(
+      `Datenmigration fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`,
     );
     console.error(
       chalk.cyan(
