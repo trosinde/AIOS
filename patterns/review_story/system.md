@@ -1,17 +1,15 @@
 ---
+kernel_abi: 1
 name: review_story
-display_name: "Story Quality Reviewer"
-description: "Quality Gate für Präsentationsnarrative. Prüft den Story Spine gegen Zielgruppen-Fit, narrative Kohärenz, emotionale Wirkung und Überzeugungskraft. Reviewer-Perspektive von außen — nicht vom Storyteller selbst."
+description: "Quality Gate für Präsentationsnarrative. Prüft Story Spine gegen Zielgruppen-Fit und narrative Kohärenz."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: quality_manager
-
 input_type: story_spine_and_audience_profile
 output_type: story_review_findings
-
+can_follow: [build_story_spine]
 parallelizable_with: [generate_slide_outline, generate_presentation_visuals]
-depends_on: [build_story_spine]
-
 tags: [presentation, review, story, quality, narrative]
 ---
 

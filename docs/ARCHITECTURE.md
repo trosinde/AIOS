@@ -511,119 +511,73 @@ AIOS/
 │   ├── types.ts                        # All TypeScript interfaces
 │   ├── core/
 │   │   ├── engine.ts                   # DAG/Saga execution engine
-│   │   ├── engine.test.ts              # Engine tests
-│   │   ├── registry.ts                 # Pattern Registry (loads system.md + MCP virtual patterns)
-│   │   ├── registry.test.ts            # Registry tests
+│   │   ├── registry.ts                 # Pattern Registry (loads system.md + virtual patterns)
 │   │   ├── router.ts                   # Meta-Agent (plans workflows via LLM)
-│   │   ├── router.test.ts              # Router tests
 │   │   ├── mcp.ts                      # MCP server manager + tool discovery
-│   │   ├── mcp.test.ts                 # MCP tests
 │   │   ├── personas.ts                 # Persona registry (loads personas/*.yaml)
-│   │   ├── knowledge.ts                # Knowledge base utilities
-│   │   ├── knowledge.test.ts           # Knowledge tests
+│   │   ├── knowledge-bus.ts            # LanceDB-backed Knowledge Bus (IPC)
+│   │   ├── knowledge-bus-schema.ts     # Arrow schema for messages + kg_triples
+│   │   ├── embedding-provider.ts       # EmbeddingProvider interface (Ollama, Stub)
+│   │   ├── wing-resolver.ts            # Wing/Room hierarchy for knowledge routing
+│   │   ├── kcn.ts                      # Knowledge Compact Notation (wire format)
+│   │   ├── driver-registry.ts          # Tool Driver Registry (Phase 5.2)
+│   │   ├── pdf-operations.ts           # Internal PDF operations (Phase 5.4)
+│   │   ├── context-builder.ts          # Step input assembly (EIP context)
+│   │   ├── output-extractor.ts         # Artifact extraction from LLM output
+│   │   ├── executor.ts                 # Capability-based StepExecutor
 │   │   ├── repl.ts                     # Interactive REPL (aios chat)
-│   │   ├── repl.test.ts                # REPL tests
 │   │   ├── slash.ts                    # Slash command handler
-│   │   └── slash.test.ts               # Slash command tests
+│   │   └── quality/                    # Quality Pipeline
+│   │       ├── pipeline.ts             # QualityPipeline orchestrator
+│   │       └── policies.ts             # Built-in quality policies
+│   ├── security/
+│   │   ├── policy-engine.ts            # Deterministic security policy enforcement
+│   │   ├── taint-tracker.ts            # Taint labels (trusted/derived/untrusted)
+│   │   ├── prompt-builder.ts           # Data/Instruction separation for LLM calls
+│   │   ├── audit-logger.ts             # Security event audit logging
+│   │   └── knowledge-guard.ts          # Knowledge Bus write validation
+│   ├── service/
+│   │   ├── service-bus.ts              # Service orchestration, discovery, tracking
+│   │   ├── service-generator.ts        # Auto-generates ServiceEndpoints from data
+│   │   ├── service-init.ts             # Bootstrap for context service interfaces
+│   │   ├── query-engine.ts             # Hybrid search (direct + LLM fallback)
+│   │   ├── schema-inferrer.ts          # Infers schema from JSON/YAML data
+│   │   └── manifest-parser.ts          # Parses data/manifest.yaml
 │   ├── agents/
-│   │   ├── provider.ts                 # LLMProvider interface + Claude, Ollama
-│   │   ├── provider.test.ts            # Provider tests
-│   │   ├── gemini-provider.ts          # Google Gemini provider (REST)
-│   │   ├── gemini-provider.test.ts     # Gemini tests
-│   │   ├── openai-provider.ts          # OpenAI-compatible provider (REST)
-│   │   ├── openai-provider.test.ts     # OpenAI tests
-│   │   ├── provider-selector.ts        # Cost-based capability-aware selection
-│   │   └── provider-selector.test.ts   # Selector tests
+│   │   ├── provider.ts                 # LLMProvider interface + factory
+│   │   ├── gemini-provider.ts          # Google Gemini provider
+│   │   ├── openai-provider.ts          # OpenAI-compatible provider
+│   │   ├── tts-provider.ts             # Text-to-Speech provider (OpenAI)
+│   │   ├── provider-selector.ts        # Tag-based provider selection
+│   │   └── selector.ts                 # Capability-based provider selection
+│   ├── context/
+│   │   ├── cross-engine.ts             # Cross-context execution engine
+│   │   ├── cross-router.ts             # Cross-context routing
+│   │   ├── manifest.ts                 # Context manifest validation
+│   │   ├── registry.ts                 # Context registry (filesystem scan)
+│   │   └── scanner.ts                  # Context filesystem scanner
+│   ├── memory/
+│   │   └── execution-memory.ts         # Execution success/failure tracking
 │   ├── rag/
-│   │   ├── rag-service.ts              # RAG service facade (search, index, compare)
-│   │   ├── rag-service.test.ts         # RAG service tests
-│   │   ├── vector-store.ts             # In-memory vector store with cosine similarity
-│   │   ├── vector-store.test.ts        # Vector store tests
-│   │   ├── embedding-provider.ts       # Embedding provider interface
-│   │   ├── ollama-embedder.ts          # Ollama-based embeddings
-│   │   ├── local-embedder.ts           # Local embedding fallback
-│   │   ├── preprocessing.ts            # Document chunking and normalization
-│   │   ├── preprocessing.test.ts       # Preprocessing tests
-│   │   └── types.ts                    # RAG-specific type definitions
+│   │   ├── rag-service.ts              # RAG service facade
+│   │   ├── vector-store.ts             # In-memory vector store
+│   │   └── types.ts                    # RAG-specific types
+│   ├── init/
+│   │   └── schema.ts                   # context.yaml parsing + validation
 │   └── utils/
 │       ├── config.ts                   # YAML config loading (3-source merge)
-│       ├── config.test.ts              # Config tests
-│       ├── stdin.ts                    # stdin helper
-│       └── stdin.test.ts               # stdin tests
-├── patterns/
-│   ├── _router/system.md               # Router meta-prompt (internal)
-│   ├── aggregate_reviews/system.md
-│   ├── architecture_review/system.md
-│   ├── code_review/system.md
-│   ├── compliance_report/system.md
-│   ├── design_solution/system.md
-│   ├── evaluate_quality/system.md
-│   ├── extract_knowledge/system.md
-│   ├── extract_requirements/system.md
-│   ├── formalize/system.md
-│   ├── gap_analysis/system.md
-│   ├── generate_adr/system.md
-│   ├── generate_code/system.md
-│   ├── generate_diagram/system.md
-│   ├── generate_docs/system.md
-│   ├── generate_image_prompt/system.md
-│   ├── generate_tests/system.md
-│   ├── render_image_nano/system.md
-│   ├── identify_risks/system.md
-│   ├── pdf_vision_ocr/system.md
-│   ├── rag_index/system.md
-│   ├── rag_search/system.md
-│   ├── refactor/system.md
-│   ├── render_diagram/system.md
-│   ├── render_image/system.md
-│   ├── requirements_review/system.md
-│   ├── risk_report/system.md
-│   ├── security_review/system.md
-│   ├── simplify_text/system.md
-│   ├── summarize/system.md
-│   ├── test_report/system.md
-│   ├── test_review/system.md
-│   ├── threat_model/system.md
-│   ├── translate_technical/system.md
-│   ├── write_architecture_doc/system.md
-│   └── write_user_doc/system.md
-├── personas/
-│   ├── architect.yaml
-│   ├── developer.yaml
-│   ├── quality_manager.yaml
-│   ├── re.yaml
-│   ├── reviewer.yaml
-│   ├── security_expert.yaml
-│   ├── tech_writer.yaml
-│   └── tester.yaml
+│       ├── registry-factory.ts         # Context-aware PatternRegistry builder
+│       └── stdin.ts                    # stdin helper
+├── patterns/                           # ~70 patterns (LLM, tool, internal, MCP, RAG, KB)
+├── personas/                           # 15 persona YAML definitions
+├── drivers/
+│   └── mermaid/driver.yaml             # Tool driver for mermaid-cli (mmdc)
 ├── tools/
-│   └── render-image.sh                # Wrapper script for image rendering
-├── docs/
-│   ├── ARCHITECTURE.md                 # System architecture (this file)
-│   ├── MCP.md                          # MCP integration guide
-│   ├── PERSONAS.md                     # Persona system
-│   ├── PHASES.md                       # Development phases
-│   ├── REGULATED.md                    # Regulated environments
-│   ├── compliance.md                   # Compliance documentation
-│   ├── configuration.md               # Configuration guide
-│   ├── getting-started.md             # Getting started guide
-│   ├── patterns.md                     # Pattern documentation
-│   ├── providers.md                    # Provider documentation
-│   ├── rag.md                          # RAG documentation
-│   ├── roadmap.md                      # Project roadmap
-│   ├── user-guide.md                   # User guide
-│   ├── vision.md                       # Vision/OCR documentation
-│   ├── workflows.md                    # Workflow patterns (lowercase, MkDocs)
-│   ├── WORKFLOWS.md                    # Workflow patterns (uppercase)
-│   └── reference/
-│       ├── 01-basic-pattern-engine.ts  # Reference: basic pattern engine
-│       ├── 02-parallel-workflows.ts    # Reference: parallel workflows
-│       └── 03-dynamic-orchestration.ts # Reference: dynamic orchestration
-├── aios.yaml                           # Project-local config
-├── azdo-config.json                    # Azure DevOps configuration
-├── mkdocs.yml                          # MkDocs site configuration
-├── package.json                        # Node.js project manifest
-├── tsconfig.json                       # TypeScript configuration
-├── CLAUDE.md                           # Claude Code instructions
-└── README.md                           # Project readme
+│   ├── extract-images.ts               # Image extraction tool
+│   └── render-image.sh                 # Image rendering wrapper
+├── scripts/
+│   └── perf/                           # Performance benchmarks + baseline comparison
+├── teams/                              # Example contexts (hr, securitas, network)
+├── docs/                               # Documentation (23 files)
+└── .github/workflows/ci.yaml           # CI: test + promote-to-main
 ```

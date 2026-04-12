@@ -18,10 +18,14 @@ Vollständige Referenz aller `aios` Command-Line-Befehle.
 | `aios configure` | Setup-Wizard für Provider/API-Keys |
 | `aios update` | AIOS aktualisieren |
 | `aios mcp-server` | MCP-Server starten |
+| `aios speak` | Text-to-Speech (OpenAI TTS) |
 | `aios context` | Context-Management |
 | `aios persona` | Persona-Management |
 | `aios knowledge` | Knowledge Bus |
+| `aios service` | Service Interfaces (Cross-Context Data) |
 | `aios patterns` | Pattern-Management |
+| `aios memory` | Execution Memory (Erfolgsraten) |
+| `aios quality` | Quality Pipeline Status |
 
 ---
 
@@ -65,6 +69,8 @@ Spezielle Pattern-Typen werden automatisch erkannt und unterschiedlich verarbeit
 - **`rag`** — Nutzt das RAG-Backend für semantische Suche
 - **`mcp`** — Delegiert an einen MCP-Server
 - **`tool`** — Führt ein CLI-Tool aus statt LLM-Aufruf
+- **`internal`** — Interne Kernel-Operationen (z.B. PDF merge/split/extract)
+- **`tts`** — Text-to-Speech Synthese
 - **`image_generation`** — Generiert Bilder
 - **Vision-Patterns** (`input_type: image`) — Verarbeiten Bilder als Input
 
@@ -171,6 +177,26 @@ Startet AIOS als Model Context Protocol (MCP) Server über stdio-Transport. Erm�
 ```bash
 aios mcp-server
 ```
+
+---
+
+### `aios speak [text...]` — Text-to-Speech
+
+Konvertiert Text zu Sprache via OpenAI TTS. Input via Argumente oder stdin.
+
+```bash
+aios speak "Hallo Welt"
+echo "Langer Text..." | aios speak
+aios speak --voice nova --format wav < artikel.md
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--voice <voice>` | Stimme: alloy, echo, fable, onyx, nova, shimmer | `alloy` |
+| `--model <model>` | TTS-Modell: tts-1 oder tts-1-hd | `tts-1` |
+| `--format <format>` | Audio-Format: mp3, wav, opus, aac | `mp3` |
+| `--speed <speed>` | Geschwindigkeit (0.25 - 4.0) | `1.0` |
+| `--output <path>` | Ausgabedatei | `output/speak-<timestamp>.<format>` |
 
 ---
 
@@ -339,6 +365,189 @@ aios knowledge search "Sicherheitsanforderung" --limit 10
 |--------|-------------|
 | `--context <id>` | Context-ID (default: `default`) |
 | `--limit <n>` | Max. Ergebnisse (default: `20`) |
+
+### `aios knowledge semantic-search <query...>`
+
+Semantische Vektorsuche (HNSW) im Knowledge Bus via LanceDB-Embeddings.
+
+```bash
+aios knowledge semantic-search "API Design Patterns"
+aios knowledge semantic-search "Sicherheit" --wing decisions --top-k 5
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+| `--top-k <n>` | Top-K Treffer | `10` |
+| `--type <type>` | Nur diesen Typ | — |
+| `--wing <wing>` | Nur dieses Wing | — |
+| `--room <room>` | Nur diesen Room | — |
+
+### `aios knowledge taxonomy`
+
+Zeigt die Wing/Room-Taxonomie des Knowledge Bus.
+
+```bash
+aios knowledge taxonomy
+aios knowledge taxonomy --context dvoi
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+
+### `aios knowledge diary`
+
+Liest Diary-Einträge chronologisch.
+
+```bash
+aios knowledge diary
+aios knowledge diary --limit 10
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+| `--since <ms>` | Nur seit Unix-Zeitstempel ms | — |
+| `--limit <n>` | Max Einträge | `50` |
+
+### `aios knowledge diary-write`
+
+Schreibt einen Diary-Eintrag (stdin).
+
+```bash
+echo "Heute den Auth-Service refactored" | aios knowledge diary-write --tags "auth,refactoring"
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+| `--tags <tags>` | Komma-getrennte Tags | — |
+
+### `aios knowledge kg-add <subject> <predicate> <object>`
+
+Fügt ein Knowledge-Graph-Triple hinzu.
+
+```bash
+aios knowledge kg-add "AuthService" "uses" "JWT"
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+
+### `aios knowledge kg-query`
+
+Fragt den Knowledge-Graph nach (subject?, predicate?, object?) Pattern ab.
+
+```bash
+aios knowledge kg-query --subject "AuthService"
+aios knowledge kg-query --predicate "uses"
+```
+
+| Option | Beschreibung | Default |
+|--------|-------------|---------|
+| `--context <id>` | Context-ID | `default` |
+| `--subject <s>` | Subject-Filter | — |
+| `--predicate <p>` | Predicate-Filter | — |
+| `--object <o>` | Object-Filter | — |
+| `--limit <n>` | Max Ergebnisse | `100` |
+
+### `aios knowledge migrate`
+
+Migriert Legacy-SQLite-Daten (bus.db) nach LanceDB.
+
+```bash
+aios knowledge migrate
+aios knowledge migrate --dry-run
+```
+
+| Option | Beschreibung |
+|--------|-------------|
+| `--context <id>` | Context-ID für importierte Einträge |
+| `--dry-run` | Nur zählen, nichts schreiben |
+
+---
+
+## Command-Gruppe: `aios service`
+
+Verwaltet Service Interfaces — strukturierte Daten als abfragbare Endpoints über Context-Grenzen hinweg.
+
+### `aios service init [path]`
+
+Richtet ein Service-Interface für einen bestehenden Kontext ein. Erstellt `data/manifest.yaml` und generiert Service-Endpoints.
+
+```bash
+aios service init
+aios service init teams/hr
+```
+
+### `aios service list`
+
+Listet alle verfügbaren Service-Endpoints auf.
+
+```bash
+aios service list
+```
+
+### `aios service show <endpoint>`
+
+Zeigt Details eines Service-Endpoints (Schema, Felder, Record-Count).
+
+```bash
+aios service show hr.employees
+aios service show securitas.findings
+```
+
+### `aios service call <endpoint> [input]`
+
+Ruft einen Service-Endpoint auf. Hybrid: direkte JSON-Suche, bei Bedarf LLM-Fallback.
+
+```bash
+aios service call hr.employees '{"name": "Max"}'
+aios service call securitas.findings '{"severity": "critical"}'
+```
+
+| Option | Beschreibung |
+|--------|-------------|
+| `--provider <name>` | Provider für LLM-Fallback überschreiben |
+
+### `aios service refresh [context]`
+
+Generiert den Service-Cache neu.
+
+```bash
+aios service refresh
+aios service refresh hr
+```
+
+---
+
+## Command-Gruppe: `aios memory`
+
+Execution Memory — Erfolgsraten und Provider-Statistiken.
+
+### `aios memory stats`
+
+Zeigt Erfolgsraten pro Pattern und Provider.
+
+```bash
+aios memory stats
+```
+
+---
+
+## Command-Gruppe: `aios quality`
+
+Quality Pipeline Status und Konfiguration.
+
+### `aios quality status`
+
+Zeigt das aktive Quality Level und die aktiven Policies.
+
+```bash
+aios quality status
+```
 
 ---
 

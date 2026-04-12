@@ -1,18 +1,13 @@
 ---
+kernel_abi: 1
 name: analyze_audience
-display_name: "Audience Analyzer"
-description: "Analysiert Stakeholder-Profil für eine Präsentation: Rollen, Interessen, Währungen, Einwände und Entscheidungsmacht. Output wird als Kontext für alle nachgelagerten Story-Patterns genutzt."
+description: "Analysiert Stakeholder-Profil für eine Präsentation: Rollen, Interessen, Währungen, Einwände und Entscheidungsmacht."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: audience_description
 output_type: audience_profile
-
-# Kann parallel zu nichts laufen – ist immer erster Schritt
-parallelizable_with: []
-depends_on: []
-
 tags: [presentation, storytelling, stakeholder, audience]
 ---
 

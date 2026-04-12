@@ -33,7 +33,7 @@ parameters:
     description: "TTS-Modell (tts-1 = schnell, tts-1-hd = hochwertig)"
     values: [tts-1, tts-1-hd]
     default: tts-1
-can_follow: [summarize, extract_wisdom, generate_blog_post, translate]
+can_follow: [summarize]
 ---
 
 # Text-to-Speech

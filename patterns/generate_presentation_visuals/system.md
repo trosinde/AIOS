@@ -1,17 +1,15 @@
 ---
+kernel_abi: 1
 name: generate_presentation_visuals
-display_name: "Presentation Visual Generator"
-description: "Erzeugt visuelle Spezifikationen für jede Folie: Mermaid-Diagramm-Code für Daten/Prozesse/Architektur und Image-Prompts für konzeptuelle/emotionale Visuals. Brücke zwischen Slide Outline und der Render-Pipeline."
+description: "Erzeugt visuelle Spezifikationen für jede Folie: Mermaid-Diagramme und Image-Prompts."
+category: presentation
 version: "1.0.0"
 type: llm
 persona: presentation_storyteller
-
 input_type: slide_outline
 output_type: visual_specs
-
+can_follow: [generate_slide_outline]
 parallelizable_with: [presentation_critique, review_story]
-depends_on: [generate_slide_outline]
-
 tags: [presentation, visuals, diagrams, images, illustration]
 ---
 

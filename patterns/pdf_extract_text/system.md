@@ -11,7 +11,7 @@ input_format: txt
 output_type: text
 output_format: [txt]
 tags: [pdf, text, extract, ocr, document]
-can_precede: [summarize, extract_wisdom, analyze_paper]
+can_precede: [summarize]
 ---
 
 # PDF Text Extract
