@@ -268,7 +268,7 @@ export class AuditLogger {
  */
 export class NullAuditLogger extends AuditLogger {
   constructor() {
-    super({ enabled: false, logFile: "/dev/null", logLevel: "error", complianceReports: false });
+    super({ enabled: false, logFile: "", logLevel: "error", complianceReports: false });
   }
 }
 

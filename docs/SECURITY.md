@@ -33,15 +33,16 @@ AIOS combines multiple properties that individually increase attack surface:
 
 ![AIOS Security Architecture](security-architecture.png)
 
-| Layer | Component | Source | Key Features |
-|-------|-----------|--------|-------------|
-| **1** | Input Boundary Guard | `src/security/input-guard.ts` | Unicode normalization, regex patterns, encoding detection, fuzzy keyword matching (typoglycemia-resistant) |
-| **2** | Prompt Architecture | `src/security/prompt-builder.ts` | Instruction hierarchy, data tagging (`<user_data>`), canary tokens, delimiter diversity |
-| **3** | Execution Control | `src/security/plan-enforcer.ts` | Plan immutability (hash + freeze), Router input sanitization, allowed-patterns-set enforcement |
-| **3b** | Information Flow Control | `src/security/taint-tracker.ts` + `src/security/policy-engine.ts` | Taint tracking, deterministic policy engine (no LLM heuristics) |
-| **4** | Output Validation | `src/security/output-validator.ts` | Canary verification, schema validation, exfiltration detection |
-| **5** | Knowledge Integrity | `src/security/knowledge-guard.ts` | Write validation, taint persistence, review queue, provenance |
-| **6** | Audit Trail | `src/security/audit-logger.ts` | JSONL logging, compliance-grade event trail |
+| Layer | Component | Source | Status | Key Features |
+|-------|-----------|--------|:------:|-------------|
+| **1** | Input Boundary Guard | `src/security/input-guard.ts` | WIRED | Unicode normalization, regex patterns, encoding detection, fuzzy keyword matching (typoglycemia-resistant). Scans user input at workflow entry + tool/MCP output. |
+| **1b** | Content Scanner | `src/security/content-scanner.ts` | WIRED | Memory-poisoning-specific detection: temporal triggers, self-replication, role overrides in KB content. Integrated into `executeKbStore`. |
+| **2** | Prompt Architecture | `src/security/prompt-builder.ts` | WIRED | Instruction hierarchy, data tagging (`<user_data>`), canary tokens, delimiter diversity. All 20 LLM call-sites wrapped. |
+| **3** | Execution Control | `src/security/plan-enforcer.ts` | MODULE ONLY | Plan immutability (hash + freeze), Router input sanitization. Not yet wired into execution paths. |
+| **3b** | Information Flow Control | `src/security/taint-tracker.ts` + `src/security/policy-engine.ts` | WIRED | Taint tracking, deterministic policy engine (no LLM heuristics). PolicyEngine always present (mandatory via Engine constructor). |
+| **4** | Output Validation | `src/security/output-validator.ts` | MODULE ONLY | Canary verification, schema validation, exfiltration detection. Not yet wired into execution paths. |
+| **5** | Knowledge Integrity | `src/security/knowledge-guard.ts` | WIRED | Write validation (taint + content scan), recall-time integrity tagging, review queue, provenance. Integrated into `executeKbStore` and `executeKbRecall`. |
+| **6** | Audit Trail | `src/security/audit-logger.ts` | WIRED | JSONL logging, compliance-grade event trail. Always present (mandatory via Engine constructor, NullAuditLogger for relaxed mode). |
 
 ## Taint Tracking Model
 

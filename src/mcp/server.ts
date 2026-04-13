@@ -296,7 +296,9 @@ export async function startMCPServer(): Promise<void> {
             ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
             : pattern.systemPrompt;
 
-          const result = await runProvider.complete(fullPrompt, input, undefined, ctx);
+          const mcpPB = new (await import("../security/prompt-builder.js")).PromptBuilder();
+          const mcpBuilt = mcpPB.build(fullPrompt, input, [], ctx.trace_id);
+          const result = await runProvider.complete(mcpBuilt.systemPrompt, mcpBuilt.userMessage, undefined, ctx);
           return {
             content: [{ type: "text" as const, text: result.content }],
           };

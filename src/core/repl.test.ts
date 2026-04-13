@@ -117,8 +117,9 @@ describe("executePattern", () => {
     expect(provider.complete).toHaveBeenCalledOnce();
 
     // First arg should be the system prompt (possibly with persona prefix)
+    // PromptBuilder wraps user input in untrusted data tags
     const callArgs = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[1]).toBe("test input");
+    expect(callArgs[1]).toContain("test input");
   });
 
   it("throws for unknown pattern", async () => {
@@ -156,7 +157,7 @@ describe("executePattern", () => {
     await executePattern(patternName, "", {}, options);
 
     const callArgs = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[1]).toBe("Keine Eingabe.");
+    expect(callArgs[1]).toContain("Keine Eingabe.");
   });
 });
 
@@ -182,7 +183,8 @@ describe("handleChatTurn", () => {
     expect(provider.chat).toHaveBeenCalledOnce();
 
     const callArgs = (provider.chat as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[0]).toBe("System prompt");
+    // PromptBuilder adds SECURITY RULES preamble to system prompt
+    expect(callArgs[0]).toContain("System prompt");
 
     const messages = callArgs[1] as Array<{ role: string; content: string }>;
     expect(messages).toHaveLength(3); // 2 history + 1 new

@@ -10,6 +10,7 @@ import type { Engine } from "./engine.js";
 import { McpManager, registerMcpTools } from "./mcp.js";
 import type { McpToolInfo } from "./mcp.js";
 import { parseSlashCommand, isBuiltinCommand } from "./slash.js";
+import { PromptBuilder } from "../security/prompt-builder.js";
 
 export interface ReplOptions {
   provider: LLMProvider;
@@ -155,7 +156,9 @@ export async function executePattern(
   const input = args || "Keine Eingabe.";
 
   console.error(chalk.blue(`  ⏳ Führe Pattern ${chalk.cyan(name)} aus...`));
-  const response = await options.provider.complete(fullPrompt, input);
+  const replPB = new PromptBuilder();
+  const built = replPB.build(fullPrompt, input, []);
+  const response = await options.provider.complete(built.systemPrompt, built.userMessage);
   console.error(chalk.green(`  ✅ Fertig (${response.tokensUsed.input + response.tokensUsed.output} Tokens)`));
 
   return response.content;
@@ -176,7 +179,10 @@ export async function handleChatTurn(
   historyMessages.push({ role: "user" as const, content: userMessage });
 
   console.error(chalk.blue("  ⏳ Denke nach..."));
-  const response = await options.provider.chat(systemPrompt, historyMessages);
+  // For chat(), wrap system prompt with security preamble via PromptBuilder
+  const chatPB = new PromptBuilder();
+  const chatBuilt = chatPB.build(systemPrompt, "", []);
+  const response = await options.provider.chat(chatBuilt.systemPrompt, historyMessages);
   console.error(chalk.green(`  ✅ (${response.tokensUsed.input + response.tokensUsed.output} Tokens)`));
 
   return response.content;

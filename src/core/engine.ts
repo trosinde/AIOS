@@ -142,6 +142,17 @@ export class Engine {
     };
     this.stepTaints.clear();
 
+    // Phase 6: Audit + scan at workflow boundary
+    this.auditLogger.inputReceived(userInput, ctx.trace_id, ctx.context_id);
+    this.auditLogger.planCreated(JSON.stringify(plan), ctx.trace_id);
+    const inputScan = this.inputGuard.analyze(userInput);
+    if (!inputScan.safe) {
+      this.auditLogger.guardTriggered(inputScan, ctx.trace_id);
+      console.error(chalk.yellow(`  ⚠️  InputGuard: ${inputScan.flags.join(", ")} (score=${inputScan.score.toFixed(2)})`));
+    } else {
+      this.auditLogger.guardPassed(inputScan, ctx.trace_id);
+    }
+
     plan.plan.steps.forEach((s) => { status.set(s.id, "pending"); retries.set(s.id, 0); });
 
     // ── Event Loop: startbare Steps finden und parallel ausführen ──
@@ -370,7 +381,20 @@ export class Engine {
 
       results.set(step.id, message);
       // Output-Taint: derived(input-taints) — Engine-Pattern verliert Trust nach LLM
-      const outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
+      let outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
+
+      // Phase 6: Scan tool/mcp output for injection patterns.
+      // Tool and MCP steps return external data that could contain injections.
+      const stepType = pattern.meta.type ?? "llm";
+      const isMcp = !!pattern.meta.mcp_server;
+      if (stepType === "tool" || isMcp) {
+        const toolScan = this.inputGuard.analyze(message.content);
+        if (!toolScan.safe) {
+          outTaint = { ...outTaint, integrity: "untrusted" };
+          this.auditLogger.guardTriggered(toolScan, ctx.trace_id);
+        }
+      }
+
       this.stepTaints.set(step.id, outTaint);
       this.auditLogger.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
       status.set(step.id, "done");
@@ -1223,7 +1247,8 @@ export class Engine {
 
       // ── Generate image ──
       const providerToUse = this.resolveProvider(pattern, step, "image_generation");
-      const response = await providerToUse.complete(pattern.systemPrompt, currentPrompt, undefined, ctx);
+      const imgBuilt = this.promptBuilder.build(pattern.systemPrompt, currentPrompt, [], ctx.trace_id);
+      const response = await providerToUse.complete(imgBuilt.systemPrompt, imgBuilt.userMessage, undefined, ctx);
       totalCostCents += this.estimateCostCents(response.tokensUsed, pattern.meta.preferred_provider);
 
       if (!response.images?.length) {
@@ -1261,9 +1286,10 @@ export class Engine {
 
       console.error(chalk.gray(`    🔍 Auto-Review (Iteration ${iteration}/${maxIterations})...`));
       const imageBase64 = readFileSync(filePaths[0]).toString("base64");
+      const revBuilt = this.promptBuilder.build(reviewPattern.systemPrompt, `Review this generated image. Original prompt:\n\n${currentPrompt}`, [], ctx.trace_id);
       const reviewResponse = await visionProvider.complete(
-        reviewPattern.systemPrompt,
-        `Review this generated image. Original prompt:\n\n${currentPrompt}`,
+        revBuilt.systemPrompt,
+        revBuilt.userMessage,
         [imageBase64],
         ctx,
       );
@@ -1283,12 +1309,12 @@ export class Engine {
 
       // Use the review feedback to improve the prompt
       const refineProvider = this.resolveProvider(pattern, step);
-      const refineResponse = await refineProvider.complete(
+      const refBuilt = this.promptBuilder.build(
         `You are a prompt engineer. You receive an image generation prompt and a design review with issues. Output ONLY the improved prompt — no explanation, no markdown fences, just the prompt text.`,
         `## Original Prompt\n\n${currentPrompt}\n\n## Design Review\n\n${review}\n\nFix all HIGH severity issues. Keep everything else unchanged.`,
-        undefined,
-        ctx,
+        [], ctx.trace_id,
       );
+      const refineResponse = await refineProvider.complete(refBuilt.systemPrompt, refBuilt.userMessage, undefined, ctx);
       totalCostCents += this.estimateCostCents(refineResponse.tokensUsed);
       currentPrompt = refineResponse.content.trim();
       console.error(chalk.gray(`    🔄 Prompt refined, regenerating... (${totalCostCents}¢ / ${maxCostCents}¢)`));
@@ -1457,7 +1483,8 @@ export class Engine {
         const compensateInput = `## Zu kompensierender Output\n\n${originalOutput}\n\n## Kontext\n\nDieser Step wird zurückgerollt weil ein nachfolgender Step fehlgeschlagen ist.`;
 
         console.error(chalk.yellow(`  ⏪ Kompensiere ${step.id} → ${step.compensate.pattern}`));
-        await this.provider.complete(compensatePattern.systemPrompt, compensateInput, undefined, ctx);
+        const compBuilt = this.promptBuilder.build(compensatePattern.systemPrompt, compensateInput, [], ctx.trace_id);
+        await this.provider.complete(compBuilt.systemPrompt, compBuilt.userMessage, undefined, ctx);
         status.set(step.id, "failed"); // Mark as rolled back
         console.error(chalk.yellow(`  ↩️  ${step.id} kompensiert`));
       } catch (compError) {
@@ -1509,7 +1536,8 @@ export class Engine {
       console.error(chalk.yellow(`  ⚠️  Quality Gate Pattern "${step.quality_gate.pattern}" nicht gefunden, übersprungen`));
       return 10;
     }
-    const resp = await this.provider.complete(gatePattern.systemPrompt, content, undefined, ctx);
+    const gateBuilt = this.promptBuilder.build(gatePattern.systemPrompt, content, [], ctx.trace_id);
+    const resp = await this.provider.complete(gateBuilt.systemPrompt, gateBuilt.userMessage, undefined, ctx);
     const match = resp.content.match(/(\d+)\s*\/?\s*10/);
     return match ? parseInt(match[1]) : 5;
   }

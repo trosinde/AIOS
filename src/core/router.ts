@@ -1,12 +1,15 @@
 import type { LLMProvider } from "../agents/provider.js";
 import type { PatternRegistry } from "./registry.js";
 import type { ExecutionContext, ExecutionPlan } from "../types.js";
+import { PromptBuilder } from "../security/prompt-builder.js";
 
 /**
  * Router – der Meta-Agent.
  * Bekommt Aufgabe + Pattern-Katalog → gibt JSON Execution Plan zurück.
  */
 export class Router {
+  private promptBuilder = new PromptBuilder();
+
   constructor(
     private registry: PatternRegistry,
     private provider: LLMProvider
@@ -23,7 +26,8 @@ export class Router {
     if (projectContext) parts.push(`## PROJEKTKONTEXT\n\n${projectContext}`);
 
     const userInput = parts.join("\n\n");
-    const response = await this.provider.complete(systemPrompt, userInput, undefined, ctx);
+    const built = this.promptBuilder.build(systemPrompt, userInput, [], ctx?.trace_id);
+    const response = await this.provider.complete(built.systemPrompt, built.userMessage, undefined, ctx);
     let plan = this.extractPlan(response.content);
 
     // Validate: retry once if LLM hallucinated patterns
@@ -31,7 +35,8 @@ export class Router {
     if (invalidPatterns.length > 0) {
       const unique = [...new Set(invalidPatterns)];
       const correction = `\n\n## KORREKTUR\n\nDein vorheriger Plan enthielt ungültige Patterns: ${unique.join(", ")}\nDiese existieren NICHT im Katalog. Bitte erstelle einen neuen Plan NUR mit Patterns aus dem Katalog.`;
-      const retryResponse = await this.provider.complete(systemPrompt, userInput + correction, undefined, ctx);
+      const retryBuilt = this.promptBuilder.build(systemPrompt, userInput + correction, [], ctx?.trace_id);
+      const retryResponse = await this.provider.complete(retryBuilt.systemPrompt, retryBuilt.userMessage, undefined, ctx);
       plan = this.extractPlan(retryResponse.content);
 
       const stillInvalid = this.findInvalidPatterns(plan);

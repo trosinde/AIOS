@@ -15,6 +15,7 @@ import { InputGuard } from "./security/input-guard.js";
 import { KnowledgeGuard } from "./security/knowledge-guard.js";
 import { ContentScanner } from "./security/content-scanner.js";
 import type { EngineOptions } from "./types.js";
+import { PromptBuilder } from "./security/prompt-builder.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
@@ -207,7 +208,9 @@ program
 
       // ExecutionContext für den Cross-Context-Lauf
       const crossCtx = { trace_id: randomUUID(), context_id: "cross-context", started_at: Date.now() };
-      const response = await provider.complete(systemPrompt, fullInput, undefined, crossCtx);
+      const crossPB = new PromptBuilder();
+      const crossBuilt = crossPB.build(systemPrompt, fullInput, [], crossCtx.trace_id);
+      const response = await provider.complete(crossBuilt.systemPrompt, crossBuilt.userMessage, undefined, crossCtx);
 
       let rawPlan: unknown;
       try {
@@ -457,7 +460,9 @@ program
         ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
         : systemPrompt;
       const visionProvider = selector?.select("vision")?.provider ?? provider;
-      const response = await visionProvider.complete(fullPrompt, `Review this image. File paths: ${filePaths.join(", ")}`, images);
+      const cliPB = new PromptBuilder();
+      const visionBuilt = cliPB.build(fullPrompt, `Review this image. File paths: ${filePaths.join(", ")}`, []);
+      const response = await visionProvider.complete(visionBuilt.systemPrompt, visionBuilt.userMessage, images);
       process.stdout.write(response.content);
     } else {
       // LLM-Pattern: Persona + Pattern kombinieren
@@ -466,7 +471,9 @@ program
       const fullPrompt = persona
         ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
         : systemPrompt;
-      const response = await provider.complete(fullPrompt, input);
+      const cliPB = new PromptBuilder();
+      const cliBuilt = cliPB.build(fullPrompt, input, []);
+      const response = await provider.complete(cliBuilt.systemPrompt, cliBuilt.userMessage);
 
       // Quality Backbone: check at output boundary
       const qualityLevel = cmd.opts().quality as QualityLevel | undefined;
@@ -486,7 +493,8 @@ program
             rerunPattern: async (reworkHint: string, previousOutput: string) => {
               const reworkPrompt = `${fullPrompt}\n\n## REWORK FEEDBACK\n\nFix the following:\n${reworkHint}`;
               const reworkInput = `${input}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
-              const resp = await provider.complete(reworkPrompt, reworkInput);
+              const reworkBuilt = cliPB.build(reworkPrompt, reworkInput, []);
+              const resp = await provider.complete(reworkBuilt.systemPrompt, reworkBuilt.userMessage);
               return resp.content;
             },
           },

@@ -585,7 +585,7 @@ export class KnowledgeBus {
       wing: message.wing ?? null,
       room: message.room ?? null,
       content_hash: sha256(message.content),
-      integrity: (message.metadata?.integrity as string) ?? null,
+      integrity: typeof message.metadata?.integrity === "string" ? message.metadata.integrity : null,
       embedding: Array.from(embedding),
     };
   }
