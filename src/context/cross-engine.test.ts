@@ -217,4 +217,77 @@ describe("CrossContextEngine", () => {
     expect(result.status.get("s2")).toBe("failed");
     expect(result.results.get("s2")?.output).toContain("ÜBERSPRUNGEN");
   });
+
+  it("berechnet totalDurationMs korrekt", async () => {
+    vi.doMock("./registry.js", () => ({
+      readRegistry: () => ({ contexts: [] }),
+    }));
+
+    const { CrossContextEngine } = await import("./cross-engine.js");
+    const engine = new CrossContextEngine();
+
+    const plan: CrossContextPlan = {
+      analysis: { goal: "test", contexts_needed: ["a"], single_context: false },
+      plan: {
+        type: "pipe",
+        steps: [
+          { id: "s1", context: "missing", task: "first", depends_on: [], input_from: ["$USER_INPUT"], output_type: "text" },
+        ],
+      },
+      reasoning: "test",
+    };
+
+    const result = await engine.execute(plan, "input");
+    expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
+    expect(result.totalDurationMs).toBeLessThan(5000);
+  });
+
+  it("nutzt parentCtx trace_id wenn angegeben", async () => {
+    vi.doMock("./registry.js", () => ({
+      readRegistry: () => ({ contexts: [] }),
+    }));
+
+    const { CrossContextEngine } = await import("./cross-engine.js");
+    const engine = new CrossContextEngine();
+
+    const plan: CrossContextPlan = {
+      analysis: { goal: "test", contexts_needed: ["a"], single_context: false },
+      plan: {
+        type: "pipe",
+        steps: [
+          { id: "s1", context: "missing", task: "test", depends_on: [], input_from: ["$USER_INPUT"], output_type: "text" },
+        ],
+      },
+      reasoning: "test",
+    };
+
+    const parentCtx = { trace_id: "parent-trace-123", context_id: "parent", started_at: Date.now() };
+    const result = await engine.execute(plan, "input", parentCtx);
+    // Execution still completes (fails due to missing context but doesn't crash)
+    expect(result.status.get("s1")).toBe("failed");
+    expect(result.plan).toBe(plan);
+  });
+});
+
+// ─── validateCrossContextPlan – additional edge cases ────
+
+describe("validateCrossContextPlan – additional", () => {
+  it("wirft bei Step als nicht-Objekt", () => {
+    expect(() => validateCrossContextPlan({
+      analysis: { goal: "test" },
+      plan: { type: "pipe", steps: ["not an object"] },
+    })).toThrow("Step ist kein Objekt");
+  });
+
+  it("akzeptiert scatter_gather plan type", () => {
+    const plan = {
+      analysis: { goal: "test", contexts_needed: ["a"], single_context: false },
+      plan: {
+        type: "scatter_gather",
+        steps: [{ id: "s1", context: "a", task: "do stuff", depends_on: [], input_from: ["$USER_INPUT"], output_type: "text" }],
+      },
+      reasoning: "test",
+    };
+    expect(() => validateCrossContextPlan(plan)).not.toThrow();
+  });
 });

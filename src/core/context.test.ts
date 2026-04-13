@@ -231,4 +231,79 @@ describe("ContextManager", () => {
     expect(parsed.description).toBe("Round-trip");
     expect(parsed.schema_version).toBe("1.0");
   });
+
+  // ─── switch error path ────────────────────────────────
+
+  it("switch wirft Fehler wenn Context nicht existiert", () => {
+    expect(() => cm.switch("nonexistent-ctx-xyz")).toThrow("existiert nicht");
+  });
+
+  // ─── patternDirs with global context ──────────────────
+
+  it("patternDirs inkludiert context-spezifische Patterns für globalen Context", () => {
+    // Simulate a global context with name != "default"
+    const contextDir = join(tmpDir, "global-ctx");
+    mkdirSync(join(contextDir, "patterns"), { recursive: true });
+
+    const globalActive = {
+      name: "my-global",
+      path: contextDir,
+      source: "global" as const,
+      config: {
+        schema_version: "1.0",
+        name: "my-global",
+        description: "Test",
+        type: "project" as const,
+        capabilities: [],
+        exports: [],
+        accepts: [],
+        links: [],
+        config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      },
+    };
+
+    const dirs = cm.patternDirs(globalActive, "/tmp/nonexistent-repo");
+    // Should include context patterns since it's a non-default global context
+    expect(dirs[0]).toBe(join(contextDir, "patterns"));
+  });
+
+  it("patternDirs excludiert context-Patterns für default Context", () => {
+    const defaultActive = {
+      name: "default",
+      path: tmpDir,
+      source: "global" as const,
+      config: {
+        schema_version: "1.0",
+        name: "default",
+        description: "Default",
+        type: "project" as const,
+        capabilities: [],
+        exports: [],
+        accepts: [],
+        links: [],
+        config: { default_provider: "claude", patterns_dir: "./patterns", personas_dir: "./personas", knowledge_dir: "./knowledge" },
+      },
+    };
+
+    const dirs = cm.patternDirs(defaultActive, "/tmp/nonexistent-repo");
+    // Default global context should NOT add context-specific patterns
+    expect(dirs.every(d => !d.includes(tmpDir))).toBe(true);
+  });
+
+  // ─── init with options ────────────────────────────────
+
+  it("init nutzt type und description aus opts", () => {
+    const path = cm.init("opts-test", true, tmpDir, { type: "team", description: "My Team" });
+    const raw = readFileSync(join(path, "context.yaml"), "utf-8");
+    expect(raw).toContain("type: team");
+    expect(raw).toContain("description: My Team");
+  });
+
+  // ─── list returns empty when no contexts exist ────────
+
+  it("list gibt leere Liste zurück wenn keine Contexts existieren", () => {
+    const list = cm.list(tmpDir);
+    // tmpDir has no .aios/ yet
+    expect(list).toEqual([]);
+  });
 });
