@@ -10,3 +10,4 @@ output/
 scripts/perf/results-*.json
 scripts/perf/kb-scenarios-*.json
 scripts/perf/mempalace-parity-*.json
+coverage/

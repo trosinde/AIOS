@@ -16,5 +16,35 @@ export default defineConfig({
       "**/tests/e2e/**",
       "**/*.integration.test.ts",
     ],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      reportsDirectory: "coverage",
+      include: ["src/**/*.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.bench.ts",
+        "src/cli.ts",                  // CLI entry point — interactive, tested via e2e
+        "src/commands/configure.ts",   // Interactive wizard (stdin)
+        "src/init/wizard.ts",          // Interactive wizard (stdin)
+        "src/mcp/server.ts",           // MCP stdio server lifecycle
+      ],
+      thresholds: {
+        // Security modules: high bar
+        "src/security/**": {
+          statements: 90,
+          branches: 70,
+          functions: 85,
+          lines: 90,
+        },
+        // Core engine: moderate bar
+        "src/core/**": {
+          statements: 60,
+          branches: 50,
+          functions: 60,
+          lines: 60,
+        },
+      },
+    },
   },
 });
