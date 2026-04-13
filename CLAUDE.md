@@ -340,7 +340,24 @@ aios service refresh [context]           # Service-Cache neu generieren
 - [x] `aios run` Direct-Run-Pfad konsolidiert: alle nicht-LLM-Typen nutzen vollständige Engine mit PolicyEngine + DriverRegistry
 - [x] Tests: 9 PDF-Ops-Tests, 7 Strict-Policy-Tests, 3 Engine-Internal-Tests (834 gesamt)
 
-### Noch offen (nach Phase 5)
+### Phase 5.5 – Defense-in-Depth Vollverdrahtung ✅
+- [x] Engine-Constructor refactored zu `EngineOptions`-Object (statt 14 Positional-Args)
+- [x] Security-Komponenten mandatory mit Defaults: `PolicyEngine`, `AuditLogger`, `InputGuard`, `KnowledgeGuard`, `ContentScanner`, `OutputValidator`, `PlanEnforcer` — kein stilles Bypass mehr
+- [x] `ContentScanner` (NEU): regex-basierte Memory-Poisoning-Erkennung (H2-Mitigation)
+- [x] `KnowledgeGuard` verdrahtet: `executeKbStore` (Content-Scan + Taint-Routing) + `executeKbRecall` (Integrity-Tagging)
+- [x] `integrity`-Spalte in KnowledgeBus-Schema (nullable, backward-kompatibel)
+- [x] `PromptBuilder` an allen 20 LLM-Call-Sites (router.ts, cli.ts, repl.ts, mcp/server.ts, engine.ts)
+- [x] `InputGuard` an Workflow-Entry + Tool/MCP-Output-Scanning (Taint-Downgrade)
+- [x] `OutputValidator` nach jedem LLM-Call (Canary, Schema, Exfiltration)
+- [x] `PlanEnforcer`: Plan-Freeze + Step-Validation vor jedem Dispatch
+- [x] `AuditLogger` vollständig: inputReceived, guardTriggered/Passed, planCreated/Frozen, stepExecuted, kbWrite/Blocked, policyViolation
+- [x] Circuit Breaker: `max_write_steps` + `interactive` in ExecutionContext
+- [x] Pattern-Integritätsprüfung: SHA-256 Hash bei Registry-Load + Verifikation in Engine
+- [x] `NullAuditLogger` für relaxed/test Mode
+- [x] 3 Engine-Instanzen ohne Security gefixt (cli.ts:266, mcp/server.ts:304, cross-engine.ts:200)
+- [x] 38 neue Tests: 17 ContentScanner + 21 Engine-Security-Integration (856 gesamt)
+
+### Noch offen (nach Phase 5.5)
 - Phase 6: Context-Packaging und Distribution (`aios context package/install`)
 - Phase 7: Stable Kernel ABI v1.0 Freeze
 

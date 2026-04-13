@@ -27,7 +27,10 @@ import { userInputTaint, derivedTaint, type TaintLabel } from "../security/taint
 import { InputGuard } from "../security/input-guard.js";
 import { KnowledgeGuard } from "../security/knowledge-guard.js";
 import { ContentScanner } from "../security/content-scanner.js";
+import { OutputValidator } from "../security/output-validator.js";
+import { PlanEnforcer } from "../security/plan-enforcer.js";
 import type { EngineOptions } from "../types.js";
+import { createHash } from "crypto";
 import { INTERNAL_OPS } from "./pdf-operations.js";
 import { tmpdir } from "os";
 import { resolve as resolvePath, isAbsolute } from "path";
@@ -88,6 +91,9 @@ export class Engine {
   private inputGuard: InputGuard;
   private knowledgeGuard: KnowledgeGuard;
   private contentScanner: ContentScanner;
+  private outputValidator: OutputValidator;
+  private planEnforcer: PlanEnforcer;
+  private writeStepCount = 0;
 
   constructor(
     registry: PatternRegistry,
@@ -113,6 +119,8 @@ export class Engine {
     this.inputGuard = opts.inputGuard ?? new InputGuard();
     this.knowledgeGuard = opts.knowledgeGuard ?? new KnowledgeGuard({}, undefined, this.auditLogger);
     this.contentScanner = opts.contentScanner ?? new ContentScanner();
+    this.outputValidator = opts.outputValidator ?? new OutputValidator({}, this.auditLogger);
+    this.planEnforcer = opts.planEnforcer ?? new PlanEnforcer({}, this.auditLogger);
 
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
@@ -142,9 +150,11 @@ export class Engine {
     };
     this.stepTaints.clear();
 
-    // Phase 6: Audit + scan at workflow boundary
+    // Security: Audit + scan + plan freeze at workflow boundary
     this.auditLogger.inputReceived(userInput, ctx.trace_id, ctx.context_id);
     this.auditLogger.planCreated(JSON.stringify(plan), ctx.trace_id);
+    this.writeStepCount = 0;
+
     const inputScan = this.inputGuard.analyze(userInput);
     if (!inputScan.safe) {
       this.auditLogger.guardTriggered(inputScan, ctx.trace_id);
@@ -152,6 +162,10 @@ export class Engine {
     } else {
       this.auditLogger.guardPassed(inputScan, ctx.trace_id);
     }
+
+    // PlanEnforcer: freeze plan, validate DAG, compute integrity hash.
+    // PlanEnforcer.freeze() calls auditLogger.planFrozen() internally.
+    this.planEnforcer.freeze(plan);
 
     plan.plan.steps.forEach((s) => { status.set(s.id, "pending"); retries.set(s.id, 0); });
 
@@ -196,8 +210,25 @@ export class Engine {
   ): Promise<void> {
     const t0 = Date.now();
     try {
+      // PlanEnforcer: validate step is part of frozen plan
+      const stepValid = this.planEnforcer.validateStep(step);
+      if (!stepValid.valid) {
+        throw new Error(`Plan violation: ${stepValid.reason}`);
+      }
+
       const pattern = this.registry.get(step.pattern);
       if (!pattern) throw new Error(`Pattern "${step.pattern}" nicht gefunden`);
+
+      // Pattern integrity check: verify system prompt hasn't been modified on disk
+      if (pattern.contentHash) {
+        const currentHash = createHash("sha256").update(pattern.systemPrompt).digest("hex");
+        if (currentHash !== pattern.contentHash) {
+          const msg = `Pattern integrity violation: "${pattern.meta.name}" content hash mismatch`;
+          this.auditLogger.policyViolation("pattern_integrity", msg, undefined, ctx.trace_id);
+          console.error(chalk.red(`  ❌ ${msg}`));
+          throw new Error(msg);
+        }
+      }
 
       // Phase 5.3 Schritt A+B: Policy-Check VOR Pattern-Dispatch
       // Input-Taint = derived(taints aller depends_on) bzw. userInputTaint() für Wurzel-Steps
@@ -318,6 +349,15 @@ export class Engine {
           responseContent = response.content;
         }
 
+        // Phase 6: Validate LLM output (canary check, schema, exfiltration)
+        const validation = this.outputValidator.validate(
+          responseContent, null, pattern.meta.output_type, pattern.meta.name, ctx.trace_id,
+        );
+        if (!validation.valid) {
+          console.error(chalk.yellow(`  ⚠️  OutputValidator: ${validation.issues.map(i => `${i.severity}:${i.type}`).join(", ")}`));
+        }
+        responseContent = validation.cleanOutput;
+
         if (step.quality_gate) {
           const score = await this.checkQualityGate(step, responseContent, ctx);
           if (score < step.quality_gate.min_score) {
@@ -397,6 +437,16 @@ export class Engine {
 
       this.stepTaints.set(step.id, outTaint);
       this.auditLogger.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
+
+      // Circuit Breaker: track write-steps and enforce limit
+      const isWriteStep = stepType === "tool" || isMcp || pattern.meta.type === "kb";
+      if (isWriteStep) {
+        this.writeStepCount++;
+        if (ctx.max_write_steps && this.writeStepCount > ctx.max_write_steps) {
+          throw new Error(`Circuit Breaker: ${this.writeStepCount} write-steps exceed limit of ${ctx.max_write_steps}`);
+        }
+      }
+
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 

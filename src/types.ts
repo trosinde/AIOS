@@ -15,6 +15,10 @@ export interface ExecutionContext {
     tmp: string;
     output: string;
   };
+  /** Maximum write-steps (tool, mcp, kb-store) before circuit breaker. Default: unlimited. */
+  max_write_steps?: number;
+  /** Whether this is an interactive session (true) or autonomous/cron (false). Default: true. */
+  interactive?: boolean;
 }
 
 // ─── Selection Strategy ─────────────────────────────────
@@ -110,6 +114,8 @@ export interface Pattern {
   meta: PatternMeta;
   systemPrompt: string;
   filePath: string;
+  /** SHA-256 of systemPrompt at load time. For integrity verification. */
+  contentHash?: string;
 }
 
 // ─── Execution Plan (Router Output) ─────────────────────
@@ -913,6 +919,8 @@ export interface EngineOptions {
   inputGuard?: InputGuard;
   knowledgeGuard?: KnowledgeGuard;
   contentScanner?: ContentScanner;
+  outputValidator?: OutputValidator;
+  planEnforcer?: PlanEnforcer;
 }
 
 // Forward-declare types used in EngineOptions to avoid circular imports.
@@ -931,3 +939,5 @@ import type { AuditLogger } from "./security/audit-logger.js";
 import type { InputGuard } from "./security/input-guard.js";
 import type { KnowledgeGuard } from "./security/knowledge-guard.js";
 import type { ContentScanner } from "./security/content-scanner.js";
+import type { OutputValidator } from "./security/output-validator.js";
+import type { PlanEnforcer } from "./security/plan-enforcer.js";

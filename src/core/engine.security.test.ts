@@ -13,6 +13,8 @@ import { InputGuard } from "../security/input-guard.js";
 import { KnowledgeGuard } from "../security/knowledge-guard.js";
 import { ContentScanner } from "../security/content-scanner.js";
 import { AuditLogger, NullAuditLogger } from "../security/audit-logger.js";
+import { OutputValidator } from "../security/output-validator.js";
+import { PlanEnforcer } from "../security/plan-enforcer.js";
 import { PolicyEngine } from "../security/policy-engine.js";
 import type { LLMProvider } from "../agents/provider.js";
 import type { ExecutionPlan, LLMResponse } from "../types.js";
@@ -114,8 +116,8 @@ describe("Engine – PromptBuilder integration", () => {
     const callArgs = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0];
     const userMessage = callArgs[1] as string;
     expect(userMessage).toContain("User provided text");
-    // Should contain untrusted data markers (PromptBuilder adds various formats)
-    expect(userMessage).toMatch(/UNTRUSTED|user_data|═══/i);
+    // Should contain data separation markers (PromptBuilder adds various formats)
+    expect(userMessage).toMatch(/UNTRUSTED|user_data|═══|user input \(data only\)/i);
   });
 
   it("adds SECURITY RULES to system prompt", async () => {
@@ -230,6 +232,101 @@ describe("Security dead-code regression", () => {
     const provider = mockProvider("output");
     const engine = new Engine(registry, provider, {});
     const result = await engine.execute(singlePlan("summarize"), "test");
+    expect(result.status.get("s1")).toBe("done");
+  });
+});
+
+// ─── OutputValidator Integration ───────────────────────────
+
+describe("Engine – OutputValidator integration", () => {
+  it("calls outputValidator.validate after LLM response", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("summary text");
+    const outputValidator = new OutputValidator();
+    const validateSpy = vi.spyOn(outputValidator, "validate");
+
+    const engine = new Engine(registry, provider, { outputValidator });
+    await engine.execute(singlePlan("summarize"), "input text");
+
+    expect(validateSpy).toHaveBeenCalledOnce();
+    // Should receive the LLM output content
+    expect(validateSpy.mock.calls[0][0]).toBe("summary text");
+  });
+});
+
+// ─── PlanEnforcer Integration ──────────────────────────────
+
+describe("Engine – PlanEnforcer integration", () => {
+  it("calls planEnforcer.freeze at workflow start", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("result");
+    const planEnforcer = new PlanEnforcer();
+    const freezeSpy = vi.spyOn(planEnforcer, "freeze");
+
+    const engine = new Engine(registry, provider, { planEnforcer });
+    await engine.execute(singlePlan("summarize"), "text");
+
+    expect(freezeSpy).toHaveBeenCalledOnce();
+  });
+
+  it("calls planEnforcer.validateStep before each step", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("result");
+    const planEnforcer = new PlanEnforcer();
+    const validateStepSpy = vi.spyOn(planEnforcer, "validateStep");
+
+    const engine = new Engine(registry, provider, { planEnforcer });
+    await engine.execute(singlePlan("summarize"), "text");
+
+    expect(validateStepSpy).toHaveBeenCalledOnce();
+    expect(validateStepSpy.mock.calls[0][0].id).toBe("s1");
+  });
+
+  it("auditLogger.planFrozen is called with hash", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("result");
+    const auditLogger = new AuditLogger({ enabled: false, logFile: "", logLevel: "debug", complianceReports: false });
+    const planFrozenSpy = vi.spyOn(auditLogger, "planFrozen");
+
+    const engine = new Engine(registry, provider, { auditLogger });
+    await engine.execute(singlePlan("summarize"), "text");
+
+    expect(planFrozenSpy).toHaveBeenCalledOnce();
+    // Hash should be a 64-char hex string (SHA-256)
+    const hash = planFrozenSpy.mock.calls[0][0];
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+// ─── Pattern Integrity ─────────────────────────────────────
+
+describe("Engine – Pattern integrity check", () => {
+  it("pattern contentHash is computed at registry load time", () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const pattern = registry.get("summarize");
+    expect(pattern).toBeDefined();
+    expect(pattern!.contentHash).toBeDefined();
+    expect(pattern!.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("step executes when pattern hash matches", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("summary");
+    const engine = new Engine(registry, provider);
+    const result = await engine.execute(singlePlan("summarize"), "text");
+    expect(result.status.get("s1")).toBe("done");
+  });
+});
+
+// ─── Circuit Breaker ───────────────────────────────────────
+
+describe("Engine – Circuit Breaker", () => {
+  it("does not trigger when no max_write_steps set", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("result");
+    const engine = new Engine(registry, provider);
+    // LLM patterns are not write-steps, so circuit breaker should not fire
+    const result = await engine.execute(singlePlan("summarize"), "text");
     expect(result.status.get("s1")).toBe("done");
   });
 });
