@@ -17,6 +17,12 @@ import { Engine } from "../core/engine.js";
 import { PersonaRegistry } from "../core/personas.js";
 import { createProvider } from "../agents/provider.js";
 import { loadConfig } from "../utils/config.js";
+import { AuditLogger } from "../security/audit-logger.js";
+import { PolicyEngine, DEFAULT_POLICIES } from "../security/policy-engine.js";
+import { InputGuard } from "../security/input-guard.js";
+import { KnowledgeGuard } from "../security/knowledge-guard.js";
+import { ContentScanner } from "../security/content-scanner.js";
+import { ContextManager } from "../core/context.js";
 import type {
   CrossContextPlan,
   CrossContextResult,
@@ -197,7 +203,20 @@ export class CrossContextEngine {
 
         // Create local router + engine for this context
         const router = new Router(registry, provider);
-        const engine = new Engine(registry, provider, config, personas);
+        const crossAuditLogger = new AuditLogger();
+        const cm = new ContextManager();
+        const activeCtx = cm.resolveActive();
+        const mode = activeCtx.config.security?.integrity_policies ?? "relaxed";
+        const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
+        const crossPolicyEngine = new PolicyEngine(policies, crossAuditLogger);
+        const engine = new Engine(registry, provider, {
+          config, personaRegistry: personas,
+          policyEngine: crossPolicyEngine, auditLogger: crossAuditLogger,
+          inputGuard: new InputGuard(),
+          knowledgeGuard: new KnowledgeGuard({}, crossPolicyEngine, crossAuditLogger),
+          contentScanner: new ContentScanner(),
+          contextConfig: activeCtx.config,
+        });
 
         // Plan locally within this context
         const localPlan = await router.planWorkflow(step.task + "\n\n" + stepInput, undefined, stepCtx);

@@ -37,6 +37,8 @@ export const DEFAULT_EMBEDDING_DIM = 768;
  *   wing            – High-level knowledge bucket (e.g. "wing_aios_decisions")
  *   room            – Sub-topic within the wing (e.g. "kernel_abi")
  *   content_hash    – SHA-256 of `content` for exact-duplicate detection
+ *   integrity       – Taint integrity level at write time ("trusted" | "derived" | "untrusted")
+ *                     Nullable for backward compat — old rows without it default to "derived" on read
  *   embedding       – Fixed-size vector of float32, dimension dim
  */
 export function buildMessagesSchema(dim: number = DEFAULT_EMBEDDING_DIM): arrow.Schema {
@@ -56,6 +58,7 @@ export function buildMessagesSchema(dim: number = DEFAULT_EMBEDDING_DIM): arrow.
     new arrow.Field("wing", new arrow.Utf8(), true),
     new arrow.Field("room", new arrow.Utf8(), true),
     new arrow.Field("content_hash", new arrow.Utf8(), false),
+    new arrow.Field("integrity", new arrow.Utf8(), true),
     new arrow.Field(
       "embedding",
       new arrow.FixedSizeList(dim, new arrow.Field("item", new arrow.Float32(), true)),

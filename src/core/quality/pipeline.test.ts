@@ -414,4 +414,112 @@ describe("QualityPipeline", () => {
 
     expect(pipeline.getActivePolicies()).toEqual(["quality_gate"]);
   });
+
+  it("returns PASSED_WITH_FINDINGS when rework needed but no rerunPattern", async () => {
+    const provider = mockProvider(llmResponse({
+      pass: false,
+      findings: [{ severity: "major", category: "completeness", message: "Missing" }],
+      rework_hint: "Add detail",
+    }));
+    const pipeline = new QualityPipeline(makeQualityConfig(), provider);
+
+    const result = await pipeline.evaluate(
+      "Incomplete output",
+      makePatternMeta(),
+      "Task",
+      "Input",
+      makeCtx(),
+      // No rerunPattern provided
+    );
+
+    expect(result.decision).toBe("PASSED_WITH_FINDINGS");
+    expect(result.passed).toBe(true);
+    expect(result.reworkAttempts).toBe(0);
+  });
+
+  it("handles rerunPattern throwing an error gracefully", async () => {
+    const failResponse: LLMResponse = {
+      content: llmResponse({
+        pass: false,
+        findings: [{ severity: "major", category: "x", message: "bad" }],
+        rework_hint: "fix",
+      }),
+      model: "test",
+      tokensUsed: { input: 50, output: 100 },
+    };
+    const provider: LLMProvider = {
+      complete: vi.fn().mockResolvedValue(failResponse),
+      chat: vi.fn(),
+    };
+
+    const pipeline = new QualityPipeline(
+      makeQualityConfig({ policies: { self_check: { max_retries: 1 } } }),
+      provider,
+    );
+
+    const result = await pipeline.evaluate(
+      "Bad output",
+      makePatternMeta(),
+      "Task",
+      "Input",
+      makeCtx(),
+      {
+        rerunPattern: async () => {
+          throw new Error("LLM unavailable");
+        },
+      },
+    );
+
+    expect(result.decision).toBe("PASSED_WITH_FINDINGS");
+    expect(result.passed).toBe(true);
+    expect(result.reworkAttempts).toBe(1);
+  });
+
+  it("disables both policies when both disabled", () => {
+    const provider = mockProvider("");
+    const pipeline = new QualityPipeline(
+      makeQualityConfig({
+        policies: {
+          self_check: { enabled: false },
+          quality_gate: { enabled: false },
+        },
+      }),
+      provider,
+    );
+
+    expect(pipeline.getActivePolicies()).toEqual([]);
+  });
+
+  it("getLevel returns configured level", () => {
+    const provider = mockProvider("");
+    const pipeline = new QualityPipeline(
+      makeQualityConfig({ level: "regulated" }),
+      provider,
+    );
+    expect(pipeline.getLevel()).toBe("regulated");
+  });
+
+  it("generates auditEntry at regulated level", async () => {
+    const provider = mockProvider(llmResponse({ pass: true, findings: [] }));
+    const pipeline = new QualityPipeline(
+      makeQualityConfig({
+        level: "regulated",
+        audit: { enabled: true },
+      }),
+      provider,
+    );
+
+    const result = await pipeline.evaluate(
+      "Output",
+      makePatternMeta(),
+      "Task",
+      "Input",
+      makeCtx(),
+    );
+
+    expect(result.auditEntry).toBeDefined();
+    expect(result.auditEntry!.id).toMatch(/^AUDIT-/);
+    expect(result.auditEntry!.pattern).toBe("test_pattern");
+    expect(result.auditEntry!.qualityLevel).toBe("regulated");
+  });
 });

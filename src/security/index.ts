@@ -20,4 +20,5 @@ export { type TaintLabel, type IntegrityLevel, type ConfidentialityLevel, type L
 export { PolicyEngine, type Policy, type PolicyAction, type PolicyDecision, DEFAULT_POLICIES } from "./policy-engine.js";
 export { OutputValidator, type OutputValidationResult, type OutputIssue, type OutputValidatorConfig, DEFAULT_OUTPUT_CONFIG } from "./output-validator.js";
 export { KnowledgeGuard, type KnowledgeWriteRequest, type KnowledgeWriteResult, type KnowledgeGuardConfig, DEFAULT_KB_GUARD_CONFIG } from "./knowledge-guard.js";
-export { AuditLogger, type AuditEntry, type AuditEventType, type AuditLoggerConfig, DEFAULT_AUDIT_CONFIG } from "./audit-logger.js";
+export { AuditLogger, NullAuditLogger, type AuditEntry, type AuditEventType, type AuditLoggerConfig, DEFAULT_AUDIT_CONFIG } from "./audit-logger.js";
+export { ContentScanner, type ContentScanResult, type ContentFlag } from "./content-scanner.js";

@@ -72,10 +72,9 @@ test
     const registry = new PatternRegistry(tmpDir);
     const provider = mockProvider();
     const policy = new PolicyEngine([]);
-    const engine = new Engine(
-      registry, provider, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-      policy,
-    );
+    const engine = new Engine(registry, provider, {
+      policyEngine: policy,
+    });
 
     const input = `${pdf1Path}\n${pdf2Path}`;
     const result = await engine.execute(singlePlan("test_internal"), input);

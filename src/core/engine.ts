@@ -20,9 +20,17 @@ import type { StepExecutor } from "./executor.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
 import { PromptBuilder } from "../security/prompt-builder.js";
-import type { PolicyEngine, PolicyAction } from "../security/policy-engine.js";
-import type { AuditLogger } from "../security/audit-logger.js";
+import { PolicyEngine } from "../security/policy-engine.js";
+import type { PolicyAction } from "../security/policy-engine.js";
+import { AuditLogger, NullAuditLogger } from "../security/audit-logger.js";
 import { userInputTaint, derivedTaint, type TaintLabel } from "../security/taint-tracker.js";
+import { InputGuard } from "../security/input-guard.js";
+import { KnowledgeGuard } from "../security/knowledge-guard.js";
+import { ContentScanner } from "../security/content-scanner.js";
+import { OutputValidator } from "../security/output-validator.js";
+import { PlanEnforcer } from "../security/plan-enforcer.js";
+import type { EngineOptions } from "../types.js";
+import { createHash } from "crypto";
 import { INTERNAL_OPS } from "./pdf-operations.js";
 import { tmpdir } from "os";
 import { resolve as resolvePath, isAbsolute } from "path";
@@ -74,41 +82,46 @@ export class Engine {
   private outputExtractor: OutputExtractor;
   private promptBuilder: PromptBuilder;
   private driverRegistry?: DriverRegistry;
-  private policyEngine?: PolicyEngine;
-  private auditLogger?: AuditLogger;
   private contextConfig?: ContextConfig;
   private stepTaints = new Map<string, TaintLabel>();
+
+  // Security — always present, never silently skipped
+  private policyEngine: PolicyEngine;
+  private auditLogger: AuditLogger;
+  private inputGuard: InputGuard;
+  private knowledgeGuard: KnowledgeGuard;
+  private contentScanner: ContentScanner;
+  private outputValidator: OutputValidator;
+  private planEnforcer: PlanEnforcer;
+  private writeStepCount = 0;
 
   constructor(
     registry: PatternRegistry,
     provider: LLMProvider,
-    config?: AiosConfig,
-    personaRegistry?: PersonaRegistry,
-    mcpManager?: McpManager,
-    ragService?: RAGService,
-    providerSelector?: ProviderSelector,
-    stepExecutor?: StepExecutor,
-    qualityPipeline?: QualityPipeline,
-    knowledgeBus?: KnowledgeBus,
-    driverRegistry?: DriverRegistry,
-    policyEngine?: PolicyEngine,
-    auditLogger?: AuditLogger,
-    contextConfig?: ContextConfig,
+    opts: EngineOptions = {},
   ) {
     this.registry = registry;
     this.provider = provider;
-    this.config = config;
-    this.personaRegistry = personaRegistry;
-    this.mcpManager = mcpManager;
-    this.ragService = ragService;
-    this.providerSelector = providerSelector;
-    this.stepExecutor = stepExecutor;
-    this.qualityPipeline = qualityPipeline;
-    this.knowledgeBus = knowledgeBus;
-    this.driverRegistry = driverRegistry;
-    this.policyEngine = policyEngine;
-    this.auditLogger = auditLogger;
-    this.contextConfig = contextConfig;
+    this.config = opts.config;
+    this.personaRegistry = opts.personaRegistry;
+    this.mcpManager = opts.mcpManager;
+    this.ragService = opts.ragService;
+    this.providerSelector = opts.providerSelector;
+    this.stepExecutor = opts.stepExecutor;
+    this.qualityPipeline = opts.qualityPipeline;
+    this.knowledgeBus = opts.knowledgeBus;
+    this.driverRegistry = opts.driverRegistry;
+    this.contextConfig = opts.contextConfig;
+
+    // Security defaults — no silent bypass
+    this.policyEngine = opts.policyEngine ?? new PolicyEngine([]);
+    this.auditLogger = opts.auditLogger ?? new NullAuditLogger();
+    this.inputGuard = opts.inputGuard ?? new InputGuard();
+    this.knowledgeGuard = opts.knowledgeGuard ?? new KnowledgeGuard({}, undefined, this.auditLogger);
+    this.contentScanner = opts.contentScanner ?? new ContentScanner();
+    this.outputValidator = opts.outputValidator ?? new OutputValidator({}, this.auditLogger);
+    this.planEnforcer = opts.planEnforcer ?? new PlanEnforcer({}, this.auditLogger);
+
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
     this.promptBuilder = new PromptBuilder();
@@ -136,6 +149,23 @@ export class Engine {
       sandbox_roots: sandboxRoots,
     };
     this.stepTaints.clear();
+
+    // Security: Audit + scan + plan freeze at workflow boundary
+    this.auditLogger.inputReceived(userInput, ctx.trace_id, ctx.context_id);
+    this.auditLogger.planCreated(JSON.stringify(plan), ctx.trace_id);
+    this.writeStepCount = 0;
+
+    const inputScan = this.inputGuard.analyze(userInput);
+    if (!inputScan.safe) {
+      this.auditLogger.guardTriggered(inputScan, ctx.trace_id);
+      console.error(chalk.yellow(`  ⚠️  InputGuard: ${inputScan.flags.join(", ")} (score=${inputScan.score.toFixed(2)})`));
+    } else {
+      this.auditLogger.guardPassed(inputScan, ctx.trace_id);
+    }
+
+    // PlanEnforcer: freeze plan, validate DAG, compute integrity hash.
+    // PlanEnforcer.freeze() calls auditLogger.planFrozen() internally.
+    this.planEnforcer.freeze(plan);
 
     plan.plan.steps.forEach((s) => { status.set(s.id, "pending"); retries.set(s.id, 0); });
 
@@ -180,14 +210,31 @@ export class Engine {
   ): Promise<void> {
     const t0 = Date.now();
     try {
+      // PlanEnforcer: validate step is part of frozen plan
+      const stepValid = this.planEnforcer.validateStep(step);
+      if (!stepValid.valid) {
+        throw new Error(`Plan violation: ${stepValid.reason}`);
+      }
+
       const pattern = this.registry.get(step.pattern);
       if (!pattern) throw new Error(`Pattern "${step.pattern}" nicht gefunden`);
+
+      // Pattern integrity check: verify system prompt hasn't been modified on disk
+      if (pattern.contentHash) {
+        const currentHash = createHash("sha256").update(pattern.systemPrompt).digest("hex");
+        if (currentHash !== pattern.contentHash) {
+          const msg = `Pattern integrity violation: "${pattern.meta.name}" content hash mismatch`;
+          this.auditLogger.policyViolation("pattern_integrity", msg, undefined, ctx.trace_id);
+          console.error(chalk.red(`  ❌ ${msg}`));
+          throw new Error(msg);
+        }
+      }
 
       // Phase 5.3 Schritt A+B: Policy-Check VOR Pattern-Dispatch
       // Input-Taint = derived(taints aller depends_on) bzw. userInputTaint() für Wurzel-Steps
       const inputTaint = this.computeInputTaint(step);
       const policyAction = this.policyActionFor(pattern.meta.type ?? "llm");
-      if (this.policyEngine && policyAction) {
+      if (policyAction) {
         const decision = this.policyEngine.check(policyAction, inputTaint, ctx.trace_id, {
           patternComplianceTags: pattern.meta.compliance_tags,
           contextComplianceTags: ctx.compliance_tags,
@@ -302,6 +349,15 @@ export class Engine {
           responseContent = response.content;
         }
 
+        // Phase 6: Validate LLM output (canary check, schema, exfiltration)
+        const validation = this.outputValidator.validate(
+          responseContent, null, pattern.meta.output_type, pattern.meta.name, ctx.trace_id,
+        );
+        if (!validation.valid) {
+          console.error(chalk.yellow(`  ⚠️  OutputValidator: ${validation.issues.map(i => `${i.severity}:${i.type}`).join(", ")}`));
+        }
+        responseContent = validation.cleanOutput;
+
         if (step.quality_gate) {
           const score = await this.checkQualityGate(step, responseContent, ctx);
           if (score < step.quality_gate.min_score) {
@@ -365,9 +421,32 @@ export class Engine {
 
       results.set(step.id, message);
       // Output-Taint: derived(input-taints) — Engine-Pattern verliert Trust nach LLM
-      const outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
+      let outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
+
+      // Phase 6: Scan tool/mcp output for injection patterns.
+      // Tool and MCP steps return external data that could contain injections.
+      const stepType = pattern.meta.type ?? "llm";
+      const isMcp = !!pattern.meta.mcp_server;
+      if (stepType === "tool" || isMcp) {
+        const toolScan = this.inputGuard.analyze(message.content);
+        if (!toolScan.safe) {
+          outTaint = { ...outTaint, integrity: "untrusted" };
+          this.auditLogger.guardTriggered(toolScan, ctx.trace_id);
+        }
+      }
+
       this.stepTaints.set(step.id, outTaint);
-      this.auditLogger?.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
+      this.auditLogger.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
+
+      // Circuit Breaker: track write-steps and enforce limit
+      const isWriteStep = stepType === "tool" || isMcp || pattern.meta.type === "kb";
+      if (isWriteStep) {
+        this.writeStepCount++;
+        if (ctx.max_write_steps && this.writeStepCount > ctx.max_write_steps) {
+          throw new Error(`Circuit Breaker: ${this.writeStepCount} write-steps exceed limit of ${ctx.max_write_steps}`);
+        }
+      }
+
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
@@ -612,6 +691,28 @@ export class Engine {
       }
     }
 
+    // Phase 6 H2: Tag recalled content with integrity markers.
+    // Non-trusted entries get wrapped so the PromptBuilder treats
+    // them as data, not instructions.
+    for (const msg of collected) {
+      const integrity = (msg.metadata?.integrity as string) ?? "derived";
+      const taint = {
+        integrity: integrity as "trusted" | "derived" | "untrusted",
+        confidentiality: "internal" as const,
+        source: "kb",
+        transformations: [] as string[],
+      };
+      if (integrity !== "trusted") {
+        msg.content = this.knowledgeGuard.tagForInjection(msg.content, taint);
+        this.auditLogger.log({
+          level: "debug",
+          event_type: "kb_write",
+          trace_id: ctx.trace_id,
+          message: `KB recall: tagged entry ${msg.id} with integrity=${integrity}`,
+        });
+      }
+    }
+
     const output =
       collected.length === 0
         ? "_Kein relevanter Kontext gefunden._"
@@ -667,9 +768,12 @@ export class Engine {
       });
     }
 
-    // Dedupe before publishing — both exact and near-dup.
+    // Dedupe + KnowledgeGuard + ContentScanner before publishing.
+    const inputTaint = this.computeInputTaint(step);
     let stored = 0;
     let duplicates = 0;
+    let quarantined = 0;
+    let blocked = 0;
     const errors: string[] = [];
     for (const rec of records) {
       try {
@@ -678,8 +782,47 @@ export class Engine {
           duplicates++;
           continue;
         }
-        await kb.publish(rec, ctx);
-        stored++;
+
+        // Phase 6 H2: Content-Scan for memory poisoning
+        const scanResult = this.contentScanner.scan(rec.content);
+
+        // Phase 6 H2: KnowledgeGuard taint-based routing
+        const guardResult = this.knowledgeGuard.validateWrite({
+          content: rec.content,
+          type: rec.type as "decision" | "fact" | "requirement" | "artifact",
+          tags: rec.tags,
+          sourcePattern: rec.source_pattern,
+          sourceStep: step.id,
+          taint: inputTaint,
+        }, ctx.trace_id);
+
+        // Escalate suspicious content that would be allowed
+        let decision = guardResult.decision;
+        if (scanResult.suspicious && decision === "allow") {
+          this.auditLogger.log({
+            level: "warn",
+            event_type: "kb_write_blocked",
+            trace_id: ctx.trace_id,
+            message: `Content scanner flagged memory write: ${scanResult.flags.join(", ")} (score=${scanResult.score.toFixed(2)})`,
+          });
+          decision = "queue_for_review";
+        }
+
+        switch (decision) {
+          case "allow": {
+            // Store with integrity label for recall-time tagging
+            rec.metadata = { ...rec.metadata, integrity: inputTaint.integrity };
+            await kb.publish(rec, ctx);
+            stored++;
+            break;
+          }
+          case "queue_for_review":
+            quarantined++;
+            break;
+          case "block":
+            blocked++;
+            break;
+        }
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
@@ -690,6 +833,8 @@ export class Engine {
       "",
       `- Stored: ${stored}`,
       `- Duplicates: ${duplicates}`,
+      `- Quarantined: ${quarantined}`,
+      `- Blocked: ${blocked}`,
       `- Failed: ${errors.length}`,
       `- Wing mapping: ${
         wingCfg.source === "context.yaml"
@@ -985,7 +1130,7 @@ export class Engine {
     }
 
     // Phase 5.3 Schritt C: Driver-Capabilities gegen Context-Allowance prüfen
-    if (this.policyEngine && ctx) {
+    if (ctx) {
       const capDecision = this.policyEngine.checkDriverCapabilities(
         loaded.def.capabilities,
         ctx,
@@ -1152,7 +1297,8 @@ export class Engine {
 
       // ── Generate image ──
       const providerToUse = this.resolveProvider(pattern, step, "image_generation");
-      const response = await providerToUse.complete(pattern.systemPrompt, currentPrompt, undefined, ctx);
+      const imgBuilt = this.promptBuilder.build(pattern.systemPrompt, currentPrompt, [], ctx.trace_id);
+      const response = await providerToUse.complete(imgBuilt.systemPrompt, imgBuilt.userMessage, undefined, ctx);
       totalCostCents += this.estimateCostCents(response.tokensUsed, pattern.meta.preferred_provider);
 
       if (!response.images?.length) {
@@ -1190,9 +1336,10 @@ export class Engine {
 
       console.error(chalk.gray(`    🔍 Auto-Review (Iteration ${iteration}/${maxIterations})...`));
       const imageBase64 = readFileSync(filePaths[0]).toString("base64");
+      const revBuilt = this.promptBuilder.build(reviewPattern.systemPrompt, `Review this generated image. Original prompt:\n\n${currentPrompt}`, [], ctx.trace_id);
       const reviewResponse = await visionProvider.complete(
-        reviewPattern.systemPrompt,
-        `Review this generated image. Original prompt:\n\n${currentPrompt}`,
+        revBuilt.systemPrompt,
+        revBuilt.userMessage,
         [imageBase64],
         ctx,
       );
@@ -1212,12 +1359,12 @@ export class Engine {
 
       // Use the review feedback to improve the prompt
       const refineProvider = this.resolveProvider(pattern, step);
-      const refineResponse = await refineProvider.complete(
+      const refBuilt = this.promptBuilder.build(
         `You are a prompt engineer. You receive an image generation prompt and a design review with issues. Output ONLY the improved prompt — no explanation, no markdown fences, just the prompt text.`,
         `## Original Prompt\n\n${currentPrompt}\n\n## Design Review\n\n${review}\n\nFix all HIGH severity issues. Keep everything else unchanged.`,
-        undefined,
-        ctx,
+        [], ctx.trace_id,
       );
+      const refineResponse = await refineProvider.complete(refBuilt.systemPrompt, refBuilt.userMessage, undefined, ctx);
       totalCostCents += this.estimateCostCents(refineResponse.tokensUsed);
       currentPrompt = refineResponse.content.trim();
       console.error(chalk.gray(`    🔄 Prompt refined, regenerating... (${totalCostCents}¢ / ${maxCostCents}¢)`));
@@ -1386,7 +1533,8 @@ export class Engine {
         const compensateInput = `## Zu kompensierender Output\n\n${originalOutput}\n\n## Kontext\n\nDieser Step wird zurückgerollt weil ein nachfolgender Step fehlgeschlagen ist.`;
 
         console.error(chalk.yellow(`  ⏪ Kompensiere ${step.id} → ${step.compensate.pattern}`));
-        await this.provider.complete(compensatePattern.systemPrompt, compensateInput, undefined, ctx);
+        const compBuilt = this.promptBuilder.build(compensatePattern.systemPrompt, compensateInput, [], ctx.trace_id);
+        await this.provider.complete(compBuilt.systemPrompt, compBuilt.userMessage, undefined, ctx);
         status.set(step.id, "failed"); // Mark as rolled back
         console.error(chalk.yellow(`  ↩️  ${step.id} kompensiert`));
       } catch (compError) {
@@ -1438,7 +1586,8 @@ export class Engine {
       console.error(chalk.yellow(`  ⚠️  Quality Gate Pattern "${step.quality_gate.pattern}" nicht gefunden, übersprungen`));
       return 10;
     }
-    const resp = await this.provider.complete(gatePattern.systemPrompt, content, undefined, ctx);
+    const gateBuilt = this.promptBuilder.build(gatePattern.systemPrompt, content, [], ctx.trace_id);
+    const resp = await this.provider.complete(gateBuilt.systemPrompt, gateBuilt.userMessage, undefined, ctx);
     const match = resp.content.match(/(\d+)\s*\/?\s*10/);
     return match ? parseInt(match[1]) : 5;
   }

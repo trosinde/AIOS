@@ -221,7 +221,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["mmdc"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -245,7 +245,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["prettier"] }, // mmdc NICHT erlaubt
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -277,7 +277,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     // render_diagram nutzt mmdc (nicht verfügbar) → wir testen nur die Branching-Logik
     // Prüfe dass generate_diagram (LLM-Pattern) korrekt als LLM erkannt wird
@@ -328,7 +328,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-text-tool", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -377,7 +377,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-file-tool", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -420,7 +420,7 @@ describe("Engine", () => {
     const callTool = vi.fn().mockResolvedValue("stored: id=42");
     const mcpManager = { callTool } as unknown as McpManager;
     const provider = mockProvider();
-    const engine = new Engine(registry, provider, undefined, undefined, mcpManager);
+    const engine = new Engine(registry, provider, { mcpManager });
 
     const plan = makePlan({
       steps: [
@@ -473,7 +473,7 @@ describe("Engine", () => {
 
     const callTool = vi.fn().mockResolvedValue("no matches");
     const mcpManager = { callTool } as unknown as McpManager;
-    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
 
     const plan = makePlan({
       steps: [
@@ -506,7 +506,7 @@ describe("Engine", () => {
 
     const callTool = vi.fn().mockRejectedValue(new Error("connection refused"));
     const mcpManager = { callTool } as unknown as McpManager;
-    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
 
     const plan = makePlan({
       steps: [
@@ -551,5 +551,811 @@ describe("sanitizeMcpArgs", () => {
     expect(sanitizeMcpArgs(null)).toEqual({});
     expect(sanitizeMcpArgs("string")).toEqual({});
     expect(sanitizeMcpArgs(42)).toEqual({});
+  });
+});
+
+// ─── Additional Coverage Tests ──────────────────────────────────────
+
+describe("Engine – image generation path", () => {
+  it("executeImageGeneration calls provider with image_generation capability", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_image_gen",
+        description: "Image gen pattern",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "image_generation",
+        preferred_provider: "gemini-image",
+      },
+      systemPrompt: "Generate an image",
+      filePath: "",
+    });
+
+    const imageResponse = {
+      content: "Generated image",
+      model: "gemini",
+      tokensUsed: { input: 100, output: 200 },
+      images: [{ data: Buffer.from("fake-png-data").toString("base64"), mimeType: "image/png" }],
+    };
+
+    const provider = mockProvider();
+    const imageProvider: LLMProvider = {
+      complete: vi.fn().mockResolvedValue(imageResponse),
+      chat: vi.fn(),
+    };
+
+    // ProviderSelector that returns imageProvider for image_generation capability
+    const providerSelector = {
+      getByName: vi.fn().mockReturnValue({ name: "gemini-image", provider: imageProvider }),
+      select: vi.fn().mockReturnValue({ name: "gemini-image", provider: imageProvider }),
+    };
+
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-image-gen", allowed: [] },
+    };
+
+    const engine = new Engine(registry, provider, {
+      config,
+      providerSelector: providerSelector as unknown as import("../agents/provider-selector.js").ProviderSelector,
+    });
+
+    const plan = makePlan({
+      steps: [
+        { id: "img", pattern: "__test_image_gen", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: { max: 1 }, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "Draw a cat");
+    expect(result.status.get("img")).toBe("done");
+    const msg = result.results.get("img");
+    expect(msg?.contentKind).toBe("file");
+    expect(msg?.content).toContain("Bild erzeugt:");
+    expect(msg?.filePaths).toBeDefined();
+    expect(msg?.filePaths!.length).toBeGreaterThan(0);
+  });
+
+  it("executeImageGeneration fails when provider returns no images", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_image_no_img",
+        description: "Image gen that returns no images",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "image_generation",
+        preferred_provider: "gemini-image",
+      },
+      systemPrompt: "Generate an image",
+      filePath: "",
+    });
+
+    const noImageResponse = {
+      content: "No image generated",
+      model: "gemini",
+      tokensUsed: { input: 100, output: 200 },
+      // no images field
+    };
+
+    const provider = mockProvider();
+    const imageProvider: LLMProvider = {
+      complete: vi.fn().mockResolvedValue(noImageResponse),
+      chat: vi.fn(),
+    };
+
+    const providerSelector = {
+      getByName: vi.fn().mockReturnValue({ name: "gemini-image", provider: imageProvider }),
+      select: vi.fn().mockReturnValue({ name: "gemini-image", provider: imageProvider }),
+    };
+
+    const engine = new Engine(registry, provider, {
+      config: {
+        providers: {},
+        defaults: { provider: "claude" },
+        paths: { patterns: PATTERNS_DIR, personas: "" },
+        tools: { output_dir: "/tmp/aios-test-image-noimg", allowed: [] },
+      },
+      providerSelector: providerSelector as unknown as import("../agents/provider-selector.js").ProviderSelector,
+    });
+
+    const plan = makePlan({
+      steps: [
+        { id: "img", pattern: "__test_image_no_img", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "Draw a cat");
+    expect(result.status.get("img")).toBe("failed");
+  });
+});
+
+describe("Engine – TTS path", () => {
+  it("executeTTS calls ttsProvider.synthesize and returns file result", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_tts",
+        description: "TTS pattern",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "tts",
+        tts_voice: "nova",
+        tts_model: "tts-1",
+        tts_format: "mp3",
+        tts_speed: 1.0,
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const provider = mockProvider();
+    const mockTTSProvider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audioData: Buffer.from("fake-audio-data"),
+        format: "mp3",
+      }),
+    };
+
+    const config: AiosConfig = {
+      providers: {},
+      defaults: { provider: "claude" },
+      paths: { patterns: PATTERNS_DIR, personas: "" },
+      tools: { output_dir: "/tmp/aios-test-tts", allowed: [] },
+    };
+
+    const engine = new Engine(registry, provider, { config });
+    // Inject the mock TTS provider via the private field
+    (engine as unknown as Record<string, unknown>).ttsProvider = mockTTSProvider;
+
+    const plan = makePlan({
+      steps: [
+        { id: "tts", pattern: "__test_tts", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "Hello world");
+    expect(result.status.get("tts")).toBe("done");
+    expect(mockTTSProvider.synthesize).toHaveBeenCalledTimes(1);
+    const msg = result.results.get("tts");
+    expect(msg?.contentKind).toBe("file");
+    expect(msg?.content).toContain("Audio erzeugt:");
+    expect(msg?.filePath).toBeDefined();
+  });
+
+  it("executeTTS truncates input longer than 4096 chars", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_tts_long",
+        description: "TTS long input",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "tts",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const provider = mockProvider();
+    const mockTTSProvider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audioData: Buffer.from("audio"),
+        format: "mp3",
+      }),
+    };
+
+    const engine = new Engine(registry, provider, {
+      config: {
+        providers: {},
+        defaults: { provider: "claude" },
+        paths: { patterns: PATTERNS_DIR, personas: "" },
+        tools: { output_dir: "/tmp/aios-test-tts-long", allowed: [] },
+      },
+    });
+    (engine as unknown as Record<string, unknown>).ttsProvider = mockTTSProvider;
+
+    const plan = makePlan({
+      steps: [
+        { id: "tts", pattern: "__test_tts_long", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const longInput = "A".repeat(5000);
+    await engine.execute(plan, longInput);
+
+    // The synthesize call should receive truncated input (at most 4096 chars)
+    const passedText = mockTTSProvider.synthesize.mock.calls[0][0];
+    expect(passedText.length).toBeLessThanOrEqual(4096);
+  });
+});
+
+describe("Engine – saga rollback (compensate)", () => {
+  it("executes compensating actions for completed steps on rollback", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        // step1 succeeds
+        .mockResolvedValueOnce({ content: "step1 output", model: "test", tokensUsed: { input: 0, output: 0 } })
+        // step2 fails
+        .mockRejectedValueOnce(new Error("step2 crashed"))
+        // compensate call for step1
+        .mockResolvedValueOnce({ content: "step1 compensated", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      type: "saga",
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: null,
+          quality_gate: null,
+          compensate: { pattern: "summarize" },
+        },
+        {
+          id: "s2",
+          pattern: "code_review",
+          depends_on: ["s1"],
+          input_from: ["s1"],
+          parallel_group: null,
+          retry: { max: 0, on_failure: "rollback" },
+          quality_gate: null,
+        },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test input");
+    // s1 was done but should be marked failed after compensation
+    expect(result.status.get("s1")).toBe("failed");
+    expect(result.status.get("s2")).toBe("failed");
+    // Provider should have been called 3 times: s1, s2 (fail), compensate s1
+    expect(provider.complete).toHaveBeenCalledTimes(3);
+  });
+
+  it("handles missing compensate pattern gracefully", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        .mockResolvedValueOnce({ content: "ok", model: "test", tokensUsed: { input: 0, output: 0 } })
+        .mockRejectedValueOnce(new Error("fail")),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      type: "saga",
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: null,
+          quality_gate: null,
+          compensate: { pattern: "nonexistent_compensate_pattern" },
+        },
+        {
+          id: "s2",
+          pattern: "code_review",
+          depends_on: ["s1"],
+          input_from: ["s1"],
+          parallel_group: null,
+          retry: { max: 0, on_failure: "rollback" },
+          quality_gate: null,
+        },
+      ],
+    });
+
+    // Should not throw — compensate pattern not found is handled gracefully
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("s2")).toBe("failed");
+  });
+});
+
+describe("Engine – quality gate", () => {
+  it("passes when quality gate score meets threshold", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    // Register a quality gate pattern
+    registry.registerVirtual({
+      meta: {
+        name: "__test_qg",
+        description: "Quality gate",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+      },
+      systemPrompt: "Rate the quality",
+      filePath: "",
+    });
+
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        // First call: the actual step
+        .mockResolvedValueOnce({ content: "Step output", model: "test", tokensUsed: { input: 0, output: 0 } })
+        // Second call: quality gate returns high score
+        .mockResolvedValueOnce({ content: "Quality score: 8/10", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: null,
+          quality_gate: { pattern: "__test_qg", min_score: 7 },
+        },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("s1")).toBe("done");
+  });
+
+  it("fails when quality gate score is below threshold", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_qg_low",
+        description: "Quality gate",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+      },
+      systemPrompt: "Rate the quality",
+      filePath: "",
+    });
+
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        .mockResolvedValueOnce({ content: "Bad output", model: "test", tokensUsed: { input: 0, output: 0 } })
+        .mockResolvedValueOnce({ content: "Score: 3/10", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: null,
+          quality_gate: { pattern: "__test_qg_low", min_score: 7 },
+        },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("s1")).toBe("failed");
+  });
+
+  it("skips quality gate when pattern not found (defaults to score 10)", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        .mockResolvedValueOnce({ content: "Output", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: null,
+          quality_gate: { pattern: "nonexistent_qg_pattern", min_score: 5 },
+        },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    // Non-existent QG pattern returns score 10, so the step passes
+    expect(result.status.get("s1")).toBe("done");
+  });
+});
+
+describe("Engine – resolveProvider", () => {
+  it("throws when capability required but no provider configured", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_img_noprovider",
+        description: "Image gen without provider",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "image_generation",
+      },
+      systemPrompt: "Generate",
+      filePath: "",
+    });
+
+    const provider = mockProvider();
+    // No providerSelector — resolveProvider falls through to capability check
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        { id: "img", pattern: "__test_img_noprovider", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "Draw something");
+    expect(result.status.get("img")).toBe("failed");
+  });
+
+  it("uses providerSelector pattern preferred_provider", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_preferred",
+        description: "Pattern with preferred provider",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+        preferred_provider: "my-claude",
+      },
+      systemPrompt: "Do something",
+      filePath: "",
+    });
+
+    const preferredProvider: LLMProvider = {
+      complete: vi.fn().mockResolvedValue({ content: "from preferred", model: "preferred-model", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const defaultProvider = mockProvider("from default");
+
+    const providerSelector = {
+      getByName: vi.fn().mockImplementation((name: string) => {
+        if (name === "my-claude") return { name: "my-claude", provider: preferredProvider };
+        return undefined;
+      }),
+      select: vi.fn(),
+    };
+
+    const engine = new Engine(registry, defaultProvider, {
+      providerSelector: providerSelector as unknown as import("../agents/provider-selector.js").ProviderSelector,
+    });
+
+    const plan = makePlan({
+      steps: [
+        { id: "s1", pattern: "__test_preferred", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("s1")).toBe("done");
+    expect(preferredProvider.complete).toHaveBeenCalledTimes(1);
+    expect(defaultProvider.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("Engine – rework feedback loop", () => {
+  it("passes feedback from previous failure to retry", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        .mockRejectedValueOnce(new Error("Missing section header"))
+        .mockResolvedValueOnce({ content: "Fixed output", model: "test", tokensUsed: { input: 0, output: 0 } }),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        {
+          id: "s1",
+          pattern: "summarize",
+          depends_on: [],
+          input_from: ["$USER_INPUT"],
+          parallel_group: null,
+          retry: { max: 2, on_failure: "retry_with_feedback" },
+          quality_gate: null,
+        },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test input");
+    expect(result.status.get("s1")).toBe("done");
+    // The second call should include feedback about the error
+    const secondCall = vi.mocked(provider.complete).mock.calls[1];
+    // The user message (2nd arg) should contain the feedback from the error
+    expect(secondCall[1]).toContain("Missing section header");
+  });
+});
+
+describe("Engine – dependency chain with failed upstream", () => {
+  it("skips downstream steps when dependency fails", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider: LLMProvider = {
+      complete: vi.fn()
+        .mockRejectedValue(new Error("always fail")),
+      chat: vi.fn(),
+    };
+    const engine = new Engine(registry, provider);
+
+    const plan = makePlan({
+      steps: [
+        { id: "s1", pattern: "summarize", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+        { id: "s2", pattern: "code_review", depends_on: ["s1"], input_from: ["s1"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("s1")).toBe("failed");
+    // s2 should remain pending since s1 never became "done"
+    expect(result.status.get("s2")).toBe("pending");
+  });
+});
+
+describe("Engine – MCP argument building edge cases", () => {
+  it("wraps non-object JSON (array) in { input } fallback", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "testmcp/array",
+        description: "MCP that receives array",
+        category: "mcp",
+        input_type: "json",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "testmcp",
+        mcp_tool: "array",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const callTool = vi.fn().mockResolvedValue("ok");
+    const mcpManager = { callTool } as unknown as McpManager;
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
+
+    const plan = makePlan({
+      steps: [
+        { id: "arr", pattern: "testmcp/array", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    await engine.execute(plan, '[1, 2, 3]');
+
+    // Arrays are not objects, so should be wrapped in { input }
+    const passedArgs = callTool.mock.calls[0][2];
+    expect(passedArgs).toHaveProperty("input");
+  });
+
+  it("MCP pattern fails when mcpManager not configured", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "testmcp/nomgr",
+        description: "MCP without manager",
+        category: "mcp",
+        input_type: "json",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "testmcp",
+        mcp_tool: "tool",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    // No mcpManager passed
+    const engine = new Engine(registry, mockProvider());
+
+    const plan = makePlan({
+      steps: [
+        { id: "mcp", pattern: "testmcp/nomgr", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "{}");
+    expect(result.status.get("mcp")).toBe("failed");
+  });
+});
+
+describe("Engine – MCP file path extraction", () => {
+  it("extracts image file paths from MCP tool output", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "testmcp/images",
+        description: "MCP returns image paths",
+        category: "mcp",
+        input_type: "json",
+        output_type: "text",
+        tags: ["mcp"],
+        type: "mcp",
+        mcp_server: "testmcp",
+        mcp_tool: "images",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const callTool = vi.fn().mockResolvedValue(
+      "Generated thumbnails:\n/tmp/output/thumb1.png\n/tmp/output/thumb2.jpg"
+    );
+    const mcpManager = { callTool } as unknown as McpManager;
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
+
+    const plan = makePlan({
+      steps: [
+        { id: "imgs", pattern: "testmcp/images", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "{}");
+    expect(result.status.get("imgs")).toBe("done");
+    const msg = result.results.get("imgs");
+    expect(msg?.contentKind).toBe("file");
+    expect(msg?.filePaths).toBeDefined();
+    expect(msg?.filePaths!.length).toBe(2);
+  });
+});
+
+describe("Engine – cost estimation", () => {
+  it("estimateCostCents calculates correctly with defaults", () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const engine = new Engine(registry, mockProvider());
+    // Access private method for testing
+    const estimate = (engine as unknown as { estimateCostCents: (tokens?: { input: number; output: number }, provider?: string) => number }).estimateCostCents;
+    // 1M tokens at default $0.10/Mtok = $0.10 = 10 cents
+    expect(estimate.call(engine, { input: 500000, output: 500000 })).toBeCloseTo(10, 1);
+    expect(estimate.call(engine, undefined)).toBe(0);
+  });
+});
+
+describe("Engine – internal pattern execution", () => {
+  it("fails when internal_op is not defined", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_internal_noop",
+        description: "Internal without op",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+        type: "internal",
+        // no internal_op
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const engine = new Engine(registry, mockProvider());
+    const plan = makePlan({
+      steps: [
+        { id: "int", pattern: "__test_internal_noop", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("int")).toBe("failed");
+  });
+
+  it("fails when internal_op is unknown", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_internal_unknown",
+        description: "Internal with unknown op",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+        type: "internal",
+        internal_op: "totally_unknown_operation_xyz",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const engine = new Engine(registry, mockProvider());
+    const plan = makePlan({
+      steps: [
+        { id: "int", pattern: "__test_internal_unknown", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("int")).toBe("failed");
+  });
+});
+
+describe("Engine – tool pattern without tool field", () => {
+  it("fails when tool pattern has no tool defined and no driver", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_tool_notool",
+        description: "Tool without tool field",
+        category: "test",
+        input_type: "text",
+        output_type: "text",
+        tags: [],
+        type: "tool",
+        // no tool, no driver
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    const engine = new Engine(registry, mockProvider());
+    const plan = makePlan({
+      steps: [
+        { id: "t", pattern: "__test_tool_notool", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "test");
+    expect(result.status.get("t")).toBe("failed");
+  });
+});
+
+describe("Engine – driver without registry", () => {
+  it("fails when pattern uses driver but no DriverRegistry provided", async () => {
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    registry.registerVirtual({
+      meta: {
+        name: "__test_driver_noreg",
+        description: "Driver pattern without registry",
+        category: "test",
+        input_type: "text",
+        output_type: "file",
+        tags: [],
+        type: "tool",
+        driver: "mermaid",
+        operation: "render",
+      },
+      systemPrompt: "",
+      filePath: "",
+    });
+
+    // No driverRegistry in options
+    const engine = new Engine(registry, mockProvider());
+    const plan = makePlan({
+      steps: [
+        { id: "d", pattern: "__test_driver_noreg", depends_on: [], input_from: ["$USER_INPUT"], parallel_group: null, retry: null, quality_gate: null },
+      ],
+    });
+
+    const result = await engine.execute(plan, "graph TD");
+    expect(result.status.get("d")).toBe("failed");
   });
 });

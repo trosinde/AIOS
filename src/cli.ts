@@ -11,6 +11,11 @@ import { Engine } from "./core/engine.js";
 import { DriverRegistry } from "./core/driver-registry.js";
 import { PolicyEngine, DEFAULT_POLICIES } from "./security/policy-engine.js";
 import { AuditLogger } from "./security/audit-logger.js";
+import { InputGuard } from "./security/input-guard.js";
+import { KnowledgeGuard } from "./security/knowledge-guard.js";
+import { ContentScanner } from "./security/content-scanner.js";
+import type { EngineOptions } from "./types.js";
+import { PromptBuilder } from "./security/prompt-builder.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
@@ -101,12 +106,25 @@ function buildDriverRegistry(): DriverRegistry {
  *   "strict"  → DEFAULT_POLICIES (Integrity-Checks für tool/mcp/knowledge)
  *   "relaxed" → leeres Policy-Set (Default, CLI-kompatibel)
  */
-function buildSecurityLayer(auditLogger: AuditLogger): { policyEngine: PolicyEngine; contextConfig: import("./types.js").ContextConfig } {
+interface SecurityLayer {
+  policyEngine: PolicyEngine;
+  auditLogger: AuditLogger;
+  inputGuard: InputGuard;
+  knowledgeGuard: KnowledgeGuard;
+  contentScanner: ContentScanner;
+  contextConfig: import("./types.js").ContextConfig;
+}
+
+function buildSecurityLayer(auditLogger: AuditLogger): SecurityLayer {
   const cm = new ContextManager();
   const ctx = cm.resolveActive();
   const mode = ctx.config.security?.integrity_policies ?? "relaxed";
   const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
-  return { policyEngine: new PolicyEngine(policies, auditLogger), contextConfig: ctx.config };
+  const policyEngine = new PolicyEngine(policies, auditLogger);
+  const inputGuard = new InputGuard();
+  const knowledgeGuard = new KnowledgeGuard({}, policyEngine, auditLogger);
+  const contentScanner = new ContentScanner();
+  return { policyEngine, auditLogger, inputGuard, knowledgeGuard, contentScanner, contextConfig: ctx.config };
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -190,7 +208,9 @@ program
 
       // ExecutionContext für den Cross-Context-Lauf
       const crossCtx = { trace_id: randomUUID(), context_id: "cross-context", started_at: Date.now() };
-      const response = await provider.complete(systemPrompt, fullInput, undefined, crossCtx);
+      const crossPB = new PromptBuilder();
+      const crossBuilt = crossPB.build(systemPrompt, fullInput, [], crossCtx.trace_id);
+      const response = await provider.complete(crossBuilt.systemPrompt, crossBuilt.userMessage, undefined, crossCtx);
 
       let rawPlan: unknown;
       try {
@@ -263,7 +283,12 @@ program
       const pRegistry = new PatternRegistry(patternsDir);
       const personas = new PersonaRegistry(personasDir);
       const router = new Router(pRegistry, provider);
-      const engine = new Engine(pRegistry, provider, config, personas);
+      const ctxAuditLogger = new AuditLogger();
+      const ctxSecurity = buildSecurityLayer(ctxAuditLogger);
+      const engine = new Engine(pRegistry, provider, {
+        config, personaRegistry: personas,
+        ...ctxSecurity,
+      });
 
       console.error(chalk.blue(`🎯 Kontext: ${manifest.name} (${manifest.type})`));
       console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -299,8 +324,12 @@ program
     const qualityPipeline = buildQualityPipeline(config, provider, personas, opts.quality as QualityLevel | undefined);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+    const security = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, {
+      config, personaRegistry: personas, mcpManager, ragService,
+      providerSelector: selector, stepExecutor, qualityPipeline,
+      driverRegistry, ...security,
+    });
 
     if (qualityPipeline) {
       console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
@@ -387,8 +416,11 @@ program
     if (engineDispatchTypes.includes(pattern.meta.type ?? "")) {
       const driverRegistry = buildDriverRegistry();
       const auditLogger = new AuditLogger();
-      const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+      const security = buildSecurityLayer(auditLogger);
+      const engine = new Engine(registry, provider, {
+        config, personaRegistry: personas, mcpManager, ragService,
+        providerSelector: selector, stepExecutor, driverRegistry, ...security,
+      });
       const directPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -428,7 +460,9 @@ program
         ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
         : systemPrompt;
       const visionProvider = selector?.select("vision")?.provider ?? provider;
-      const response = await visionProvider.complete(fullPrompt, `Review this image. File paths: ${filePaths.join(", ")}`, images);
+      const cliPB = new PromptBuilder();
+      const visionBuilt = cliPB.build(fullPrompt, `Review this image. File paths: ${filePaths.join(", ")}`, []);
+      const response = await visionProvider.complete(visionBuilt.systemPrompt, visionBuilt.userMessage, images);
       process.stdout.write(response.content);
     } else {
       // LLM-Pattern: Persona + Pattern kombinieren
@@ -437,7 +471,9 @@ program
       const fullPrompt = persona
         ? `${persona.system_prompt}\n\n---\n\n${systemPrompt}`
         : systemPrompt;
-      const response = await provider.complete(fullPrompt, input);
+      const cliPB = new PromptBuilder();
+      const cliBuilt = cliPB.build(fullPrompt, input, []);
+      const response = await provider.complete(cliBuilt.systemPrompt, cliBuilt.userMessage);
 
       // Quality Backbone: check at output boundary
       const qualityLevel = cmd.opts().quality as QualityLevel | undefined;
@@ -457,7 +493,8 @@ program
             rerunPattern: async (reworkHint: string, previousOutput: string) => {
               const reworkPrompt = `${fullPrompt}\n\n## REWORK FEEDBACK\n\nFix the following:\n${reworkHint}`;
               const reworkInput = `${input}\n\n## PREVIOUS OUTPUT (needs fixing)\n\n${previousOutput}`;
-              const resp = await provider.complete(reworkPrompt, reworkInput);
+              const reworkBuilt = cliPB.build(reworkPrompt, reworkInput, []);
+              const resp = await provider.complete(reworkBuilt.systemPrompt, reworkBuilt.userMessage);
               return resp.content;
             },
           },
@@ -582,8 +619,11 @@ program
     const router = new Router(registry, provider);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+    const security = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, {
+      config, personaRegistry: personas, mcpManager, ragService,
+      providerSelector: selector, stepExecutor, driverRegistry, ...security,
+    });
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();

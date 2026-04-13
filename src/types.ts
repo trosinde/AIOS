@@ -15,6 +15,10 @@ export interface ExecutionContext {
     tmp: string;
     output: string;
   };
+  /** Maximum write-steps (tool, mcp, kb-store) before circuit breaker. Default: unlimited. */
+  max_write_steps?: number;
+  /** Whether this is an interactive session (true) or autonomous/cron (false). Default: true. */
+  interactive?: boolean;
 }
 
 // ─── Selection Strategy ─────────────────────────────────
@@ -110,6 +114,8 @@ export interface Pattern {
   meta: PatternMeta;
   systemPrompt: string;
   filePath: string;
+  /** SHA-256 of systemPrompt at load time. For integrity verification. */
+  contentHash?: string;
 }
 
 // ─── Execution Plan (Router Output) ─────────────────────
@@ -886,3 +892,52 @@ export interface LoadedDriver {
   sourcePath: string;               // Absolute Pfad zur driver.yaml
   detectedVersion?: string;         // Vom version_command geparst
 }
+
+// ─── Engine Options ──────────────────────────────────────
+
+/**
+ * Options-Object für den Engine-Constructor.
+ *
+ * Ersetzt die 14 Positional-Parameter. Security-Komponenten haben
+ * Defaults: fehlendes Feld → Default-Instanz statt stilles Bypass.
+ */
+export interface EngineOptions {
+  config?: AiosConfig;
+  personaRegistry?: PersonaRegistry;
+  mcpManager?: McpManager;
+  ragService?: RAGService;
+  providerSelector?: ProviderSelector;
+  stepExecutor?: StepExecutor;
+  qualityPipeline?: QualityPipeline;
+  knowledgeBus?: KnowledgeBus;
+  driverRegistry?: DriverRegistry;
+  contextConfig?: ContextConfig;
+
+  // Security — Engine erstellt Defaults wenn nicht übergeben
+  policyEngine?: PolicyEngine;
+  auditLogger?: AuditLogger;
+  inputGuard?: InputGuard;
+  knowledgeGuard?: KnowledgeGuard;
+  contentScanner?: ContentScanner;
+  outputValidator?: OutputValidator;
+  planEnforcer?: PlanEnforcer;
+}
+
+// Forward-declare types used in EngineOptions to avoid circular imports.
+// Actual implementations live in their respective modules.
+// These are re-exported here purely for the EngineOptions interface.
+import type { PersonaRegistry } from "./core/personas.js";
+import type { McpManager } from "./core/mcp.js";
+import type { RAGService } from "./rag/rag-service.js";
+import type { ProviderSelector } from "./agents/provider-selector.js";
+import type { StepExecutor } from "./core/executor.js";
+import type { QualityPipeline } from "./core/quality/pipeline.js";
+import type { KnowledgeBus } from "./core/knowledge-bus.js";
+import type { DriverRegistry } from "./core/driver-registry.js";
+import type { PolicyEngine } from "./security/policy-engine.js";
+import type { AuditLogger } from "./security/audit-logger.js";
+import type { InputGuard } from "./security/input-guard.js";
+import type { KnowledgeGuard } from "./security/knowledge-guard.js";
+import type { ContentScanner } from "./security/content-scanner.js";
+import type { OutputValidator } from "./security/output-validator.js";
+import type { PlanEnforcer } from "./security/plan-enforcer.js";

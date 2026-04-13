@@ -29,8 +29,55 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test (unit + integration)
-        run: npm test
+      - name: Test with coverage
+        run: npx vitest run --coverage
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Test Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Extract the summary line from json-summary
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "
+              const s = require('./coverage/coverage-summary.json').total;
+              const fmt = (v) => v.pct.toFixed(1) + '%';
+              console.log('| Metric | Coverage |');
+              console.log('|--------|----------|');
+              console.log('| **Statements** | ' + fmt(s.statements) + ' |');
+              console.log('| **Branches** | ' + fmt(s.branches) + ' |');
+              console.log('| **Functions** | ' + fmt(s.functions) + ' |');
+              console.log('| **Lines** | ' + fmt(s.lines) + ' |');
+            " >> $GITHUB_STEP_SUMMARY
+
+            # Security module detail
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Security Modules" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const c = require('./coverage/coverage-summary.json');
+              const secFiles = Object.keys(c)
+                .filter(k => k.includes('src/security/') && !k.includes('.test.') && k !== 'total')
+                .sort();
+              if (secFiles.length > 0) {
+                console.log('| Module | Stmts | Branch | Fn | Lines |');
+                console.log('|--------|-------|--------|-----|-------|');
+                for (const f of secFiles) {
+                  const d = c[f];
+                  const name = f.replace(/.*src\/security\//, '');
+                  console.log('| ' + name + ' | ' + d.statements.pct + '% | ' + d.branches.pct + '% | ' + d.functions.pct + '% | ' + d.lines.pct + '% |');
+                }
+              }
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
 
       - name: Test (e2e — real CLI subprocess, stub embeddings)
         env:

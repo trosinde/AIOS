@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
+import { createHash } from "crypto";
 import matter from "gray-matter";
 import type { Pattern, PatternMeta, PatternParameter } from "../types.js";
 import { validateOutputExtraction } from "./output-extractor.js";
@@ -97,7 +98,9 @@ export class PatternRegistry {
       return null;
     }
 
-    return { meta, systemPrompt: content.trim(), filePath };
+    const trimmedPrompt = content.trim();
+    const contentHash = createHash("sha256").update(trimmedPrompt).digest("hex");
+    return { meta, systemPrompt: trimmedPrompt, filePath, contentHash };
   }
 
   /** Alle Patterns aus dem Verzeichnis laden */

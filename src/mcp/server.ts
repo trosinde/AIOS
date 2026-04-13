@@ -30,6 +30,12 @@ import type { McpToolInfo } from "../core/mcp.js";
 import type { AiosConfig, ExecutionContext } from "../types.js";
 import type { LLMProvider } from "../agents/provider.js";
 import { randomUUID } from "crypto";
+import { AuditLogger } from "../security/audit-logger.js";
+import { PolicyEngine, DEFAULT_POLICIES } from "../security/policy-engine.js";
+import { InputGuard } from "../security/input-guard.js";
+import { KnowledgeGuard } from "../security/knowledge-guard.js";
+import { ContentScanner } from "../security/content-scanner.js";
+import { ContextManager } from "../core/context.js";
 
 /** Suppress all stderr output in MCP mode (would corrupt JSON-RPC protocol) */
 function silenceStderr(): void {
@@ -290,7 +296,9 @@ export async function startMCPServer(): Promise<void> {
             ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
             : pattern.systemPrompt;
 
-          const result = await runProvider.complete(fullPrompt, input, undefined, ctx);
+          const mcpPB = new (await import("../security/prompt-builder.js")).PromptBuilder();
+          const mcpBuilt = mcpPB.build(fullPrompt, input, [], ctx.trace_id);
+          const result = await runProvider.complete(mcpBuilt.systemPrompt, mcpBuilt.userMessage, undefined, ctx);
           return {
             content: [{ type: "text" as const, text: result.content }],
           };
@@ -301,7 +309,20 @@ export async function startMCPServer(): Promise<void> {
           const dryRun = args?.dry_run as boolean | undefined;
 
           const router = new Router(registry, provider);
-          const engine = new Engine(registry, provider, config, personas, undefined, undefined, selector);
+          const mcpAuditLogger = new AuditLogger();
+          const cm = new ContextManager();
+          const activeCtx = cm.resolveActive();
+          const mode = activeCtx.config.security?.integrity_policies ?? "relaxed";
+          const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
+          const policyEngine = new PolicyEngine(policies, mcpAuditLogger);
+          const engine = new Engine(registry, provider, {
+            config, personaRegistry: personas, providerSelector: selector,
+            policyEngine, auditLogger: mcpAuditLogger,
+            inputGuard: new InputGuard(),
+            knowledgeGuard: new KnowledgeGuard({}, policyEngine, mcpAuditLogger),
+            contentScanner: new ContentScanner(),
+            contextConfig: activeCtx.config,
+          });
           const plan = await router.planWorkflow(task, undefined, ctx);
 
           if (dryRun) {
