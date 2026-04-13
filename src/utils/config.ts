@@ -97,16 +97,24 @@ export function saveEnv(vars: Record<string, string>): string {
 
 export function loadConfig(): AiosConfig {
   loadEnv();
-  // 1. Projekt-lokale config (./aios.yaml)
-  const localPath = join(process.cwd(), "aios.yaml");
-  if (existsSync(localPath)) {
-    return mergeConfig(parseYaml(readFileSync(localPath, "utf-8")));
+
+  // 1. Global config (~/.aios/config.yaml) – machine-local settings (providers, MCP servers)
+  const globalPath = join(AIOS_HOME, "config.yaml");
+  let globalConfig: Partial<AiosConfig> = {};
+  if (existsSync(globalPath)) {
+    globalConfig = parseYaml(readFileSync(globalPath, "utf-8")) ?? {};
   }
 
-  // 2. Globale config (~/.aios/config.yaml)
-  const globalPath = join(AIOS_HOME, "config.yaml");
-  if (existsSync(globalPath)) {
-    return mergeConfig(parseYaml(readFileSync(globalPath, "utf-8")));
+  // 2. Project-local config (./aios.yaml) – project-specific settings
+  const localPath = join(process.cwd(), "aios.yaml");
+  if (existsSync(localPath)) {
+    const projectConfig = parseYaml(readFileSync(localPath, "utf-8")) ?? {};
+    // Global config is the base, project config overrides – but MCP servers merge additively
+    return mergeConfigs(globalConfig, projectConfig);
+  }
+
+  if (Object.keys(globalConfig).length > 0) {
+    return mergeConfig(globalConfig);
   }
 
   // 3. Default + lokales patterns/ Verzeichnis falls vorhanden
@@ -149,6 +157,30 @@ function mergeConfig(partial: Partial<AiosConfig>): AiosConfig {
     rag: expanded.rag,
     escalation: expanded.escalation,
     quality: expanded.quality,
+  };
+}
+
+/** Merge global (~/.aios) and project (./aios.yaml) configs.
+ *  Project settings override global, but MCP servers merge additively
+ *  so machine-local servers from global config are always available. */
+function mergeConfigs(global: Partial<AiosConfig>, project: Partial<AiosConfig>): AiosConfig {
+  const g = expandEnvVars(global) as Partial<AiosConfig>;
+  const p = expandEnvVars(project) as Partial<AiosConfig>;
+  return {
+    providers: { ...DEFAULT_CONFIG.providers, ...g.providers, ...p.providers },
+    defaults: { ...DEFAULT_CONFIG.defaults, ...g.defaults, ...p.defaults },
+    paths: { ...DEFAULT_CONFIG.paths, ...g.paths, ...p.paths },
+    tools: { ...DEFAULT_CONFIG.tools, ...g.tools, ...p.tools },
+    mcp: {
+      servers: {
+        ...DEFAULT_CONFIG.mcp!.servers,
+        ...g.mcp?.servers,
+        ...p.mcp?.servers,
+      },
+    },
+    rag: p.rag ?? g.rag,
+    escalation: p.escalation ?? g.escalation,
+    quality: p.quality ?? g.quality,
   };
 }
 
