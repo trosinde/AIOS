@@ -1,55 +1,18 @@
-## Aufgabe
+Professional technical infographic. Dark background 0a0e17. Landscape 1440x820.
 
-Professional technical security diagram. Dark background (#0a0e17). Landscape 1440x820px.
+Title: "AIOS Defense-in-Depth" in large white bold text at top center.
+Subtitle: "10 Security Mechanisms" in gray below.
 
-Top title in large white bold text: "AIOS Defense-in-Depth"
-Below in smaller gray: "7 Layers of Prompt Injection Protection"
+Stack of exactly six horizontal colored bars top to bottom:
 
-Seven horizontal colored cards stacked vertically with small gaps. Each card has a circle badge with the layer number on the left, then bold white title, then a line of features in smaller text. All text white on colored backgrounds.
+FIRST bar orange: "Input Boundary Guard" bold, below "Unicode · Regex · Encoding · Fuzzy Match · Content Scan"
+SECOND bar teal: "Prompt Architecture" bold, below "Data Tags · Canary Tokens · Taint Labels"
+THIRD bar blue: "Execution Control" bold, below "Plan Hash · Freeze · Circuit Breaker · Policy Engine"
+FOURTH bar coral: "Output Validation" bold, below "Canary Check · Schema · Leak Detection"
+FIFTH bar purple: "Knowledge Integrity" bold, below "Write Guard · Review Queue · SHA-256 · Provenance"
+SIXTH bar dark gray: "Audit Trail" bold, below "JSONL · 14 Event Types · IEC 62443"
 
-Card 1 — background orange #d4820a
-Badge: "1"
-Title: "Input Boundary Guard"
-Features: "Unicode · Regex · Encoding · Fuzzy Match"
+White arrow on right pointing down, label "Data Flow" vertical.
+Bottom right corner: white box "OWASP · STRIDE · FIDES"
 
-Card 2 — background teal #0e6b52
-Badge: "2"
-Title: "Prompt Architecture"
-Features: "Hierarchy · Data Tags · Canary Tokens"
-
-Card 3 — background blue #1a5fb4
-Badge: "3"
-Title: "Execution Control"
-Features: "Plan Hash · Freeze · Sanitization"
-
-Card 4 — background indigo #3d3da0
-Badge: "3b"
-Title: "Information Flow Control"
-Features: "Taint Labels · Policy Engine"
-
-Card 5 — background coral #b83c22
-Badge: "4"
-Title: "Output Validation"
-Features: "Canary Check · Schema · Exfiltration"
-
-Card 6 — background purple #6a1b9a
-Badge: "5"
-Title: "Knowledge Integrity"
-Features: "Write Guard · Review Queue · Provenance"
-
-Card 7 — background dark slate #2a3a50
-Badge: "6"
-Title: "Audit Trail"
-Features: "JSONL · Compliance · Trace"
-
-Right side: a thin vertical white arrow pointing downward spanning all cards. Next to the arrow the text "Data Flow" written vertically.
-
-Bottom right corner: small white bordered box with text "OWASP · STRIDE · FIDES"
-
-STRICT RULES:
-- Spell every word exactly as written above. No variations.
-- Flat design, no gradients, no 3D, no shadows
-- All cards same width spanning the diagram
-- Dark background #0a0e17
-- Clean minimal professional style
-- Bold sans-serif font for titles
+Flat design. No gradients. No 3D. Sans-serif. All text white on colored bars.
