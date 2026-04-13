@@ -100,9 +100,9 @@ AIOS plans the workflow automatically — parallel where possible, sequential wh
 | [**CLI Commands**](docs/CLI_COMMANDS.md) | Complete reference of all `aios` commands, options, and examples |
 | [User Guide](docs/user-guide.md) | CLI reference, patterns, chat, pipes, MCP, RAG, vision |
 | [Configuration](docs/configuration.md) | aios.yaml, providers, MCP, RAG, environment variables |
-| [Architecture](docs/architecture.md) | Components, data flow, dynamic orchestration |
-| [Patterns](docs/patterns.md) | Frontmatter schema, full catalog, composition |
-| [Personas](docs/personas.md) | Persona definitions, team interaction, traits |
+| [Architecture](docs/ARCHITECTURE.md) | Components, data flow, dynamic orchestration |
+| [Patterns](docs/PATTERNS.md) | Frontmatter schema, full catalog, composition |
+| [Personas](docs/PERSONAS.md) | Persona definitions, team interaction, traits |
 | [Providers](docs/providers.md) | 4 LLM providers, cost-based selection, vision support |
 | [MCP Servers](docs/MCP.md) | MCP server integration, PAT setup |
 | [RAG](docs/rag.md) | Semantic search, vector store, collections, embeddings |
