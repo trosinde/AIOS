@@ -44,10 +44,9 @@ describe("Engine – Phase 5.3 PolicyEngine integration", () => {
     const provider = mockProvider();
     const audit = new AuditLogger({ enabled: false, logFile: "/tmp/x.jsonl", logLevel: "error", complianceReports: false });
     const policy = new PolicyEngine(DEFAULT_POLICIES, audit);
-    const engine = new Engine(
-      registry, provider, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-      policy, audit,
-    );
+    const engine = new Engine(registry, provider, {
+      policyEngine: policy, auditLogger: audit,
+    });
     const result = await engine.execute(singlePatternPlan("render_diagram"), "graph TD; A-->B");
     expect(result.status.get("s1")).toBe("failed");
   });
@@ -58,10 +57,9 @@ describe("Engine – Phase 5.3 PolicyEngine integration", () => {
     const provider = mockProvider("ok");
     const audit = new AuditLogger({ enabled: false, logFile: "/tmp/x.jsonl", logLevel: "error", complianceReports: false });
     const policy = new PolicyEngine([], audit);
-    const engine = new Engine(
-      registry, provider, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-      policy, audit,
-    );
+    const engine = new Engine(registry, provider, {
+      policyEngine: policy, auditLogger: audit,
+    });
     const result = await engine.execute(singlePatternPlan("summarize"), "text");
     expect(result.status.get("s1")).toBe("done");
   });
@@ -86,10 +84,9 @@ You are a test.
     const registry = new PatternRegistry(tmpDir);
     const provider = mockProvider("ok");
     const policy = new PolicyEngine([]);  // leer, nur compliance_tags geprüft
-    const engine = new Engine(
-      registry, provider, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-      policy,
-    );
+    const engine = new Engine(registry, provider, {
+      policyEngine: policy,
+    });
     const result = await engine.execute(singlePatternPlan("regulated_pattern"), "text");
     expect(result.status.get("s1")).toBe("failed");
 
@@ -156,10 +153,9 @@ fake
     const registry = new PatternRegistry(tmpPatterns);
     const provider = mockProvider();
     const policy = new PolicyEngine([]);
-    const engine = new Engine(
-      registry, provider, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
-      driverRegistry, policy,
-    );
+    const engine = new Engine(registry, provider, {
+      driverRegistry, policyEngine: policy,
+    });
     const result = await engine.execute(singlePatternPlan("fake_pat"), "hello");
     expect(result.status.get("s1")).toBe("failed");
 

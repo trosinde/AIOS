@@ -20,9 +20,14 @@ import type { StepExecutor } from "./executor.js";
 import { ContextBuilder } from "./context-builder.js";
 import { OutputExtractor } from "./output-extractor.js";
 import { PromptBuilder } from "../security/prompt-builder.js";
-import type { PolicyEngine, PolicyAction } from "../security/policy-engine.js";
-import type { AuditLogger } from "../security/audit-logger.js";
+import { PolicyEngine } from "../security/policy-engine.js";
+import type { PolicyAction } from "../security/policy-engine.js";
+import { AuditLogger, NullAuditLogger } from "../security/audit-logger.js";
 import { userInputTaint, derivedTaint, type TaintLabel } from "../security/taint-tracker.js";
+import { InputGuard } from "../security/input-guard.js";
+import { KnowledgeGuard } from "../security/knowledge-guard.js";
+import { ContentScanner } from "../security/content-scanner.js";
+import type { EngineOptions } from "../types.js";
 import { INTERNAL_OPS } from "./pdf-operations.js";
 import { tmpdir } from "os";
 import { resolve as resolvePath, isAbsolute } from "path";
@@ -74,41 +79,41 @@ export class Engine {
   private outputExtractor: OutputExtractor;
   private promptBuilder: PromptBuilder;
   private driverRegistry?: DriverRegistry;
-  private policyEngine?: PolicyEngine;
-  private auditLogger?: AuditLogger;
   private contextConfig?: ContextConfig;
   private stepTaints = new Map<string, TaintLabel>();
+
+  // Security — always present, never silently skipped
+  private policyEngine: PolicyEngine;
+  private auditLogger: AuditLogger;
+  private inputGuard: InputGuard;
+  private knowledgeGuard: KnowledgeGuard;
+  private contentScanner: ContentScanner;
 
   constructor(
     registry: PatternRegistry,
     provider: LLMProvider,
-    config?: AiosConfig,
-    personaRegistry?: PersonaRegistry,
-    mcpManager?: McpManager,
-    ragService?: RAGService,
-    providerSelector?: ProviderSelector,
-    stepExecutor?: StepExecutor,
-    qualityPipeline?: QualityPipeline,
-    knowledgeBus?: KnowledgeBus,
-    driverRegistry?: DriverRegistry,
-    policyEngine?: PolicyEngine,
-    auditLogger?: AuditLogger,
-    contextConfig?: ContextConfig,
+    opts: EngineOptions = {},
   ) {
     this.registry = registry;
     this.provider = provider;
-    this.config = config;
-    this.personaRegistry = personaRegistry;
-    this.mcpManager = mcpManager;
-    this.ragService = ragService;
-    this.providerSelector = providerSelector;
-    this.stepExecutor = stepExecutor;
-    this.qualityPipeline = qualityPipeline;
-    this.knowledgeBus = knowledgeBus;
-    this.driverRegistry = driverRegistry;
-    this.policyEngine = policyEngine;
-    this.auditLogger = auditLogger;
-    this.contextConfig = contextConfig;
+    this.config = opts.config;
+    this.personaRegistry = opts.personaRegistry;
+    this.mcpManager = opts.mcpManager;
+    this.ragService = opts.ragService;
+    this.providerSelector = opts.providerSelector;
+    this.stepExecutor = opts.stepExecutor;
+    this.qualityPipeline = opts.qualityPipeline;
+    this.knowledgeBus = opts.knowledgeBus;
+    this.driverRegistry = opts.driverRegistry;
+    this.contextConfig = opts.contextConfig;
+
+    // Security defaults — no silent bypass
+    this.policyEngine = opts.policyEngine ?? new PolicyEngine([]);
+    this.auditLogger = opts.auditLogger ?? new NullAuditLogger();
+    this.inputGuard = opts.inputGuard ?? new InputGuard();
+    this.knowledgeGuard = opts.knowledgeGuard ?? new KnowledgeGuard({}, undefined, this.auditLogger);
+    this.contentScanner = opts.contentScanner ?? new ContentScanner();
+
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
     this.promptBuilder = new PromptBuilder();
@@ -187,7 +192,7 @@ export class Engine {
       // Input-Taint = derived(taints aller depends_on) bzw. userInputTaint() für Wurzel-Steps
       const inputTaint = this.computeInputTaint(step);
       const policyAction = this.policyActionFor(pattern.meta.type ?? "llm");
-      if (this.policyEngine && policyAction) {
+      if (policyAction) {
         const decision = this.policyEngine.check(policyAction, inputTaint, ctx.trace_id, {
           patternComplianceTags: pattern.meta.compliance_tags,
           contextComplianceTags: ctx.compliance_tags,
@@ -367,7 +372,7 @@ export class Engine {
       // Output-Taint: derived(input-taints) — Engine-Pattern verliert Trust nach LLM
       const outTaint = derivedTaint([inputTaint], `step:${step.pattern}`);
       this.stepTaints.set(step.id, outTaint);
-      this.auditLogger?.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
+      this.auditLogger.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
       status.set(step.id, "done");
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
@@ -612,6 +617,28 @@ export class Engine {
       }
     }
 
+    // Phase 6 H2: Tag recalled content with integrity markers.
+    // Non-trusted entries get wrapped so the PromptBuilder treats
+    // them as data, not instructions.
+    for (const msg of collected) {
+      const integrity = (msg.metadata?.integrity as string) ?? "derived";
+      const taint = {
+        integrity: integrity as "trusted" | "derived" | "untrusted",
+        confidentiality: "internal" as const,
+        source: "kb",
+        transformations: [] as string[],
+      };
+      if (integrity !== "trusted") {
+        msg.content = this.knowledgeGuard.tagForInjection(msg.content, taint);
+        this.auditLogger.log({
+          level: "debug",
+          event_type: "kb_write",
+          trace_id: ctx.trace_id,
+          message: `KB recall: tagged entry ${msg.id} with integrity=${integrity}`,
+        });
+      }
+    }
+
     const output =
       collected.length === 0
         ? "_Kein relevanter Kontext gefunden._"
@@ -667,9 +694,12 @@ export class Engine {
       });
     }
 
-    // Dedupe before publishing — both exact and near-dup.
+    // Dedupe + KnowledgeGuard + ContentScanner before publishing.
+    const inputTaint = this.computeInputTaint(step);
     let stored = 0;
     let duplicates = 0;
+    let quarantined = 0;
+    let blocked = 0;
     const errors: string[] = [];
     for (const rec of records) {
       try {
@@ -678,8 +708,47 @@ export class Engine {
           duplicates++;
           continue;
         }
-        await kb.publish(rec, ctx);
-        stored++;
+
+        // Phase 6 H2: Content-Scan for memory poisoning
+        const scanResult = this.contentScanner.scan(rec.content);
+
+        // Phase 6 H2: KnowledgeGuard taint-based routing
+        const guardResult = this.knowledgeGuard.validateWrite({
+          content: rec.content,
+          type: rec.type as "decision" | "fact" | "requirement" | "artifact",
+          tags: rec.tags,
+          sourcePattern: rec.source_pattern,
+          sourceStep: step.id,
+          taint: inputTaint,
+        }, ctx.trace_id);
+
+        // Escalate suspicious content that would be allowed
+        let decision = guardResult.decision;
+        if (scanResult.suspicious && decision === "allow") {
+          this.auditLogger.log({
+            level: "warn",
+            event_type: "kb_write_blocked",
+            trace_id: ctx.trace_id,
+            message: `Content scanner flagged memory write: ${scanResult.flags.join(", ")} (score=${scanResult.score.toFixed(2)})`,
+          });
+          decision = "queue_for_review";
+        }
+
+        switch (decision) {
+          case "allow": {
+            // Store with integrity label for recall-time tagging
+            rec.metadata = { ...rec.metadata, integrity: inputTaint.integrity };
+            await kb.publish(rec, ctx);
+            stored++;
+            break;
+          }
+          case "queue_for_review":
+            quarantined++;
+            break;
+          case "block":
+            blocked++;
+            break;
+        }
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
@@ -690,6 +759,8 @@ export class Engine {
       "",
       `- Stored: ${stored}`,
       `- Duplicates: ${duplicates}`,
+      `- Quarantined: ${quarantined}`,
+      `- Blocked: ${blocked}`,
       `- Failed: ${errors.length}`,
       `- Wing mapping: ${
         wingCfg.source === "context.yaml"
@@ -985,7 +1056,7 @@ export class Engine {
     }
 
     // Phase 5.3 Schritt C: Driver-Capabilities gegen Context-Allowance prüfen
-    if (this.policyEngine && ctx) {
+    if (ctx) {
       const capDecision = this.policyEngine.checkDriverCapabilities(
         loaded.def.capabilities,
         ctx,

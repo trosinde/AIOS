@@ -585,6 +585,7 @@ export class KnowledgeBus {
       wing: message.wing ?? null,
       room: message.room ?? null,
       content_hash: sha256(message.content),
+      integrity: (message.metadata?.integrity as string) ?? null,
       embedding: Array.from(embedding),
     };
   }
@@ -650,6 +651,7 @@ type MessageRow = Record<string, unknown> & {
   wing: string | null;
   room: string | null;
   content_hash: string;
+  integrity: string | null;
   embedding: number[];
 };
 
@@ -682,7 +684,11 @@ function rowToMessage(row: Record<string, unknown>): KernelMessage {
     source_step: row.source_step != null ? String(row.source_step) : undefined,
     content: String(row.content),
     format: String(row.format) as "text" | "json" | "markdown",
-    metadata,
+    metadata: {
+      ...metadata,
+      // Persist integrity from the dedicated column (backward compat: old rows → "derived")
+      ...(row.integrity != null ? { integrity: String(row.integrity) } : { integrity: "derived" }),
+    },
     wing: row.wing != null ? String(row.wing) : undefined,
     room: row.room != null ? String(row.room) : undefined,
   };

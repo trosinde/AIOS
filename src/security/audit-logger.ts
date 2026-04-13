@@ -259,6 +259,19 @@ export class AuditLogger {
   }
 }
 
+// ─── Null Logger (for relaxed mode / tests) ─────────────────
+
+/**
+ * No-op AuditLogger. All methods are inherited but `enabled: false`
+ * in the base class short-circuits every log call. This avoids
+ * conditional guards (`if (this.auditLogger)`) throughout the codebase.
+ */
+export class NullAuditLogger extends AuditLogger {
+  constructor() {
+    super({ enabled: false, logFile: "/dev/null", logLevel: "error", complianceReports: false });
+  }
+}
+
 // ─── Utility ────────────────────────────────────────────────
 
 function sha256(input: string): string {

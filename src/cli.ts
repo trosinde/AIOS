@@ -11,6 +11,10 @@ import { Engine } from "./core/engine.js";
 import { DriverRegistry } from "./core/driver-registry.js";
 import { PolicyEngine, DEFAULT_POLICIES } from "./security/policy-engine.js";
 import { AuditLogger } from "./security/audit-logger.js";
+import { InputGuard } from "./security/input-guard.js";
+import { KnowledgeGuard } from "./security/knowledge-guard.js";
+import { ContentScanner } from "./security/content-scanner.js";
+import type { EngineOptions } from "./types.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
@@ -101,12 +105,25 @@ function buildDriverRegistry(): DriverRegistry {
  *   "strict"  → DEFAULT_POLICIES (Integrity-Checks für tool/mcp/knowledge)
  *   "relaxed" → leeres Policy-Set (Default, CLI-kompatibel)
  */
-function buildSecurityLayer(auditLogger: AuditLogger): { policyEngine: PolicyEngine; contextConfig: import("./types.js").ContextConfig } {
+interface SecurityLayer {
+  policyEngine: PolicyEngine;
+  auditLogger: AuditLogger;
+  inputGuard: InputGuard;
+  knowledgeGuard: KnowledgeGuard;
+  contentScanner: ContentScanner;
+  contextConfig: import("./types.js").ContextConfig;
+}
+
+function buildSecurityLayer(auditLogger: AuditLogger): SecurityLayer {
   const cm = new ContextManager();
   const ctx = cm.resolveActive();
   const mode = ctx.config.security?.integrity_policies ?? "relaxed";
   const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
-  return { policyEngine: new PolicyEngine(policies, auditLogger), contextConfig: ctx.config };
+  const policyEngine = new PolicyEngine(policies, auditLogger);
+  const inputGuard = new InputGuard();
+  const knowledgeGuard = new KnowledgeGuard({}, policyEngine, auditLogger);
+  const contentScanner = new ContentScanner();
+  return { policyEngine, auditLogger, inputGuard, knowledgeGuard, contentScanner, contextConfig: ctx.config };
 }
 
 /** MCP-Server verbinden und Tools als virtuelle Patterns registrieren */
@@ -263,7 +280,12 @@ program
       const pRegistry = new PatternRegistry(patternsDir);
       const personas = new PersonaRegistry(personasDir);
       const router = new Router(pRegistry, provider);
-      const engine = new Engine(pRegistry, provider, config, personas);
+      const ctxAuditLogger = new AuditLogger();
+      const ctxSecurity = buildSecurityLayer(ctxAuditLogger);
+      const engine = new Engine(pRegistry, provider, {
+        config, personaRegistry: personas,
+        ...ctxSecurity,
+      });
 
       console.error(chalk.blue(`🎯 Kontext: ${manifest.name} (${manifest.type})`));
       console.error(chalk.blue("🧠 Analysiere Aufgabe..."));
@@ -299,8 +321,12 @@ program
     const qualityPipeline = buildQualityPipeline(config, provider, personas, opts.quality as QualityLevel | undefined);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, qualityPipeline, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+    const security = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, {
+      config, personaRegistry: personas, mcpManager, ragService,
+      providerSelector: selector, stepExecutor, qualityPipeline,
+      driverRegistry, ...security,
+    });
 
     if (qualityPipeline) {
       console.error(chalk.gray(`  🛡️  Quality: ${qualityPipeline.getLevel()} (${qualityPipeline.getActivePolicies().join(", ")})`));
@@ -387,8 +413,11 @@ program
     if (engineDispatchTypes.includes(pattern.meta.type ?? "")) {
       const driverRegistry = buildDriverRegistry();
       const auditLogger = new AuditLogger();
-      const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-      const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+      const security = buildSecurityLayer(auditLogger);
+      const engine = new Engine(registry, provider, {
+        config, personaRegistry: personas, mcpManager, ragService,
+        providerSelector: selector, stepExecutor, driverRegistry, ...security,
+      });
       const directPlan = {
         analysis: { goal: "direct run", complexity: "low" as const, requires_compliance: false, disciplines: [] },
         plan: {
@@ -582,8 +611,11 @@ program
     const router = new Router(registry, provider);
     const driverRegistry = buildDriverRegistry();
     const auditLogger = new AuditLogger();
-    const { policyEngine, contextConfig } = buildSecurityLayer(auditLogger);
-    const engine = new Engine(registry, provider, config, personas, mcpManager, ragService, selector, stepExecutor, undefined, undefined, driverRegistry, policyEngine, auditLogger, contextConfig);
+    const security = buildSecurityLayer(auditLogger);
+    const engine = new Engine(registry, provider, {
+      config, personaRegistry: personas, mcpManager, ragService,
+      providerSelector: selector, stepExecutor, driverRegistry, ...security,
+    });
 
     await startRepl({ provider, registry, personas, router, engine, config, mcpManager });
     await mcpManager?.shutdown();

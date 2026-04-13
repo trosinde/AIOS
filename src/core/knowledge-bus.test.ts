@@ -277,7 +277,8 @@ describe("KnowledgeBus (LanceDB)", () => {
     );
 
     const results = await bus.query({}, ctxA);
-    expect(results[0].metadata).toEqual({ language: "typescript", lines: 42 });
+    expect(results[0].metadata).toMatchObject({ language: "typescript", lines: 42 });
+    expect(results[0].metadata?.integrity).toBe("derived"); // integrity column default
     expect(results[0].format).toBe("json");
   });
 

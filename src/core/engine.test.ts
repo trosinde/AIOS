@@ -221,7 +221,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["mmdc"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -245,7 +245,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["prettier"] }, // mmdc NICHT erlaubt
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -277,7 +277,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-output", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     // render_diagram nutzt mmdc (nicht verfügbar) → wir testen nur die Branching-Logik
     // Prüfe dass generate_diagram (LLM-Pattern) korrekt als LLM erkannt wird
@@ -328,7 +328,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-text-tool", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -377,7 +377,7 @@ describe("Engine", () => {
       paths: { patterns: PATTERNS_DIR, personas: "" },
       tools: { output_dir: "/tmp/aios-test-file-tool", allowed: ["cp"] },
     };
-    const engine = new Engine(registry, provider, config);
+    const engine = new Engine(registry, provider, { config });
 
     const plan = makePlan({
       steps: [
@@ -420,7 +420,7 @@ describe("Engine", () => {
     const callTool = vi.fn().mockResolvedValue("stored: id=42");
     const mcpManager = { callTool } as unknown as McpManager;
     const provider = mockProvider();
-    const engine = new Engine(registry, provider, undefined, undefined, mcpManager);
+    const engine = new Engine(registry, provider, { mcpManager });
 
     const plan = makePlan({
       steps: [
@@ -473,7 +473,7 @@ describe("Engine", () => {
 
     const callTool = vi.fn().mockResolvedValue("no matches");
     const mcpManager = { callTool } as unknown as McpManager;
-    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
 
     const plan = makePlan({
       steps: [
@@ -506,7 +506,7 @@ describe("Engine", () => {
 
     const callTool = vi.fn().mockRejectedValue(new Error("connection refused"));
     const mcpManager = { callTool } as unknown as McpManager;
-    const engine = new Engine(registry, mockProvider(), undefined, undefined, mcpManager);
+    const engine = new Engine(registry, mockProvider(), { mcpManager });
 
     const plan = makePlan({
       steps: [

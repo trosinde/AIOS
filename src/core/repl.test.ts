@@ -41,7 +41,7 @@ function createReplOptions(provider?: LLMProvider): ReplOptions {
   const personas = new PersonaRegistry(PERSONAS_DIR);
   const router = new Router(registry, p);
   const config = createTestConfig();
-  const engine = new Engine(registry, p, config, personas);
+  const engine = new Engine(registry, p, { config, personaRegistry: personas });
   return { provider: p, registry, personas, router, engine, config };
 }
 
