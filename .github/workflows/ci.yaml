@@ -115,7 +115,10 @@ jobs:
 
       - name: Auto-merge PR into development
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ADMIN_PAT so the merge push triggers the next workflow run on
+          # development. GITHUB_TOKEN pushes don't re-trigger workflows,
+          # which would break the development→main promotion chain.
+          GH_TOKEN: ${{ secrets.ADMIN_PAT }}
           PR_NUM: ${{ github.event.pull_request.number }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
