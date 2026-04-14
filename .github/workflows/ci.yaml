@@ -150,8 +150,28 @@ jobs:
             MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
             echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
             if [ "$MERGE_STATE" = "BEHIND" ]; then
-              echo "PR is BEHIND main — updating branch; a new CI run will retry the merge."
-              gh pr update-branch "$PR_NUM"
+              echo "PR is BEHIND main — opening sync PR (branch protection on development blocks direct update-branch push)."
+              # gh pr update-branch would push a merge commit directly to
+              # development, which is blocked by branch protection requiring
+              # lint-and-test. Instead open a sync PR from a new branch so
+              # CI runs and it can be merged normally.
+              SYNC_BRANCH="sync/main-into-development-$(date +%s)"
+              git fetch origin main development
+              git checkout -b "$SYNC_BRANCH" origin/development
+              git -c user.email=ci@github.local -c user.name="CI Bot" \
+                merge --no-edit origin/main || {
+                  echo "Merge conflict syncing main into development — manual intervention required."
+                  exit 1
+                }
+              git push origin "$SYNC_BRANCH"
+              EXISTING_SYNC=$(gh pr list --base development --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number')
+              if [ -z "$EXISTING_SYNC" ]; then
+                gh pr create \
+                  --base development \
+                  --head "$SYNC_BRANCH" \
+                  --title "sync: merge main into development" \
+                  --body "Auto-opened by promote-to-main because PR #$PR_NUM was BEHIND main. Merging this syncs development with main so the promote PR can land."
+              fi
               exit 0
             fi
             # Poll for lint-and-test SUCCESS on the PR (eventual consistency guard).
