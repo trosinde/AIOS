@@ -142,10 +142,19 @@ jobs:
               | grep -oP '#\K[0-9]+' || true)
           fi
           if [ -n "$PR_NUM" ]; then
-            # Wait for required check "lint-and-test" to be visible as SUCCESS
-            # on the PR before attempting admin-merge. Branch protection can
-            # briefly report the check as "expected" even after the needs
-            # dependency succeeded (eventual consistency on the checks API).
+            # Branch protection on main requires strict = up-to-date. If the
+            # PR is BEHIND, update it with main first. The update-branch push
+            # triggers a fresh CI run which will re-enter this job and merge
+            # once the PR is CLEAN. The workflow token is not admin, so we
+            # cannot bypass with --admin; we must satisfy the rules instead.
+            MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
+            echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
+            if [ "$MERGE_STATE" = "BEHIND" ]; then
+              echo "PR is BEHIND main — updating branch; a new CI run will retry the merge."
+              gh pr update-branch "$PR_NUM"
+              exit 0
+            fi
+            # Poll for lint-and-test SUCCESS on the PR (eventual consistency guard).
             for i in $(seq 1 30); do
               STATE=$(gh pr view "$PR_NUM" --json statusCheckRollup \
                 --jq '[.statusCheckRollup[] | select(.name=="lint-and-test")] | .[0].conclusion // "PENDING"')
@@ -156,5 +165,5 @@ jobs:
               echo "Attempt $i: lint-and-test state=$STATE, waiting 10s..."
               sleep 10
             done
-            gh pr merge "$PR_NUM" --merge --admin
+            gh pr merge "$PR_NUM" --merge
           fi
