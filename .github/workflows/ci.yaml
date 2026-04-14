@@ -50,22 +50,34 @@ jobs:
               console.log('| **Lines** | ' + fmt(s.lines) + ' |');
             " >> $GITHUB_STEP_SUMMARY
 
-            # Security module detail
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Security Modules" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            # Per-module detail, grouped by src/ subdirectory
             node -e "
               const c = require('./coverage/coverage-summary.json');
-              const secFiles = Object.keys(c)
-                .filter(k => k.includes('src/security/') && !k.includes('.test.') && k !== 'total')
+              const files = Object.keys(c)
+                .filter(k => k !== 'total' && !k.includes('.test.') && !k.includes('.bench.'))
                 .sort();
-              if (secFiles.length > 0) {
+              const groups = new Map();
+              for (const f of files) {
+                const m = f.match(/src\/([^/]+)\//);
+                const group = m ? m[1] : 'src';
+                if (!groups.has(group)) groups.set(group, []);
+                groups.get(group).push(f);
+              }
+              const warn = (pct) => pct < 60 ? ' ⚠️' : '';
+              for (const [group, list] of [...groups.entries()].sort()) {
+                console.log('');
+                console.log('### src/' + group);
+                console.log('');
                 console.log('| Module | Stmts | Branch | Fn | Lines |');
                 console.log('|--------|-------|--------|-----|-------|');
-                for (const f of secFiles) {
+                for (const f of list) {
                   const d = c[f];
-                  const name = f.replace(/.*src\/security\//, '');
-                  console.log('| ' + name + ' | ' + d.statements.pct + '% | ' + d.branches.pct + '% | ' + d.functions.pct + '% | ' + d.lines.pct + '% |');
+                  const name = f.replace(new RegExp('.*src/' + group + '/'), '');
+                  console.log('| ' + name +
+                    ' | ' + d.statements.pct + '%' + warn(d.statements.pct) +
+                    ' | ' + d.branches.pct + '%' + warn(d.branches.pct) +
+                    ' | ' + d.functions.pct + '%' + warn(d.functions.pct) +
+                    ' | ' + d.lines.pct + '%' + warn(d.lines.pct) + ' |');
                 }
               }
             " >> $GITHUB_STEP_SUMMARY
