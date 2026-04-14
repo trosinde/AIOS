@@ -751,6 +751,18 @@ export interface ContextConfig {
     /** "strict" aktiviert DEFAULT_POLICIES (Integrity-Checks für tool/mcp/knowledge/compliance).
      *  "relaxed" (Default) = leeres Policy-Set, nur Compliance-Tags + Driver-Caps geprüft. */
     integrity_policies?: "strict" | "relaxed";
+
+    /** CodeShield-Konfiguration, konsumiert von `aios codeshield check` (externer Gatekeeper
+     *  z.B. als Claude Code PreToolUse-Hook). Pro-Context-Allowlist für Bash-Kommandos.
+     *  Die Engine-interne CodeShield-Instanz (bei `aios run`) ist davon unabhängig. */
+    codeshield?: {
+      /** Prefix-Allowlist. Treffer unterdrückt package/service/privilege/user-management-Risiken. */
+      allowList?: string[];
+      /** Substring-Denylist. Treffer → immer deny (auch wenn allowList matcht). */
+      denyList?: string[];
+      /** Pfade, in die geschrieben werden darf (Redirect-Prüfung). */
+      allowedWritePaths?: string[];
+    };
   };
 
   // ─── Runtime Permissions (optional) ────────────────
