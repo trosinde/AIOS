@@ -14,6 +14,7 @@ import { AuditLogger } from "./security/audit-logger.js";
 import { InputGuard } from "./security/input-guard.js";
 import { KnowledgeGuard } from "./security/knowledge-guard.js";
 import { ContentScanner } from "./security/content-scanner.js";
+import { CodeShield } from "./security/code-shield.js";
 import type { EngineOptions } from "./types.js";
 import { PromptBuilder } from "./security/prompt-builder.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
@@ -1797,6 +1798,91 @@ program
     console.error(chalk.gray('    aios "describe your task"    # start working'));
     console.error(chalk.gray("    aios init --refresh          # regenerate after editing context.yaml"));
     console.error();
+  });
+
+// ─── aios codeshield ────────────────────────────────────
+// External gatekeeper for agents that execute bash outside the AIOS Engine
+// (e.g. Claude Code CLI PreToolUse hook). Same CodeShield module the Engine
+// uses internally, exposed as a stdin/stdout CLI so any external runner
+// can gate its commands through it.
+const codeshieldCmd = program.command("codeshield").description("CodeShield — Pre-Execution Bash Command Analysis als externer Gatekeeper");
+
+codeshieldCmd
+  .command("check [command...]")
+  .description("Bash-Kommando prüfen. Exit 0 = allow, 2 = deny (Claude-Code-Hook-Konvention).")
+  .option("--stdin", "Command aus stdin lesen (plain text)")
+  .option("--hook", "stdin als Claude-Code-PreToolUse-Hook-JSON lesen ({tool_name, tool_input:{command}})")
+  .option("--json", "Verdict als JSON auf stdout (statt nur stderr-Meldung)")
+  .option("--allow <prefix>", "Allow-List-Prefix (wiederholbar)", (v, acc: string[] = []) => [...acc, v], [])
+  .option("--deny <substring>", "Deny-List-Substring (wiederholbar)", (v, acc: string[] = []) => [...acc, v], [])
+  .option("--attended", "Attended-Mode (CodeShield disabled = immer allow). Nur für Dev/Debug.")
+  .action(async (commandParts: string[], opts) => {
+    let command = commandParts.join(" ").trim();
+
+    if (opts.hook || opts.stdin) {
+      const raw = await readStdin();
+      if (!raw) {
+        console.error(chalk.red("Kein stdin-Input empfangen."));
+        process.exit(2);
+      }
+      if (opts.hook) {
+        try {
+          const payload = JSON.parse(raw);
+          // Claude Code PreToolUse: nur Bash-Tool gaten, alles andere durchlassen
+          const toolName = payload.tool_name ?? payload.toolName;
+          if (toolName && toolName !== "Bash") { process.exit(0); }
+          command = payload.tool_input?.command ?? payload.toolInput?.command ?? "";
+        } catch (err) {
+          console.error(chalk.red(`Ungültiges Hook-JSON: ${err instanceof Error ? err.message : err}`));
+          process.exit(2);
+        }
+      } else {
+        command = raw.trim();
+      }
+    }
+
+    if (!command) {
+      console.error(chalk.red("Kein Kommando zum Prüfen. Nutze Argument, --stdin oder --hook."));
+      process.exit(2);
+    }
+
+    // Config aus aktivem Context lesen (falls vorhanden); CLI-Flags überschreiben/ergänzen
+    let ctxAllowList: string[] = [];
+    let ctxDenyList: string[] = [];
+    let ctxWritePaths: string[] = [];
+    try {
+      const cm = new ContextManager();
+      const ctx = cm.resolveActive();
+      ctxAllowList = ctx.config.security?.codeshield?.allowList ?? [];
+      ctxDenyList = ctx.config.security?.codeshield?.denyList ?? [];
+      ctxWritePaths = ctx.config.security?.codeshield?.allowedWritePaths ?? [];
+    } catch { /* kein Context → leere Listen */ }
+
+    const allowList = [...ctxAllowList, ...(opts.allow as string[])];
+    const denyList = [...ctxDenyList, ...(opts.deny as string[])];
+
+    const shield = CodeShield.fromContext(
+      { interactive: Boolean(opts.attended) },
+      { allowList, denyList, allowedWritePaths: ctxWritePaths },
+    );
+    const result = shield.analyze(command);
+
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    }
+
+    if (result.verdict === "deny") {
+      const reason = result.risks.length > 0
+        ? `CodeShield deny — risks: ${result.risks.join(", ")}; details: ${result.details.join("; ")}`
+        : "CodeShield deny";
+      console.error(chalk.red(reason));
+      process.exit(2); // Claude-Code-Hook-Konvention: Exit 2 = block, stderr wird an das LLM gereicht
+    }
+    if (result.verdict === "modify") {
+      console.error(chalk.yellow(`CodeShield modify (Input sanitised): ${result.details.join("; ")}`));
+      // modify wird hier als allow gewertet (externer Caller entscheidet)
+    }
+    process.exit(0);
   });
 
 // ─── aios quality ──────────────────────────────────────
