@@ -503,17 +503,94 @@ This detects on-disk tampering of pattern files (e.g., via supply chain attack o
 
 ### Circuit Breaker
 
-**Source:** `src/core/engine.ts`
+**Source:** `src/security/circuit-breaker.ts`
 
-Tracks write-step count (tool, MCP, kb-store) per execution. When `max_write_steps` is set in `ExecutionContext`, the Engine throws after the limit is exceeded.
+Stops a workflow before it runs away when there is no human to Ctrl+C. Tracks write steps (tool, MCP, kb-store), total steps, wall-clock duration, and consecutive errors. Each limit trips the breaker independently.
 
 ```typescript
 // In ExecutionContext:
-max_write_steps?: number;  // Default: unlimited
+max_write_steps?: number;  // Default: unlimited in attended, 10 in unattended
 interactive?: boolean;      // Default: true (false for autonomous/cron agents)
 ```
 
-This prevents cascading damage from autonomous agents (e.g., a cron-triggered security patrol that starts patching all servers due to an LLM error).
+```typescript
+// Factory — derives config from ExecutionContext:
+CircuitBreaker.fromContext({ interactive: false, max_write_steps: 5 });
+```
+
+Unattended defaults: 10 write steps, 25 total, 20 min wall-clock, 3 consecutive errors. Attended defaults leave all limits at `Infinity`; the human at the terminal is the enforcement.
+
+### Code Shield
+
+**Source:** `src/security/code-shield.ts`
+
+Layer 3c. Statically analyses bash commands **before** `execFile` is called. Detects shell injection (`;` `&&` `||` backtick `$()`), path traversal, privilege escalation, network exfiltration, destructive commands, package mutation, service control, user management, config modification, unsafe redirects, interpreter exec (`python -c`, `node -e`), and environment exposure (`printenv`).
+
+```typescript
+// Factory — off for attended, strict-deny for unattended:
+CodeShield.fromContext({ interactive: false }, {
+  allowList: ["apt-get update", "pct list", "pct exec"],
+  allowedWritePaths: ["/var/log/myapp"],
+});
+```
+
+Priority: **shell injection → pipe-to-interpreter → denyList → detection rules → allowList prefix**. An allowList prefix match suppresses destructive/privilege/network/package/service/user-management/interpreter/env detector risks (so `sudo apt-get upgrade -y` passes if `sudo apt-get upgrade` is allow-listed), but shell chaining, pipe-to-interpreter, and denyList always apply.
+
+**Policy content is separate from the mechanism.** The concrete regex rule-sets live in `src/security/codeshield-rules.ts` (`DEFAULT_RULES`) and can be replaced per context:
+
+```typescript
+new CodeShield({
+  enabled: true,
+  rules: { ...DEFAULT_RULES, package: [], network: [] }, // allow a DevOps agent
+});
+```
+
+**Bypass hardening.** Before matching, commands are normalised to collapse common obfuscations — quoted executables (`"rm"`, `r""m`, `\rm`), ANSI-C quoting (`$'\x72m'`), absolute paths (`/usr/bin/rm`, `/bin/rm`), and multi-call wrappers (`busybox rm`, `doas rm`) all collapse to their literal form. Pipe-to-interpreter (`curl example.com | bash`, `base64 -d | python3`) is detected on both raw and normalised forms. Residual gaps — dynamic variable splitting (`a=rm; $a …`), Unicode homoglyph denyList substrings, exfiltration through allow-listed binaries — are not closed at this layer; run unattended agents under a restricted OS user with a minimal `PATH` for hard isolation.
+
+## Attended vs. Unattended Operation
+
+AIOS runs in two modes. The `interactive` flag on `ExecutionContext` selects the mode; the `fromContext()` factories on `CodeShield` and `CircuitBreaker` wire the right defaults.
+
+**Attended (`interactive: true`, default):** a human sits at the terminal. The CLI prompts before destructive actions, the user can Ctrl+C, and the user reads every output. CodeShield and CircuitBreaker are passive (disabled / unlimited) because the human is the real last-line-of-defense.
+
+**Unattended (`interactive: false`):** an agent runs autonomously (cron job, systemd service, MCP server). No human confirms commands, no Ctrl+C, no human reads output. CodeShield and CircuitBreaker **must** be active with strict defaults.
+
+| Modul              | Attended (Default)         | Unattended (interactive: false)  |
+|--------------------|----------------------------|----------------------------------|
+| InputGuard         | enabled, mode="warn"       | enabled, mode="block"            |
+| ContentScanner     | enabled                    | enabled                          |
+| PromptBuilder      | enabled                    | enabled                          |
+| PolicyEngine       | enabled                    | enabled                          |
+| TaintTracker       | enabled                    | enabled                          |
+| PlanEnforcer       | enabled                    | enabled                          |
+| OutputValidator    | enabled                    | enabled, strict                  |
+| KnowledgeGuard     | enabled                    | enabled                          |
+| AuditLogger        | NullAuditLogger (default)  | AuditLogger (empfohlen)          |
+| **CodeShield**     | **disabled**               | **enabled, mode="block"**        |
+| **CircuitBreaker** | **disabled (unlimited)**   | **enabled (Limits aktiv)**       |
+
+### Example: Security Patrol Agent
+
+```typescript
+import { Engine, CodeShield, CircuitBreaker } from "aios";
+
+const ctx: ExecutionContext = {
+  trace_id: randomUUID(),
+  context_id: "security-patrol",
+  started_at: Date.now(),
+  interactive: false,            // ← unattended!
+  max_write_steps: 10,
+};
+
+const engine = new Engine(registry, provider, {
+  executionContext: ctx,
+  codeShield: CodeShield.fromContext(ctx, {
+    allowList: ["apt-get update", "apt-get upgrade -y", "pct list", "pct exec", "ssh patrol-agent@"],
+    allowedWritePaths: ["/root/securitas/logs"],
+  }),
+  circuitBreaker: CircuitBreaker.fromContext(ctx),
+});
+```
 
 ### Mandatory Security Architecture
 

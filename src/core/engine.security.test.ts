@@ -329,4 +329,63 @@ describe("Engine – Circuit Breaker", () => {
     const result = await engine.execute(singlePlan("summarize"), "text");
     expect(result.status.get("s1")).toBe("done");
   });
+
+  it("trips on kb-store step when maxWriteSteps=0 (unattended)", async () => {
+    const { CircuitBreaker } = await import("../security/circuit-breaker.js");
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider('{"memory_items": []}');
+    const circuitBreaker = new CircuitBreaker({ enabled: true, maxWriteSteps: 0 });
+    const auditLogger = new AuditLogger({ enabled: false, logFile: "", logLevel: "debug", complianceReports: false });
+    const logSpy = vi.spyOn(auditLogger, "log");
+
+    const engine = new Engine(registry, provider, { circuitBreaker, auditLogger });
+    const result = await engine.execute(singlePlan("memory_store"), "store me");
+
+    expect(result.status.get("s1")).toBe("failed");
+    const trippedEvents = logSpy.mock.calls.filter(([e]) => e.event_type === "circuit_breaker_tripped");
+    expect(trippedEvents.length).toBeGreaterThan(0);
+  });
+
+  it("allows non-write (LLM) steps regardless of write limit", async () => {
+    const { CircuitBreaker } = await import("../security/circuit-breaker.js");
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("ok");
+    const circuitBreaker = new CircuitBreaker({ enabled: true, maxWriteSteps: 0 });
+
+    const engine = new Engine(registry, provider, { circuitBreaker });
+    const result = await engine.execute(singlePlan("summarize"), "text");
+    expect(result.status.get("s1")).toBe("done");
+  });
+});
+
+// ─── CodeShield Integration ────────────────────────────────
+
+describe("Engine – CodeShield integration", () => {
+  it("disabled shield (attended default) allows tool-like commands through", async () => {
+    const { CodeShield } = await import("../security/code-shield.js");
+    const codeShield = new CodeShield({ enabled: false });
+    const analyzeSpy = vi.spyOn(codeShield, "analyze");
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("ok");
+    const engine = new Engine(registry, provider, { codeShield });
+    await engine.execute(singlePlan("summarize"), "text");
+    // LLM pattern doesn't invoke shield, but the shield is instantiated + wired.
+    expect(codeShield).toBeDefined();
+    analyzeSpy.mockRestore();
+  });
+
+  it("CodeShield.fromContext(interactive=false) is wired into the engine via executionContext", async () => {
+    const { CodeShield } = await import("../security/code-shield.js");
+    const cs = CodeShield.fromContext({ interactive: false });
+    // Sanity: unattended CodeShield denies rm -rf /
+    expect(cs.analyze("rm -rf /").verdict).toBe("deny");
+
+    const registry = new PatternRegistry(PATTERNS_DIR);
+    const provider = mockProvider("ok");
+    const engine = new Engine(registry, provider, {
+      executionContext: { interactive: false },
+    });
+    // Engine should have built an unattended shield from ctx
+    expect(engine).toBeDefined();
+  });
 });

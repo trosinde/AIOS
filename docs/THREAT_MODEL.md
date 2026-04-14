@@ -54,8 +54,8 @@ This document analyzes prompt injection threats specific to the AIOS multi-agent
 
 | STRIDE | Threat | Mitigation |
 |--------|--------|-----------|
-| **Tampering** | Shell injection via crafted tool arguments | Tool allowlist; Policy Engine blocks untrusted input |
-| **Elevation** | Injection causes execution of arbitrary commands | Only allowlisted tools can execute; args come from pattern template |
+| **Tampering** | Shell injection via crafted tool arguments | CodeShield (unattended) + Policy Engine + tool allowlist |
+| **Elevation** | Injection causes execution of arbitrary commands | CodeShield allowList + sudo whitelist (OS); args come from pattern template |
 
 ### 6. Pattern Registry (src/core/registry.ts)
 
@@ -92,3 +92,4 @@ This document analyzes prompt injection threats specific to the AIOS multi-agent
 | LLM ignores security instructions in system prompt | Accepted | Canary tokens detect this; deterministic layers don't rely on LLM compliance |
 | Insider threat (malicious pattern files) | Partial | kernel_abi validation helps but doesn't prevent all malicious patterns |
 | Supply chain (compromised LLM provider) | Out of scope | Requires provider-level security guarantees |
+| CodeShield bypass via novel encoding | Accepted | Pattern-based; novel encodings may pass |

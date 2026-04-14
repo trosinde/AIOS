@@ -29,6 +29,8 @@ import { KnowledgeGuard } from "../security/knowledge-guard.js";
 import { ContentScanner } from "../security/content-scanner.js";
 import { OutputValidator } from "../security/output-validator.js";
 import { PlanEnforcer } from "../security/plan-enforcer.js";
+import { CodeShield } from "../security/code-shield.js";
+import { CircuitBreaker } from "../security/circuit-breaker.js";
 import type { EngineOptions } from "../types.js";
 import { createHash } from "crypto";
 import { INTERNAL_OPS } from "./pdf-operations.js";
@@ -93,7 +95,9 @@ export class Engine {
   private contentScanner: ContentScanner;
   private outputValidator: OutputValidator;
   private planEnforcer: PlanEnforcer;
-  private writeStepCount = 0;
+  private codeShield: CodeShield;
+  private circuitBreaker: CircuitBreaker;
+  private executionContextDefaults: Partial<ExecutionContext>;
 
   constructor(
     registry: PatternRegistry,
@@ -121,6 +125,16 @@ export class Engine {
     this.contentScanner = opts.contentScanner ?? new ContentScanner();
     this.outputValidator = opts.outputValidator ?? new OutputValidator({}, this.auditLogger);
     this.planEnforcer = opts.planEnforcer ?? new PlanEnforcer({}, this.auditLogger);
+    this.executionContextDefaults = opts.executionContext ?? {};
+    this.codeShield = opts.codeShield
+      ?? CodeShield.fromContext(this.executionContextDefaults.interactive !== undefined
+        ? { interactive: this.executionContextDefaults.interactive }
+        : { interactive: true });
+    this.circuitBreaker = opts.circuitBreaker
+      ?? CircuitBreaker.fromContext({
+        interactive: this.executionContextDefaults.interactive ?? true,
+        max_write_steps: this.executionContextDefaults.max_write_steps,
+      });
 
     this.contextBuilder = new ContextBuilder(registry);
     this.outputExtractor = new OutputExtractor();
@@ -147,13 +161,14 @@ export class Engine {
       compliance_tags: cc?.compliance?.standards?.map(s => s.id) ?? [],
       allowed_driver_capabilities: ["file_read", "file_write"],
       sandbox_roots: sandboxRoots,
+      ...this.executionContextDefaults,
     };
     this.stepTaints.clear();
 
     // Security: Audit + scan + plan freeze at workflow boundary
     this.auditLogger.inputReceived(userInput, ctx.trace_id, ctx.context_id);
     this.auditLogger.planCreated(JSON.stringify(plan), ctx.trace_id);
-    this.writeStepCount = 0;
+    this.circuitBreaker.reset();
 
     const inputScan = this.inputGuard.analyze(userInput);
     if (!inputScan.safe) {
@@ -246,6 +261,26 @@ export class Engine {
             `(Pattern "${pattern.meta.name}", Action ${policyAction})`,
           );
         }
+      }
+
+      // Circuit Breaker: enforce limits BEFORE dispatch.
+      // Running this post-dispatch would only catch the N+1-th write, not the N-th.
+      const isWriteStep = pattern.meta.type === "tool"
+        || pattern.meta.type === "mcp"
+        || !!pattern.meta.mcp_server
+        || pattern.meta.type === "kb";
+      try {
+        this.circuitBreaker.beforeStep(step.id, isWriteStep);
+      } catch (breakerErr) {
+        this.auditLogger.log({
+          event_type: "circuit_breaker_tripped",
+          level: "error",
+          trace_id: ctx.trace_id,
+          step_id: step.id,
+          message: breakerErr instanceof Error ? breakerErr.message : String(breakerErr),
+          metadata: { ...this.circuitBreaker.status() },
+        });
+        throw breakerErr;
       }
 
       // Input aus Dependencies + User-Input zusammenbauen
@@ -438,20 +473,13 @@ export class Engine {
       this.stepTaints.set(step.id, outTaint);
       this.auditLogger.stepExecuted(step.id, step.pattern, message.content, outTaint, ctx.trace_id);
 
-      // Circuit Breaker: track write-steps and enforce limit
-      const isWriteStep = stepType === "tool" || isMcp || pattern.meta.type === "kb";
-      if (isWriteStep) {
-        this.writeStepCount++;
-        if (ctx.max_write_steps && this.writeStepCount > ctx.max_write_steps) {
-          throw new Error(`Circuit Breaker: ${this.writeStepCount} write-steps exceed limit of ${ctx.max_write_steps}`);
-        }
-      }
-
       status.set(step.id, "done");
+      this.circuitBreaker.recordSuccess(step.id);
       console.error(chalk.green(`  ✅ ${step.id} (${Date.now() - t0}ms)`));
 
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
+      this.circuitBreaker.recordError(step.id, errMsg);
       const current = retries.get(step.id) ?? 0;
       const max = step.retry?.max ?? 0;
 
@@ -1033,6 +1061,23 @@ export class Engine {
         arg.replace("$INPUT", tmpInput).replace("$OUTPUT", outputFile)
       );
 
+      // Code Shield: pre-execution static analysis (unattended only)
+      const fullCmd = [tool, ...args].join(" ");
+      const shieldResult = this.codeShield.analyze(fullCmd);
+      if (shieldResult.verdict === "deny") {
+        this.auditLogger.log({
+          event_type: "codeshield_blocked",
+          level: "error",
+          trace_id: ctx?.trace_id,
+          step_id: step.id,
+          message: `CodeShield blocked tool command: ${shieldResult.risks.join(", ")}`,
+          metadata: { command: fullCmd, risks: shieldResult.risks, details: shieldResult.details },
+        });
+        throw new Error(
+          `CodeShield: ${shieldResult.risks.join(", ")} — ${shieldResult.details.join("; ")}`,
+        );
+      }
+
       const stdout = await this.execFileAsync(tool, args);
 
       // Parse tool stdout for multi-file output (JSON with "images" array)
@@ -1216,6 +1261,23 @@ export class Engine {
         };
         checkPath(tmpInput, "Input");
         checkPath(outputFiles[outputKey], "Output");
+      }
+
+      // Code Shield: pre-execution analysis of driver invocation (unattended only)
+      const fullCmd = [loaded.def.binary, ...argv].join(" ");
+      const shieldResult = this.codeShield.analyze(fullCmd);
+      if (shieldResult.verdict === "deny") {
+        this.auditLogger.log({
+          event_type: "codeshield_blocked",
+          level: "error",
+          trace_id: ctx?.trace_id,
+          step_id: step.id,
+          message: `CodeShield blocked driver command: ${shieldResult.risks.join(", ")}`,
+          metadata: { command: fullCmd, risks: shieldResult.risks, details: shieldResult.details },
+        });
+        throw new Error(
+          `CodeShield: ${shieldResult.risks.join(", ")} — ${shieldResult.details.join("; ")}`,
+        );
       }
 
       const timeoutMs = (loaded.def.sandbox?.timeout_sec ?? 60) * 1000;

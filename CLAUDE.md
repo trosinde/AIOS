@@ -218,6 +218,10 @@ Jede Implementierung MUSS vor dem Commit diese drei Reviews durchlaufen. Führe 
 - Security-relevant decisions are logged via the AuditLogger
 - New patterns should declare `trust_boundary` in YAML frontmatter
 - See `docs/SECURITY.md` for the full Threat Model and Defense-in-Depth architecture
+- Unattended agents (`interactive: false`) MÜSSEN CodeShield und CircuitBreaker konfigurieren
+- `CodeShield.fromContext()` und `CircuitBreaker.fromContext()` aktivieren automatisch strikte Defaults
+- Tool-Commands werden im Unattended-Modus VOR Ausführung durch CodeShield geprüft
+- Für autonome Agenten (Cron, Daemon): siehe `docs/SECURITY.md` "Attended vs. Unattended"
 
 ## CLI Commands
 
