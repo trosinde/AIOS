@@ -130,5 +130,19 @@ jobs:
               | grep -oP '#\K[0-9]+' || true)
           fi
           if [ -n "$PR_NUM" ]; then
+            # Wait for required check "lint-and-test" to be visible as SUCCESS
+            # on the PR before attempting admin-merge. Branch protection can
+            # briefly report the check as "expected" even after the needs
+            # dependency succeeded (eventual consistency on the checks API).
+            for i in $(seq 1 30); do
+              STATE=$(gh pr view "$PR_NUM" --json statusCheckRollup \
+                --jq '[.statusCheckRollup[] | select(.name=="lint-and-test")] | .[0].conclusion // "PENDING"')
+              if [ "$STATE" = "SUCCESS" ]; then
+                echo "lint-and-test is SUCCESS on PR #$PR_NUM, merging."
+                break
+              fi
+              echo "Attempt $i: lint-and-test state=$STATE, waiting 10s..."
+              sleep 10
+            done
             gh pr merge "$PR_NUM" --merge --admin
           fi
