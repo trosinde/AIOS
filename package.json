@@ -2,6 +2,8 @@
   "name": "aios",
   "version": "0.1.0",
   "description": "AI Orchestration System – Dynamische Workflow-Orchestrierung",
+  "license": "MIT",
+  "author": "Thorsten Rosin",
   "type": "module",
   "bin": {
     "aios": "./dist/cli.js"
