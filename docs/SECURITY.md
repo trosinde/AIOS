@@ -592,6 +592,61 @@ const engine = new Engine(registry, provider, {
 });
 ```
 
+### External Gatekeeper — `aios codeshield check`
+
+The Engine-internal CodeShield protects AIOS's own tool/driver path. Agents that execute bash **outside** AIOS (e.g. Claude Code CLI's Bash tool, a shell-based cron script, any custom runner) can route their commands through the same CodeShield module via the CLI:
+
+```bash
+# plain check
+aios codeshield check "apt-get update"
+echo "exit=$?"   # 0 = allow, 2 = deny
+
+# from stdin (plain text)
+echo "rm -rf /" | aios codeshield check --stdin
+
+# Claude Code PreToolUse hook protocol (JSON on stdin)
+echo '{"tool_name":"Bash","tool_input":{"command":"apt-get upgrade -y"}}' \
+  | aios codeshield check --hook
+```
+
+Exit codes follow the Claude Code hook convention: **0 = allow, 2 = deny** (stderr message is shown to the agent). Non-Bash tool events in `--hook` mode pass through untouched.
+
+**Configuration** is read from the active context's `.aios/context.yaml` and can be extended via flags:
+
+```yaml
+security:
+  codeshield:
+    allowList:
+      - "apt-get update"
+      - "apt-get upgrade -y"
+      - "pct list"
+      - "pct exec"
+    denyList:
+      - "dd if="
+    allowedWritePaths:
+      - "/var/log/patrol"
+```
+
+CLI flags `--allow <prefix>` and `--deny <substring>` (repeatable) merge with the context config.
+
+**Claude Code integration (`.claude/settings.json`):**
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "aios codeshield check --hook"
+      }]
+    }]
+  }
+}
+```
+
+Now every Bash call the agent tries runs through the same 11 risk-pattern detectors and obfuscation-normalisation as the Engine-internal CodeShield, independent of whether the agent is running inside AIOS or via a different runner.
+
 ### Mandatory Security Architecture
 
 **Source:** `src/core/engine.ts` constructor
