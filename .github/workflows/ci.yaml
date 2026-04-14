@@ -101,6 +101,40 @@ jobs:
           AIOS_EMBEDDING_PROVIDER: stub
         run: npm run bench
 
+  auto-merge-to-development:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'pull_request' && github.base_ref == 'development'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Auto-merge PR into development
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Only auto-merge PRs authored by the repo owner or github-actions
+          # (mirrors the pr-admin-merge rule: own/CI PRs only, never third-party).
+          OWNER="${{ github.repository_owner }}"
+          if [ "$PR_AUTHOR" != "$OWNER" ] && [ "$PR_AUTHOR" != "github-actions[bot]" ]; then
+            echo "PR #$PR_NUM authored by $PR_AUTHOR — skipping auto-merge (not owner/CI)."
+            exit 0
+          fi
+          MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
+          echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
+          if [ "$MERGE_STATE" = "BEHIND" ]; then
+            echo "PR is BEHIND development — updating branch; new CI run will retry."
+            gh pr update-branch "$PR_NUM"
+            exit 0
+          fi
+          gh pr merge "$PR_NUM" --merge --admin
+
   promote-to-main:
     runs-on: ubuntu-latest
     needs: lint-and-test
