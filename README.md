@@ -124,3 +124,4 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model and architect
 ## License
 
 Released under the [MIT License](LICENSE) — Copyright (c) 2026 Thorsten Rosin.
+
