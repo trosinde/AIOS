@@ -2,15 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [development]
+    branches: [main]
   pull_request:
-    branches: [development]
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
         description: "Branch or SHA to run CI on"
         required: false
-        default: "development"
+        default: "main"
 
 jobs:
   lint-and-test:
@@ -101,10 +101,10 @@ jobs:
           AIOS_EMBEDDING_PROVIDER: stub
         run: npm run bench
 
-  auto-merge-to-development:
+  auto-merge-to-main:
     runs-on: ubuntu-latest
     needs: lint-and-test
-    if: github.event_name == 'pull_request' && github.base_ref == 'development'
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
 
     permissions:
       contents: write
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Auto-merge PR into development
+      - name: Auto-merge PR into main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUM: ${{ github.event.pull_request.number }}
@@ -129,95 +129,8 @@ jobs:
           MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
           echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
           if [ "$MERGE_STATE" = "BEHIND" ]; then
-            echo "PR is BEHIND development — updating branch; new CI run will retry."
+            echo "PR is BEHIND main — updating branch; new CI run will retry the merge."
             gh pr update-branch "$PR_NUM"
             exit 0
           fi
           gh pr merge "$PR_NUM" --merge --admin
-
-  promote-to-main:
-    runs-on: ubuntu-latest
-    needs: lint-and-test
-    if: github.ref == 'refs/heads/development' && github.event_name == 'push'
-
-    permissions:
-      contents: write
-      pull-requests: write
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Create PR to main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Skip if development has no commits ahead of main (e.g.
-          # after a hotfix went directly to main and development was
-          # fast-forwarded). gh pr create would otherwise error out
-          # with "No commits between main and development".
-          git fetch origin main
-          AHEAD=$(git rev-list --count origin/main..HEAD)
-          if [ "$AHEAD" = "0" ]; then
-            echo "development is not ahead of main (ahead=0), nothing to promote."
-            exit 0
-          fi
-          EXISTING=$(gh pr list --base main --head development --state open --json number --jq '.[0].number')
-          if [ -n "$EXISTING" ]; then
-            echo "PR #$EXISTING already exists."
-            PR_NUM="$EXISTING"
-          else
-            PR_NUM=$(gh pr create \
-              --base main \
-              --head development \
-              --title "Promote development → main" \
-              --body "All CI checks passed on development ($AHEAD commit(s) ahead of main)." \
-              | grep -oP '#\K[0-9]+' || true)
-          fi
-          if [ -n "$PR_NUM" ]; then
-            # Branch protection on main requires strict = up-to-date. If the
-            # PR is BEHIND, update it with main first. The update-branch push
-            # triggers a fresh CI run which will re-enter this job and merge
-            # once the PR is CLEAN. The workflow token is not admin, so we
-            # cannot bypass with --admin; we must satisfy the rules instead.
-            MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
-            echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
-            if [ "$MERGE_STATE" = "BEHIND" ]; then
-              echo "PR is BEHIND main — opening sync PR (branch protection on development blocks direct update-branch push)."
-              # gh pr update-branch would push a merge commit directly to
-              # development, which is blocked by branch protection requiring
-              # lint-and-test. Instead open a sync PR from a new branch so
-              # CI runs and it can be merged normally.
-              SYNC_BRANCH="sync/main-into-development-$(date +%s)"
-              git fetch origin main development
-              git checkout -b "$SYNC_BRANCH" origin/development
-              git -c user.email=ci@github.local -c user.name="CI Bot" \
-                merge --no-edit origin/main || {
-                  echo "Merge conflict syncing main into development — manual intervention required."
-                  exit 1
-                }
-              git push origin "$SYNC_BRANCH"
-              EXISTING_SYNC=$(gh pr list --base development --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number')
-              if [ -z "$EXISTING_SYNC" ]; then
-                gh pr create \
-                  --base development \
-                  --head "$SYNC_BRANCH" \
-                  --title "sync: merge main into development" \
-                  --body "Auto-opened by promote-to-main because PR #$PR_NUM was BEHIND main. Merging this syncs development with main so the promote PR can land."
-              fi
-              exit 0
-            fi
-            # Poll for lint-and-test SUCCESS on the PR (eventual consistency guard).
-            for i in $(seq 1 30); do
-              STATE=$(gh pr view "$PR_NUM" --json statusCheckRollup \
-                --jq '[.statusCheckRollup[] | select(.name=="lint-and-test")] | .[0].conclusion // "PENDING"')
-              if [ "$STATE" = "SUCCESS" ]; then
-                echo "lint-and-test is SUCCESS on PR #$PR_NUM, merging."
-                break
-              fi
-              echo "Attempt $i: lint-and-test state=$STATE, waiting 10s..."
-              sleep 10
-            done
-            gh pr merge "$PR_NUM" --merge
-          fi
