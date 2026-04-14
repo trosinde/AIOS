@@ -921,6 +921,9 @@ export interface EngineOptions {
   contentScanner?: ContentScanner;
   outputValidator?: OutputValidator;
   planEnforcer?: PlanEnforcer;
+  codeShield?: CodeShield;
+  circuitBreaker?: CircuitBreaker;
+  executionContext?: Partial<ExecutionContext>;
 }
 
 // Forward-declare types used in EngineOptions to avoid circular imports.
@@ -941,3 +944,5 @@ import type { KnowledgeGuard } from "./security/knowledge-guard.js";
 import type { ContentScanner } from "./security/content-scanner.js";
 import type { OutputValidator } from "./security/output-validator.js";
 import type { PlanEnforcer } from "./security/plan-enforcer.js";
+import type { CodeShield } from "./security/code-shield.js";
+import type { CircuitBreaker } from "./security/circuit-breaker.js";
