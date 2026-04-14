@@ -50,22 +50,34 @@ jobs:
               console.log('| **Lines** | ' + fmt(s.lines) + ' |');
             " >> $GITHUB_STEP_SUMMARY
 
-            # Security module detail
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Security Modules" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            # Per-module detail, grouped by src/ subdirectory
             node -e "
               const c = require('./coverage/coverage-summary.json');
-              const secFiles = Object.keys(c)
-                .filter(k => k.includes('src/security/') && !k.includes('.test.') && k !== 'total')
+              const files = Object.keys(c)
+                .filter(k => k !== 'total' && !k.includes('.test.') && !k.includes('.bench.'))
                 .sort();
-              if (secFiles.length > 0) {
+              const groups = new Map();
+              for (const f of files) {
+                const m = f.match(/src\/([^/]+)\//);
+                const group = m ? m[1] : 'src';
+                if (!groups.has(group)) groups.set(group, []);
+                groups.get(group).push(f);
+              }
+              const warn = (pct) => pct < 60 ? ' ⚠️' : '';
+              for (const [group, list] of [...groups.entries()].sort()) {
+                console.log('');
+                console.log('### src/' + group);
+                console.log('');
                 console.log('| Module | Stmts | Branch | Fn | Lines |');
                 console.log('|--------|-------|--------|-----|-------|');
-                for (const f of secFiles) {
+                for (const f of list) {
                   const d = c[f];
-                  const name = f.replace(/.*src\/security\//, '');
-                  console.log('| ' + name + ' | ' + d.statements.pct + '% | ' + d.branches.pct + '% | ' + d.functions.pct + '% | ' + d.lines.pct + '% |');
+                  const name = f.replace(new RegExp('.*src/' + group + '/'), '');
+                  console.log('| ' + name +
+                    ' | ' + d.statements.pct + '%' + warn(d.statements.pct) +
+                    ' | ' + d.branches.pct + '%' + warn(d.branches.pct) +
+                    ' | ' + d.functions.pct + '%' + warn(d.functions.pct) +
+                    ' | ' + d.lines.pct + '%' + warn(d.lines.pct) + ' |');
                 }
               }
             " >> $GITHUB_STEP_SUMMARY
@@ -130,5 +142,48 @@ jobs:
               | grep -oP '#\K[0-9]+' || true)
           fi
           if [ -n "$PR_NUM" ]; then
-            gh pr merge "$PR_NUM" --merge --admin
+            # Branch protection on main requires strict = up-to-date. If the
+            # PR is BEHIND, update it with main first. The update-branch push
+            # triggers a fresh CI run which will re-enter this job and merge
+            # once the PR is CLEAN. The workflow token is not admin, so we
+            # cannot bypass with --admin; we must satisfy the rules instead.
+            MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')
+            echo "PR #$PR_NUM mergeStateStatus: $MERGE_STATE"
+            if [ "$MERGE_STATE" = "BEHIND" ]; then
+              echo "PR is BEHIND main — opening sync PR (branch protection on development blocks direct update-branch push)."
+              # gh pr update-branch would push a merge commit directly to
+              # development, which is blocked by branch protection requiring
+              # lint-and-test. Instead open a sync PR from a new branch so
+              # CI runs and it can be merged normally.
+              SYNC_BRANCH="sync/main-into-development-$(date +%s)"
+              git fetch origin main development
+              git checkout -b "$SYNC_BRANCH" origin/development
+              git -c user.email=ci@github.local -c user.name="CI Bot" \
+                merge --no-edit origin/main || {
+                  echo "Merge conflict syncing main into development — manual intervention required."
+                  exit 1
+                }
+              git push origin "$SYNC_BRANCH"
+              EXISTING_SYNC=$(gh pr list --base development --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number')
+              if [ -z "$EXISTING_SYNC" ]; then
+                gh pr create \
+                  --base development \
+                  --head "$SYNC_BRANCH" \
+                  --title "sync: merge main into development" \
+                  --body "Auto-opened by promote-to-main because PR #$PR_NUM was BEHIND main. Merging this syncs development with main so the promote PR can land."
+              fi
+              exit 0
+            fi
+            # Poll for lint-and-test SUCCESS on the PR (eventual consistency guard).
+            for i in $(seq 1 30); do
+              STATE=$(gh pr view "$PR_NUM" --json statusCheckRollup \
+                --jq '[.statusCheckRollup[] | select(.name=="lint-and-test")] | .[0].conclusion // "PENDING"')
+              if [ "$STATE" = "SUCCESS" ]; then
+                echo "lint-and-test is SUCCESS on PR #$PR_NUM, merging."
+                break
+              fi
+              echo "Attempt $i: lint-and-test state=$STATE, waiting 10s..."
+              sleep 10
+            done
+            gh pr merge "$PR_NUM" --merge
           fi

@@ -1,0 +1,29 @@
+name: Guard main branch
+
+# Blocks any PR to main whose head is not `development`.
+# `main` must only ever receive commits that already passed CI on
+# `development`. Merging a feature branch straight into main (as
+# happened with PR #54) leaves development BEHIND and breaks the
+# promote-to-main workflow until someone hand-syncs the branches.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  enforce-source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require head branch to be development
+        env:
+          HEAD: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD" = "development" ]; then
+            echo "OK: PR to main comes from development."
+            exit 0
+          fi
+          echo "::error::PRs to main must come from 'development' (got '$HEAD')."
+          echo "Open your PR against 'development' instead. The promote-to-main"
+          echo "workflow will auto-PR development → main once CI is green."
+          exit 1
