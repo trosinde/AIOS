@@ -555,6 +555,8 @@ AIOS runs in two modes. The `interactive` flag on `ExecutionContext` selects the
 
 **Unattended (`interactive: false`):** an agent runs autonomously (cron job, systemd service, MCP server). No human confirms commands, no Ctrl+C, no human reads output. CodeShield and CircuitBreaker **must** be active with strict defaults.
 
+> **MCP Server** — when AIOS runs as an MCP server (`aios mcp-server`, driven by another agent such as Claude Code), every tool call is unattended by definition. Both `aios_run` and `aios_orchestrate` route through the shared `buildEngineContext({ unattended: true })` factory in `src/core/engine-factory.ts`, which forces `integrity_policies: strict`, sets `interactive: false` and `max_write_steps: 25` on the ExecutionContext, and activates CodeShield + CircuitBreaker. This keeps the MCP path from drifting weaker than the CLI path.
+
 | Modul              | Attended (Default)         | Unattended (interactive: false)  |
 |--------------------|----------------------------|----------------------------------|
 | InputGuard         | enabled, mode="warn"       | enabled, mode="block"            |
