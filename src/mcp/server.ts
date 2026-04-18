@@ -20,22 +20,13 @@ import {
 import { PatternRegistry } from "../core/registry.js";
 import { PersonaRegistry } from "../core/personas.js";
 import { Router } from "../core/router.js";
-import { Engine } from "../core/engine.js";
 import { createProvider } from "../agents/provider.js";
-import { ProviderSelector } from "../agents/provider-selector.js";
 import { loadConfig } from "../utils/config.js";
 import { buildContextAwareRegistry } from "../utils/registry-factory.js";
 import { McpManager } from "../core/mcp.js";
-import type { McpToolInfo } from "../core/mcp.js";
-import type { AiosConfig, ExecutionContext } from "../types.js";
-import type { LLMProvider } from "../agents/provider.js";
+import { buildEngineContext } from "../core/engine-factory.js";
+import type { ExecutionContext, ExecutionPlan } from "../types.js";
 import { randomUUID } from "crypto";
-import { AuditLogger } from "../security/audit-logger.js";
-import { PolicyEngine, DEFAULT_POLICIES } from "../security/policy-engine.js";
-import { InputGuard } from "../security/input-guard.js";
-import { KnowledgeGuard } from "../security/knowledge-guard.js";
-import { ContentScanner } from "../security/content-scanner.js";
-import { ContextManager } from "../core/context.js";
 
 /** Suppress all stderr output in MCP mode (would corrupt JSON-RPC protocol) */
 function silenceStderr(): void {
@@ -46,15 +37,6 @@ function silenceStderr(): void {
   // Redirect stderr writes to /dev/null
   const devnull = { write: () => true, end: () => {} } as unknown as NodeJS.WriteStream;
   Object.defineProperty(process, "stderr", { value: devnull, writable: true });
-}
-
-/** Build all providers and a ProviderSelector from config */
-function buildProviderSelector(config: AiosConfig): ProviderSelector {
-  const allProviders = new Map<string, LLMProvider>();
-  for (const [name, cfg] of Object.entries(config.providers)) {
-    try { allProviders.set(name, createProvider(cfg)); } catch { /* skip */ }
-  }
-  return new ProviderSelector(allProviders, config.providers);
 }
 
 /** Build compact pattern catalog for MCP tool response */
@@ -164,7 +146,6 @@ export async function startMCPServer(): Promise<void> {
   }
   const provider = createProvider(providerCfg);
   const personas = new PersonaRegistry(config.paths.personas);
-  const selector = buildProviderSelector(config);
 
   const server = new Server(
     { name: "aios", version: "0.1.0" },
@@ -289,18 +270,25 @@ export async function startMCPServer(): Promise<void> {
             if (cfg) runProvider = createProvider(cfg);
           }
 
-          // Build prompt with optional persona
-          const personaId = pattern.meta.persona;
-          const persona = personaId ? personas.get(personaId) : undefined;
-          const fullPrompt = persona
-            ? `${persona.system_prompt}\n\n---\n\n${pattern.systemPrompt}`
-            : pattern.systemPrompt;
-
-          const mcpPB = new (await import("../security/prompt-builder.js")).PromptBuilder();
-          const mcpBuilt = mcpPB.build(fullPrompt, input, [], ctx.trace_id);
-          const result = await runProvider.complete(mcpBuilt.systemPrompt, mcpBuilt.userMessage, undefined, ctx);
+          // Run through the full Engine so InputGuard, PolicyEngine,
+          // PlanEnforcer, AuditLogger, OutputValidator, CodeShield and
+          // CircuitBreaker all apply. MCP = unattended by definition.
+          const built = buildEngineContext({
+            config, registry, provider: runProvider, personas,
+            mcpManager, unattended: true,
+          });
+          const singleStepPlan: ExecutionPlan = {
+            analysis: { goal: "mcp aios_run", complexity: "low", requires_compliance: false, disciplines: [] },
+            plan: {
+              type: "pipe",
+              steps: [{ id: "run", pattern: patternName, depends_on: [], input_from: ["$USER_INPUT"] }],
+            },
+            reasoning: "Direct MCP aios_run call",
+          };
+          const result = await built.engine.execute(singleStepPlan, input);
+          const out = result.results.get("run");
           return {
-            content: [{ type: "text" as const, text: result.content }],
+            content: [{ type: "text" as const, text: out?.content ?? "" }],
           };
         }
 
@@ -309,19 +297,9 @@ export async function startMCPServer(): Promise<void> {
           const dryRun = args?.dry_run as boolean | undefined;
 
           const router = new Router(registry, provider);
-          const mcpAuditLogger = new AuditLogger();
-          const cm = new ContextManager();
-          const activeCtx = cm.resolveActive();
-          const mode = activeCtx.config.security?.integrity_policies ?? "relaxed";
-          const policies = mode === "strict" ? [...DEFAULT_POLICIES] : [];
-          const policyEngine = new PolicyEngine(policies, mcpAuditLogger);
-          const engine = new Engine(registry, provider, {
-            config, personaRegistry: personas, providerSelector: selector,
-            policyEngine, auditLogger: mcpAuditLogger,
-            inputGuard: new InputGuard(),
-            knowledgeGuard: new KnowledgeGuard({}, policyEngine, mcpAuditLogger),
-            contentScanner: new ContentScanner(),
-            contextConfig: activeCtx.config,
+          const built = buildEngineContext({
+            config, registry, provider, personas, mcpManager,
+            unattended: true,
           });
           const plan = await router.planWorkflow(task, undefined, ctx);
 
@@ -331,7 +309,7 @@ export async function startMCPServer(): Promise<void> {
             };
           }
 
-          const result = await engine.execute(plan, task);
+          const result = await built.engine.execute(plan, task);
           // Combine all step results
           const output = Array.from(result.results.entries())
             .map(([id, r]) => `## ${id}\n${r.content}`)

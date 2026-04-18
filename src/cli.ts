@@ -8,97 +8,37 @@ import { PatternRegistry } from "./core/registry.js";
 import { PersonaRegistry } from "./core/personas.js";
 import { Router } from "./core/router.js";
 import { Engine } from "./core/engine.js";
-import { DriverRegistry } from "./core/driver-registry.js";
 import { PolicyEngine, DEFAULT_POLICIES } from "./security/policy-engine.js";
 import { AuditLogger } from "./security/audit-logger.js";
 import { InputGuard } from "./security/input-guard.js";
 import { KnowledgeGuard } from "./security/knowledge-guard.js";
 import { ContentScanner } from "./security/content-scanner.js";
 import { CodeShield } from "./security/code-shield.js";
-import type { EngineOptions } from "./types.js";
 import { PromptBuilder } from "./security/prompt-builder.js";
 import { McpManager, registerMcpTools } from "./core/mcp.js";
 import { createProvider } from "./agents/provider.js";
 import { createTTSProvider } from "./agents/tts-provider.js";
-import { ProviderSelector } from "./agents/provider-selector.js";
-import { CapabilityProviderSelector } from "./agents/selector.js";
 import { ExecutionMemory } from "./memory/execution-memory.js";
-import { StepExecutor, DEFAULT_ESCALATION } from "./core/executor.js";
 import { RAGService } from "./rag/rag-service.js";
 import { loadConfig } from "./utils/config.js";
 import { ContextManager } from "./core/context.js";
 import { buildContextAwareRegistry } from "./utils/registry-factory.js";
 import { readStdin } from "./utils/stdin.js";
 import { startRepl } from "./core/repl.js";
-import { QualityPipeline } from "./core/quality/pipeline.js";
+import {
+  buildProviderSelector, buildStepExecutor, buildQualityPipeline,
+  buildDriverRegistry, buildEngineContext,
+} from "./core/engine-factory.js";
 import type { AiosConfig, Pattern, QualityLevel } from "./types.js";
-import type { LLMProvider } from "./agents/provider.js";
-
-/** Build all providers and a ProviderSelector from config */
-function buildProviderSelector(config: AiosConfig): ProviderSelector {
-  const allProviders = new Map<string, LLMProvider>();
-  for (const [name, cfg] of Object.entries(config.providers)) {
-    try { allProviders.set(name, createProvider(cfg)); } catch { /* skip unconfigured */ }
-  }
-  return new ProviderSelector(allProviders, config.providers);
-}
 
 /**
- * Path to the execution-memory file used by the capability selector.
- *
- * Context-scoped: lives in the active context directory (project-local
- * `.aios/memory.json` or global `~/.aios/contexts/<name>/memory.json`),
- * NOT globally at `~/.aios/memory.json`. This prevents one context's
- * learning signal (e.g. a failed summarization) from disqualifying a
- * provider in an unrelated context (e.g. CRA-compliance review).
+ * Path to the execution-memory file used by the memory CLI commands.
+ * Context-scoped so one context's learning signal cannot disqualify a
+ * provider in an unrelated context.
  */
 function getMemoryPath(): string {
   const ctx = new ContextManager().resolveActive();
   return join(ctx.path, "memory.json");
-}
-
-/** Return a StepExecutor only when at least one provider declares model_capabilities or cost.tier */
-function buildStepExecutor(config: AiosConfig): StepExecutor | undefined {
-  const hasCapabilityConfig = Object.values(config.providers).some(
-    (p) => p.model_capabilities || p.cost,
-  );
-  if (!hasCapabilityConfig) return undefined;
-  const ctx = new ContextManager().resolveActive();
-  const memory = new ExecutionMemory(getMemoryPath(), ctx.name);
-  const selector = new CapabilityProviderSelector(config.providers, memory);
-  return new StepExecutor(selector, memory, config.escalation ?? DEFAULT_ESCALATION);
-}
-
-/** Build QualityPipeline from config (returns undefined if quality not configured) */
-function buildQualityPipeline(
-  config: AiosConfig,
-  provider: LLMProvider,
-  personas?: PersonaRegistry,
-  levelOverride?: QualityLevel,
-): QualityPipeline | undefined {
-  const qualityConfig = config.quality;
-  if (!qualityConfig && !levelOverride) return undefined;
-
-  const effectiveConfig = qualityConfig ?? {
-    level: levelOverride ?? "minimal",
-    policies: {},
-  };
-
-  if (levelOverride) {
-    effectiveConfig.level = levelOverride;
-  }
-
-  return new QualityPipeline(effectiveConfig, provider, personas, config);
-}
-
-/**
- * Phase 5.2: DriverRegistry aufbauen. Sucht in dieser Reihenfolge:
- *   1. ~/.aios/kernel/drivers/  (globale User-Overrides)
- *   2. ./drivers/               (Repo- oder Projekt-lokale Driver)
- * Scheitert still wenn keine Driver vorhanden — dann gilt Legacy-Pfad.
- */
-function buildDriverRegistry(): DriverRegistry {
-  return new DriverRegistry({ repoRoot: process.cwd() });
 }
 
 /**
