@@ -12,3 +12,6 @@ scripts/perf/kb-scenarios-*.json
 scripts/perf/mempalace-parity-*.json
 coverage/
 aios.yaml
+
+# Runtime audit logs
+logs/

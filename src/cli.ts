@@ -222,7 +222,9 @@ program
       assertPathWithinBase(personasDir, entry.path);
 
       const pRegistry = new PatternRegistry(patternsDir);
-      const personas = new PersonaRegistry(personasDir);
+      // Global als Basis, context-lokal überschreibt → Patterns dürfen an globale
+      // Personas binden (z. B. leadership→COMPASS), lokale haben Vorrang.
+      const personas = new PersonaRegistry([config.paths.personas, personasDir]);
       const router = new Router(pRegistry, provider);
       const ctxAuditLogger = new AuditLogger();
       const ctxSecurity = buildSecurityLayer(ctxAuditLogger);
@@ -891,21 +893,50 @@ contextCmd
   });
 
 // ─── aios persona ───────────────────────────────────────
+
+/**
+ * Lädt globale Personas und – falls das CWD ein AIOS-Context ist – zusätzlich
+ * dessen context-lokale Personas (`<cwd>/.aios/<personas_dir>`). Context-lokale
+ * Personas überschreiben gleichnamige globale (Context-Isolation). So sehen
+ * `persona list`/`validate` dieselben Personas wie der `run`-Befehl zur Laufzeit.
+ */
+async function loadPersonasWithContext(globalDir: string) {
+  const merged = new Map(new PersonaRegistry(globalDir).all().map((p) => [p.id, p] as const));
+  let contextName: string | undefined;
+  try {
+    const { hasContext, readManifest, assertPathWithinBase } = await import("./context/manifest.js");
+    const { resolve } = await import("node:path");
+    if (hasContext(process.cwd())) {
+      const manifest = readManifest(process.cwd());
+      const localDir = resolve(process.cwd(), ".aios", manifest.config.personas_dir);
+      assertPathWithinBase(localDir, process.cwd());
+      const local = new PersonaRegistry(localDir).all();
+      for (const p of local) merged.set(p.id, p);
+      if (local.length > 0) contextName = manifest.name;
+    }
+  } catch {
+    /* kein Context im CWD → nur globale Personas */
+  }
+  return { list: [...merged.values()], get: (id: string) => merged.get(id), contextName };
+}
+
 const personaCmd = program.command("persona").description("Persona-Verwaltung");
 
 personaCmd
   .command("list")
-  .description("Alle Personas auflisten")
-  .action(() => {
+  .description("Alle Personas auflisten (inkl. context-lokaler im CWD)")
+  .action(async () => {
     const config = loadConfig();
-    const personas = new PersonaRegistry(config.paths.personas);
-    const all = personas.all();
-    if (all.length === 0) {
+    const { list, contextName } = await loadPersonasWithContext(config.paths.personas);
+    if (list.length === 0) {
       console.error(chalk.yellow("Keine Personas gefunden."));
       return;
     }
-    for (const p of all) {
-      console.log(`  ${chalk.cyan(p.id.padEnd(20))} ${p.role} – ${chalk.gray(p.expertise.slice(0, 3).join(", "))}`);
+    if (contextName) {
+      console.error(chalk.gray(`  (inkl. context-lokaler Personas aus: ${contextName})`));
+    }
+    for (const p of list) {
+      console.log(`  ${chalk.cyan(p.id.padEnd(20))} ${p.role} – ${chalk.gray((p.expertise ?? []).slice(0, 3).join(", "))}`);
     }
   });
 
@@ -914,7 +945,7 @@ personaCmd
   .description("Persona gegen Base Trait Protocol validieren")
   .action(async (name?: string) => {
     const config = loadConfig();
-    const personas = new PersonaRegistry(config.paths.personas);
+    const { list, get } = await loadPersonasWithContext(config.paths.personas);
     const { loadBaseTraits, validatePersona } = await import("./core/trait-validator.js");
     const traits = loadBaseTraits(config.paths.personas);
     if (!traits) {
@@ -923,8 +954,8 @@ personaCmd
     }
 
     const toValidate = name
-      ? [personas.get(name)].filter((p): p is NonNullable<typeof p> => Boolean(p))
-      : personas.all();
+      ? [get(name)].filter((p): p is NonNullable<typeof p> => Boolean(p))
+      : list;
     if (toValidate.length === 0) {
       console.error(chalk.red(name ? `Persona "${name}" nicht gefunden.` : "Keine Personas gefunden."));
       process.exit(1);

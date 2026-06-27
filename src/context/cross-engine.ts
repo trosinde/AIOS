@@ -192,7 +192,8 @@ export class CrossContextEngine {
 
         const personasDir = resolve(contextPath, ".aios", manifest.config.personas_dir);
         assertPathWithinBase(personasDir, contextPath);
-        const personas = new PersonaRegistry(personasDir);
+        // Global als Basis, context-lokal überschreibt (s. PersonaRegistry-Doc).
+        const personas = new PersonaRegistry([config.paths.personas, personasDir]);
 
         // ExecutionContext für diesen Step
         const stepCtx: ExecutionContext = {

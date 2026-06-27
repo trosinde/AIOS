@@ -11,8 +11,16 @@ import type { Persona } from "../types.js";
 export class PersonaRegistry {
   private personas = new Map<string, Persona>();
 
-  constructor(personasDir: string) {
-    this.loadAll(personasDir);
+  /**
+   * @param personasDirs Ein oder mehrere Verzeichnisse. Bei mehreren werden sie
+   * in Reihenfolge geladen; spätere überschreiben gleichnamige IDs früherer.
+   * Konvention: `[global, context-lokal]` → context-lokal hat Vorrang
+   * (gleiche Semantik wie der Context-Lookup für Patterns).
+   */
+  constructor(personasDirs: string | string[]) {
+    for (const dir of Array.isArray(personasDirs) ? personasDirs : [personasDirs]) {
+      this.loadAll(dir);
+    }
   }
 
   private loadAll(dir: string): void {
