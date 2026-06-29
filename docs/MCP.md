@@ -181,6 +181,64 @@ aios> /azdo/list_projects
 aios> /azdo/get_work_item {"id": 42}
 ```
 
+## AIOS in GitHub Copilot CLI verwenden
+
+AIOS bringt selbst einen MCP-Server mit (`aios mcp-server`) und kann daher als
+Tool-Anbieter in [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli)
+registriert werden. Damit stehen die AIOS-Tools `aios_run`, `aios_orchestrate`,
+`aios_patterns` und `aios_plan` direkt im Copilot-CLI-Agenten zur Verfügung.
+
+### Schnellstart
+
+```bash
+aios copilot install
+```
+
+Das trägt AIOS **idempotent** und **nicht-destruktiv** in die
+Copilot-CLI-Konfiguration ein (`~/.copilot/mcp-config.json`, bzw. unter
+`$COPILOT_HOME` falls gesetzt). Bestehende MCP-Server in der Datei bleiben
+erhalten. Danach Copilot CLI neu starten – die `aios_*`-Tools sind verfügbar.
+
+```bash
+aios copilot install --print     # Nur das resultierende JSON zeigen, nichts schreiben
+aios copilot uninstall           # Nur den aios-Eintrag wieder entfernen
+```
+
+### Resultierender Eintrag
+
+```json
+{
+  "mcpServers": {
+    "aios": {
+      "type": "local",
+      "command": "aios",
+      "args": ["mcp-server"],
+      "tools": ["*"],
+      "env": {}
+    }
+  }
+}
+```
+
+`aios copilot install` ermittelt das Kommando automatisch: liegt `aios` global
+auf dem `PATH`, wird `aios mcp-server` eingetragen; bei einer lokalen
+Installation aus dem Repo wird stattdessen `node <abs>/dist/cli.js mcp-server`
+verwendet. Überschreiben lässt sich das per `--command` und `--args`:
+
+```bash
+aios copilot install --command node --args "/opt/aios/dist/cli.js,mcp-server"
+```
+
+> **Hinweis (Secrets):** Es werden keine PATs/Secrets in die Copilot-Config
+> geschrieben. Provider-Keys und MCP-Server-Tokens lädt der AIOS-MCP-Server
+> wie gewohnt aus `.env` / Umgebungsvariablen (siehe *Authentication / PAT
+> Setup* oben).
+
+### Manuelle Einrichtung
+
+Alternativ kann der `aios`-Eintrag von Hand in `~/.copilot/mcp-config.json`
+ergänzt oder über `copilot` mit dem `/mcp`-Befehl hinzugefügt werden.
+
 ## Adding a New MCP Server
 
 1. Add the server to `aios.yaml` under `mcp.servers`

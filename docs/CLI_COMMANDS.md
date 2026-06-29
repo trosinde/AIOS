@@ -172,10 +172,22 @@ aios update --check  # Nur prüfen, ob Updates verfügbar
 
 ### `aios mcp-server` — MCP-Server starten
 
-Startet AIOS als Model Context Protocol (MCP) Server über stdio-Transport. Ermöglicht die Integration in MCP-fähige Clients (z.B. Claude Desktop).
+Startet AIOS als Model Context Protocol (MCP) Server über stdio-Transport. Ermöglicht die Integration in MCP-fähige Clients (z.B. Claude Desktop, GitHub Copilot CLI).
 
 ```bash
 aios mcp-server
+```
+
+---
+
+### `aios copilot` — GitHub Copilot CLI Integration
+
+Registriert AIOS als MCP-Server in der [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli). Schreibt idempotent und nicht-destruktiv in `~/.copilot/mcp-config.json` (bzw. `$COPILOT_HOME`). Siehe `docs/MCP.md`.
+
+```bash
+aios copilot install            # AIOS-Eintrag hinzufügen/aktualisieren
+aios copilot install --print    # Nur das resultierende JSON zeigen, nichts schreiben
+aios copilot uninstall          # Nur den aios-Eintrag entfernen
 ```
 
 ---
