@@ -251,6 +251,9 @@ aios service list                        # Alle Service-Endpoints auflisten
 aios service show <ctx>.<endpoint>       # Endpoint-Details + Schema anzeigen
 aios service call <ctx>.<ep> <json>      # Service-Endpoint abfragen
 aios service refresh [context]           # Service-Cache neu generieren
+aios mcp-server                          # AIOS als MCP-Server starten (stdio)
+aios copilot install [--print]           # AIOS in GitHub Copilot CLI registrieren
+aios copilot uninstall                   # AIOS-Eintrag aus Copilot CLI entfernen
 ```
 
 ## Aktueller Fokus: Kernel-OS-Evolution

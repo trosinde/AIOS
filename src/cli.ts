@@ -1918,6 +1918,30 @@ program
     await startMCPServer();
   });
 
+// ─── aios copilot ────────────────────────────────────────
+const copilot = program
+  .command("copilot")
+  .description("AIOS als MCP-Server in GitHub Copilot CLI registrieren");
+
+copilot
+  .command("install")
+  .description("AIOS in ~/.copilot/mcp-config.json eintragen (idempotent)")
+  .option("--print", "Nur das resultierende JSON ausgeben, nichts schreiben")
+  .option("--command <cmd>", "Kommando-Override (Default: aios)")
+  .option("--args <list>", "Argument-Override, Komma-getrennt (Default: mcp-server)")
+  .action(async (opts) => {
+    const { runCopilotInstall } = await import("./commands/copilot.js");
+    await runCopilotInstall(opts);
+  });
+
+copilot
+  .command("uninstall")
+  .description("AIOS-Eintrag aus der Copilot-CLI-Konfiguration entfernen")
+  .action(async () => {
+    const { runCopilotUninstall } = await import("./commands/copilot.js");
+    await runCopilotUninstall();
+  });
+
 // ─── Helper ─────────────────────────────────────────────
 
 /** Parsed --key=value und --key value aus CLI-Args */
