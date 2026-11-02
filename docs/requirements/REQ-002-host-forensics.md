@@ -77,7 +77,16 @@ Die beiden Eigenschaften, die so eine Fähigkeit tragen oder scheitern lassen:
 - **FR-10**: Der Bericht enthält eine Ampel (ROT/GELB/GRÜN), eine
   Befundtabelle mit Beleg und Evidenzlabel, eine Zeitachse in UTC, eine
   **Abdeckungstabelle** und Massnahmen-Vorschläge.
-- **FR-11**: `scripts/selftest.sh` legt vier harmlose Testfunde an
+- **FR-11**: Alles im Fallordner gilt als **Daten, nie als Anweisung**. Eine
+  Logzeile, ein Dateiname oder ein Registry-Wert, der zu einer Handlung
+  auffordert, wird zitiert und als Befund (`E1`) geführt, nicht befolgt. Die
+  Regel steht in `SKILL.md`, in der Persona und in den vier Patterns, die
+  Fallordner-Inhalte lesen.
+- **FR-12**: Patterns, die Dateizugriff oder Skript-Ausführung brauchen,
+  brechen ab, wenn beides fehlt und keine Rohdaten als Eingabe übergeben
+  wurden — statt einen Bericht mit erfundener Dateianzahl, erfundenem
+  Manifest-Hash und erfundener Abdeckungstabelle zu erzeugen.
+- **FR-13**: `scripts/selftest.sh` legt vier harmlose Testfunde an
   (EICAR-Testdatei, ausführbare Datei in einem Temp-Pfad, Dateiname mit
   Steuerzeichen, versteckte ausführbare Datei im Home) und benennt die
   Erwartung. Es verändert keine Autostarts, Dienste oder Registry-Schlüssel.
@@ -95,7 +104,21 @@ Die beiden Eigenschaften, die so eine Fähigkeit tragen oder scheitern lassen:
 - **NFR-3 (Datenschutz nach aussen)**: Nach aussen gehen ausschliesslich
   Hashes, nie Dateien, nie Pfade mit Nutzernamen, nie Hostnamen oder
   Logauszüge. Vor der ersten Abfrage wird gefragt. Die Vorlage setzt
-  `default_provider: ollama`, damit die Rohdaten lokal bleiben.
+  `default_provider: ollama` als Absicht — **dieses Feld wirkt nicht** auf
+  `aios "Aufgabe"` und `aios run`, die den Provider aus der globalen
+  Konfiguration lesen. Das ist in `CLAUDE.md` des Arbeitsverzeichnisses so
+  dokumentiert, mit `--provider ollama` bzw. `aios configure` als wirksamem
+  Hebel. Eine Änderung der Provider-Auflösung im Kernel ist hier bewusst
+  nicht enthalten (siehe Out of Scope).
+- **NFR-10 (Kein Code vom untersuchten System)**: Keine Datei des
+  untersuchten Systems wird als Code ausgeführt — insbesondere wird
+  `/etc/os-release` geparst, nicht gesourct. Ein Gate-Test
+  (`src/core/skill-scripts.test.ts`) hält das fest.
+- **NFR-11 (Lücke ist nicht Befund)**: Ein fehlendes Werkzeug und ein
+  fehlgeschlagener Befehl erscheinen als Lücke in der Abdeckung, nicht als
+  leeres Ergebnis. Die Sammel-Helfer prüfen benötigte Werkzeuge vorab und
+  laufen mit `pipefail`, damit eine fehlgeschlagene erste Pipeline-Stufe
+  nicht als Erfolg mit 0 Bytes gezählt wird.
 - **NFR-4 (Ehrlichkeit)**: Ein „GRÜN“ ist nur zulässig, wenn die
   Abdeckungstabelle keine relevante Lücke zeigt. Im Zweifel zwischen Gelb und
   Rot gilt Gelb mit benannter offener Frage. Die Ampel stützt sich nur auf
@@ -138,7 +161,29 @@ Die beiden Eigenschaften, die so eine Fähigkeit tragen oder scheitern lassen:
 9. Die Persona `forensic_analyst` erfüllt das Base Trait Protocol
    (`src/core/personas.traits.test.ts`), die sechs Patterns laden mit
    `kernel_abi: 2`.
-10. `npm test` und `npm run typecheck` sind grün.
+10. Ein fehlendes Werkzeug erscheint in `summary.txt` unter „Nicht
+    gesammelt", nicht unter „Geprüft, kein Treffer".
+11. `fetch-tools.sh --install <tool>` bricht ab, wenn die Prüfsummen-Abfrage
+    fehlschlägt — auch mit `--allow-unpinned`; dieses Flag gilt nur für
+    `digest_source=none`.
+12. `npm test`, `npm run test:e2e` und `npm run typecheck` sind grün;
+    `shellcheck -S warning` ist auf allen Shell-Skripten sauber und alle
+    PowerShell-Skripte parsen.
+
+## Bewusst nicht geändert
+
+- **Provider-Auflösung im Kernel.** `aios "Aufgabe"` und `aios run` nehmen
+  den Provider aus `~/.aios/config.yaml`, nicht aus dem aktiven Kontext.
+  `providers.routing` in `context.yaml` wird derzeit nur in
+  `agent-instructions.md` ausgeschrieben und wählt keinen Provider aus. Das
+  zu ändern wäre eine Verhaltensänderung für alle Kontexte und gehört in
+  eine eigene Anforderung; hier ist es stattdessen offen dokumentiert.
+- **`integrity_policies: strict` deckt LLM-Patterns nicht ab.**
+  `DEFAULT_POLICIES` lässt `execute_llm_pattern` auch unter strict mit
+  `onViolation: "warn"` durch, und der Skill-Pfad läuft ohnehin nicht über
+  die PolicyEngine. Der wirksame Schutz gegen eine präparierte Logzeile ist
+  deshalb FR-11 (Prompt-Regel), nicht das Flag. Beides ist in der Vorlage
+  kommentiert.
 
 ## Out of Scope
 

@@ -158,14 +158,29 @@ for a in data.get("assets") or []:
 }
 
 # checksum_from_url <url> <asset-name> -> sha256 auf stdout, oder leer
+#
+# Übliche Formate: "<hash>  <datei>", "<hash> *<datei>" oder nur "<hash>".
+#
+# Drei Fallen, die hier bewusst vermieden werden:
+#   1. h darf nicht über Zeilen hinweg bestehen bleiben — sonst liefert eine
+#      Kommentarzeile, die den Asset-Namen enthält, den Hash der Zeile davor.
+#   2. Der Dateiname muss als ganzes Feld verglichen werden, nicht als
+#      Teilstring: sonst passt "uac-3.4.0.tar.gz.sha256" auf die Suche nach
+#      "uac-3.4.0.tar.gz" und liefert den Hash der Signaturdatei.
+#   3. Eine Datei, die nur den Hash enthält (NF == 1), ist der dokumentierte
+#      Normalfall und muss ohne Namensvergleich akzeptiert werden.
 checksum_from_url() {
   local url="$1" asset="$2" body
   body=$(curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 "$url" 2>/dev/null) || return 1
-  # Übliche Formate: "<hash>  <datei>" oder nur "<hash>".
-  printf '%s\n' "$body" | awk -v a="$asset" '
-    { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9a-fA-F]{64}$/) { h = $i } }
-    h != "" && (a == "" || index($0, a) > 0) { print tolower(h); exit }
-  ' | head -1
+  printf '%s\n' "$body" | LC_ALL=C awk -v a="$asset" '
+    {
+      h = ""; matched = 0
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^[0-9a-fA-F]{64}$/)      h = $i
+        else if ($i == a || $i == "*" a)   matched = 1
+      }
+      if (h != "" && (NF == 1 || matched)) { print tolower(h); exit }
+    }'
   return 0
 }
 
@@ -244,6 +259,21 @@ install_one() {
   license=$(printf '%s' "$row" | cut -f9)
   purpose=$(printf '%s' "$row" | cut -f10)
 
+  # Der CLI-Name wird in do_install geprüft, diese Werte kommen aber aus der
+  # Katalogdatei — und $id landet in `rm -rf "$TOOLS_DIR/share/$id"`, $entry
+  # in Zielpfaden. Eine manipulierte Katalogdatei wäre damit ein Primitiv zum
+  # Löschen beliebiger Verzeichnisse. Datei-Eingaben genauso prüfen wie
+  # CLI-Eingaben.
+  case "$id" in
+    ''|.|..|*[!a-zA-Z0-9._-]*) hf_err "Katalog: ungültige id '$id'"; return 1 ;;
+  esac
+  case "$entry" in
+    ''|/*|*..*) hf_err "$id: ungültiger entry '$entry' (leer, absolut oder mit '..')"; return 1 ;;
+  esac
+  case "$extract" in
+    zip|targz|gz|none) : ;;
+    *) hf_err "$id: unbekannter extract-Typ '$extract'"; return 1 ;;
+  esac
   case "$url" in
     https://*) : ;;
     *) hf_err "$id: nur https-Quellen erlaubt, Katalog nennt: $url"; return 1 ;;
@@ -287,12 +317,26 @@ install_one() {
   fi
 
   if [ -z "$expected" ]; then
-    if [ "$ALLOW_UNPINNED" -ne 0 ]; then
-      hf_err "$id: keine Prüfsumme verfügbar ($digest_source). Übersprungen."
-      hf_err "      Mit --allow-unpinned wird der erste Download in lock.tsv festgeschrieben."
+    # Entscheidend ist die DEKLARIERTE Quelle, nicht die Leerheit von
+    # $expected. Leer ist es auch, wenn eine gh-api- oder Checksum-Abfrage
+    # bloss fehlgeschlagen ist — und die GitHub-API erlaubt unauthentifiziert
+    # 60 Anfragen pro Stunde und IP, Rate-Limiting ist also Alltag. Würde
+    # --allow-unpinned das mitabdecken, könnte jeder, der die Digest-Abfrage
+    # zum Scheitern bringt, einen manipulierten Download in lock.tsv
+    # festschreiben lassen — und --verify würde ihn danach bestätigen.
+    if [ "$digest_source" != "none" ]; then
+      hf_err "$id: Prüfsumme über '$digest_source' nicht abrufbar."
+      hf_err "      Mögliche Ursachen: kein Netz, GitHub-Rate-Limit (60/h ohne Token), Asset umbenannt."
+      hf_err "      Abbruch. --allow-unpinned gilt NUR für digest_source=none, nicht für fehlgeschlagene Abfragen."
+      rm -rf -- "$tmp" 2>/dev/null || true
       return 1
     fi
-    hf_warn "$id: ohne veröffentlichte Prüfsumme. Der Hash des Downloads wird in lock.tsv festgeschrieben."
+    if [ "$ALLOW_UNPINNED" -ne 0 ]; then
+      hf_err "$id: Projekt veröffentlicht keine Prüfsumme (digest_source=none). Übersprungen."
+      hf_err "      Mit --allow-unpinned wird der erste Download in lock.tsv festgeschrieben (Trust-on-First-Use)."
+      return 1
+    fi
+    hf_warn "$id: ohne veröffentlichte Prüfsumme (digest_source=none). Der Hash des Downloads wird in lock.tsv festgeschrieben."
   else
     hf_info "Erwartet: $expected ($source_label)"
   fi
@@ -349,6 +393,14 @@ install_one() {
       gunzip -c -- "$dl" > "$installed" && chmod +x "$installed"
       ;;
     zip|targz)
+      # Erst die Abhängigkeit prüfen: archive_is_safe gibt bei fehlendem unzip
+      # ebenfalls 1 zurück, und die Meldung "Archiv enthält '..'" wäre dann
+      # eine irreführende Sicherheitswarnung für ein fehlendes Werkzeug.
+      if [ "$extract" = "zip" ] && ! command -v unzip >/dev/null 2>&1; then
+        hf_err "$id: unzip fehlt — .zip nicht entpackbar."
+        rm -rf -- "$tmp"
+        return 1
+      fi
       if ! archive_is_safe "$dl" "$extract"; then
         hf_err "$id: Archiv enthält Einträge mit '..' oder absolutem Pfad — nicht entpackt."
         rm -rf -- "$tmp"

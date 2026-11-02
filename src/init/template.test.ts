@@ -239,6 +239,25 @@ describe("workspace templates", () => {
     expect(result.skipped).toContain(join(workspace, "README.md"));
   });
 
+  it("keeps user edits to .aios/context.yaml on a second apply", () => {
+    // The workspace tells the user to edit context.yaml and run
+    // `aios init --refresh`. A re-apply (after `aios update`, or simply
+    // twice) must not throw those edits away — and must not claim it
+    // "created" the file it just overwrote.
+    writeFixtureTemplate("alpha");
+    applyTemplate({ name: "alpha", cwd: workspace, templatesRoot, aiosRoot: fakeAios });
+
+    const ctxPath = join(workspace, ".aios", "context.yaml");
+    const edited = readFileSync(ctxPath, "utf-8") + "\n# a line the user added\n";
+    writeFileSync(ctxPath, edited);
+
+    const second = applyTemplate({ name: "alpha", cwd: workspace, templatesRoot, aiosRoot: fakeAios });
+
+    expect(readFileSync(ctxPath, "utf-8")).toBe(edited);
+    expect(second.skipped).toContain(ctxPath);
+    expect(second.created).not.toContain(ctxPath);
+  });
+
   it("can be applied twice without error", () => {
     writeFixtureTemplate("alpha", {}, "dirs:\n  - cases\n");
     applyTemplate({ name: "alpha", cwd: workspace, templatesRoot, aiosRoot: fakeAios });
@@ -265,6 +284,21 @@ describe("workspace templates", () => {
   ])("rejects the invalid template name %j (%s)", (name) => {
     expect(() => applyTemplate({ name, cwd: workspace, templatesRoot }))
       .toThrow(/Invalid template name|Unknown template/);
+  });
+
+  it("rejects a manifest whose name does not match its directory", () => {
+    // Otherwise --list-templates (which reads manifest.name) advertises a
+    // template that applyTemplate (which resolves by directory) cannot find.
+    const dir = join(templatesRoot, "alpha");
+    mkdirSync(join(dir, "dot-aios"), { recursive: true });
+    writeFileSync(join(dir, "template.yaml"), "name: beta\ndescription: mismatched\n");
+    writeFileSync(join(dir, "dot-aios", "context.yaml"),
+      'schema_version: "1.0"\nname: "{{name}}"\ntype: project\n');
+
+    expect(() => describeTemplate("alpha", templatesRoot))
+      .toThrow(/name "beta" must match the directory name "alpha"/);
+    // And it must not show up in the listing either.
+    expect(listTemplates(templatesRoot).map(t => t.name)).not.toContain("beta");
   });
 
   it("rejects a template without context.yaml", () => {
@@ -431,5 +465,125 @@ describe("workspace templates — refusing to run inside AIOS itself", () => {
 
     expect(() => applyTemplate({ name: "alpha", cwd: tmp, templatesRoot, aiosRoot: null }))
       .toThrow(/looks like the AIOS repository/);
+  });
+});
+
+describe("workspace templates — malformed and hostile templates", () => {
+  let tmp: string;
+  let templatesRoot: string;
+  let workspace: string;
+
+  beforeEach(() => {
+    tmp = join(tmpdir(), `aios-tpl-bad-${randomUUID()}`);
+    templatesRoot = join(tmp, "templates");
+    workspace = join(tmp, "ws");
+    mkdirSync(templatesRoot, { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+  });
+  afterEach(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  function manifest(name: string, body: string): string {
+    const dir = join(templatesRoot, name);
+    mkdirSync(join(dir, "dot-aios"), { recursive: true });
+    writeFileSync(join(dir, "template.yaml"), body);
+    writeFileSync(join(dir, "dot-aios", "context.yaml"),
+      'schema_version: "1.0"\nname: "{{name}}"\ntype: project\n');
+    return dir;
+  }
+
+  it("reports the template when template.yaml is not an object", () => {
+    const dir = join(templatesRoot, "scalar");
+    mkdirSync(join(dir, "dot-aios"), { recursive: true });
+    writeFileSync(join(dir, "template.yaml"), "just a string\n");
+    expect(() => describeTemplate("scalar", templatesRoot)).toThrow(/not an object/);
+  });
+
+  it("names the template when its context.yaml does not parse", () => {
+    // A bare "YAMLParseError at line 2, column 1" tells the user nothing
+    // about which of several templates is broken.
+    const dir = manifest("broken", "name: broken\ndescription: x\n");
+    writeFileSync(join(dir, "dot-aios", "context.yaml"), "name: x\n\tbad: indentation\n");
+    expect(() => applyTemplate({ name: "broken", cwd: workspace, templatesRoot }))
+      .toThrow(/Template "broken".*context\.yaml could not be parsed/s);
+  });
+
+  it("leaves the workspace untouched when context.yaml does not parse", () => {
+    const dir = manifest("broken", "name: broken\ndescription: x\n");
+    writeFileSync(join(dir, "dot-aios", "context.yaml"), "name: x\n\tbad: indentation\n");
+    expect(() => applyTemplate({ name: "broken", cwd: workspace, templatesRoot })).toThrow();
+    expect(existsSync(join(workspace, ".aios"))).toBe(false);
+    expect(existsSync(join(workspace, "README.md"))).toBe(false);
+  });
+
+  it("ignores manifest fields of the wrong type without creating stray dirs", () => {
+    // A one-character slip ("dirs: cases" instead of a list) must not be
+    // iterated character-wise into c/, a/, s/, e/.
+    manifest("wrongtype", "name: wrongtype\ndescription: x\ndirs: cases\nlinks: nope\nnext_steps: 7\n");
+    const m = describeTemplate("wrongtype", templatesRoot);
+    expect(m.dirs).toBeUndefined();
+    expect(m.links).toBeUndefined();
+    expect(m.next_steps).toBeUndefined();
+
+    applyTemplate({ name: "wrongtype", cwd: workspace, templatesRoot });
+    for (const stray of ["c", "a", "s", "e", "cases"]) {
+      expect(existsSync(join(workspace, stray)), `stray: ${stray}`).toBe(false);
+    }
+  });
+
+  it("drops non-string members from dirs and next_steps", () => {
+    manifest("mixed", "name: mixed\ndescription: x\ndirs:\n  - 1\n  - cases\n  - null\nnext_steps:\n  - ok\n  - 2\n");
+    const m = describeTemplate("mixed", templatesRoot);
+    expect(m.dirs).toEqual(["cases"]);
+    expect(m.next_steps).toEqual(["ok"]);
+  });
+
+  it("warns about a symlink inside the template tree and does not copy it", () => {
+    const dir = manifest("linky", "name: linky\ndescription: x\n");
+    writeFileSync(join(tmp, "outside-secret.txt"), "secret");
+    symlinkSync(join(tmp, "outside-secret.txt"), join(dir, "sneaky.txt"));
+
+    const result = applyTemplate({ name: "linky", cwd: workspace, templatesRoot });
+    expect(existsSync(join(workspace, "sneaky.txt"))).toBe(false);
+    expect(result.warnings.join(" ")).toMatch(/non-regular file in template/);
+  });
+
+  it("describeTemplate rejects an invalid template name", () => {
+    expect(() => describeTemplate("../escape", templatesRoot)).toThrow(/Invalid template name/);
+    expect(() => describeTemplate("UPPER", templatesRoot)).toThrow(/Invalid template name/);
+  });
+
+  it("ignores a plain file sitting in the templates root", () => {
+    manifest("good", "name: good\ndescription: x\n");
+    writeFileSync(join(templatesRoot, "stray.txt"), "not a template");
+    expect(listTemplates(templatesRoot).map(t => t.name)).toEqual(["good"]);
+  });
+
+  it("ignores a directory whose name is not a valid template name", () => {
+    manifest("good", "name: good\ndescription: x\n");
+    mkdirSync(join(templatesRoot, "Upper"), { recursive: true });
+    writeFileSync(join(templatesRoot, "Upper", "template.yaml"), "name: Upper\ndescription: x\n");
+    expect(listTemplates(templatesRoot).map(t => t.name)).toEqual(["good"]);
+  });
+
+  it("returns an empty list for an existing but empty templates root", () => {
+    expect(listTemplates(templatesRoot)).toEqual([]);
+  });
+
+  it("says no templates are available when none exist", () => {
+    expect(() => applyTemplate({ name: "any", cwd: workspace, templatesRoot }))
+      .toThrow(/Available: \(none\)/);
+  });
+
+  it("falls back to an empty description when the manifest has none", () => {
+    manifest("nodesc", "name: nodesc\n");
+    expect(describeTemplate("nodesc", templatesRoot).description).toBe("");
+  });
+
+  it("honours readOnly: false from the template context", () => {
+    const dir = manifest("rw", "name: rw\ndescription: x\n");
+    writeFileSync(join(dir, "dot-aios", "context.yaml"),
+      'schema_version: "1.0"\nname: "{{name}}"\ntype: project\naios:\n  path: ""\n  readOnly: false\n');
+    const result = applyTemplate({ name: "rw", cwd: workspace, templatesRoot, aiosRoot: "/some/aios" });
+    expect(result.context.aios?.readOnly).toBe(false);
   });
 });

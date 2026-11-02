@@ -45,12 +45,26 @@ EXTRA_DIRS=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --case-dir)  CASE_DIR="${2:-}"; [ -n "$CASE_DIR" ] || hf_die "--case-dir braucht einen Pfad"; shift 2 ;;
+    --case-dir)
+      case "${2:-}" in
+        -*) hf_die "--case-dir braucht einen Pfad, keine Option: ${2}" ;;
+        "") hf_die "--case-dir braucht einen Pfad" ;;
+      esac
+      CASE_DIR="${2}"; shift 2 ;;
     --mode)      MODE="${2:-}";     shift 2 ;;
     --memory)    WANT_MEMORY=0;     shift ;;
     --log-days)  LOG_DAYS="${2:-}"; shift 2 ;;
-    --extra-dir) EXTRA_DIRS="$EXTRA_DIRS
-${2:-}"; shift 2 ;;
+    --extra-dir)
+      # Ein mit "-" beginnender Wert waere fuer find ein Praedikat, nicht ein
+      # Pfad — find haette dann keinen Pfad-Operanden und wuerde "." durchsuchen.
+      # Mit "-delete" waere daraus sogar ein Loeschbefehl geworden, in einem
+      # Werkzeug, dessen erste Regel "nur lesen" ist.
+      case "${2:-}" in
+        -*) hf_die "--extra-dir braucht einen Pfad, keine Option: ${2:-}" ;;
+        "") hf_die "--extra-dir braucht einen Pfad" ;;
+      esac
+      EXTRA_DIRS="$EXTRA_DIRS
+${2}"; shift 2 ;;
     -h|--help)   sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)           hf_die "Unbekannte Option: $1" ;;
   esac
@@ -109,13 +123,7 @@ hf_run host/uname.txt uname -a
 hf_run host/date-utc.txt date -u
 hf_run host/uptime.txt uptime
 hf_run host/id.txt id
-# Der Fallordner darf keine Zugangsdaten enthalten — sonst ist die
-# Beweissicherung selbst das Risiko. Redigiert wird nach Variablennamen UND
-# nach Zugangsdaten in URLs (https://nutzer:geheim@host).
-hf_sh  host/env-sanitized.txt 'env \
-  | sed -E "s/^([A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|PASS|KEY|SESSION|CREDENTIAL|AUTH|COOKIE|BEARER|PRIVATE|SIGNATURE|SALT)[A-Za-z0-9_]*)=.*/\\1=<redigiert>/I" \
-  | sed -E "s#(://)[^/:@[:space:]]+:[^/@[:space:]]+@#\\1<redigiert>:<redigiert>@#g" \
-  | LC_ALL=C sort'
+hf_env_sanitized host/env-sanitized.txt
 hf_copy /etc/hostname host/hostname
 hf_copy /etc/os-release host/os-release
 hf_copy /etc/timezone host/timezone
@@ -158,8 +166,8 @@ collect_volatile_linux() {
   hf_run volatile/ps-auxww.txt ps auxww
   hf_run volatile/ps-forest.txt ps -eo pid,ppid,user,lstart,etime,stat,wchan:20,args --forest
   hf_run volatile/ps-threads.txt ps -eLo pid,tid,user,args
-  hf_sh  volatile/proc-exe-links.txt 'ls -l /proc/[0-9]*/exe 2>/dev/null'
-  hf_sh  volatile/proc-cwd-links.txt 'ls -l /proc/[0-9]*/cwd 2>/dev/null'
+  hf_sh  volatile/proc-exe-links.txt 'ls -l /proc/[0-9]*/exe 2>/dev/null; exit 0'
+  hf_sh  volatile/proc-cwd-links.txt 'ls -l /proc/[0-9]*/cwd 2>/dev/null; exit 0'
   # Prozesse, deren Binary auf der Platte nicht mehr existiert: klassisches
   # Malware-Muster (Datei laeuft, ist aber geloescht).
   hf_sh  volatile/proc-deleted-binaries.txt 'ls -l /proc/[0-9]*/exe 2>/dev/null | grep "(deleted)" || true'
@@ -187,7 +195,7 @@ collect_volatile_linux() {
   hf_run volatile/lsmod.txt lsmod
   hf_sh  volatile/kernel-taint.txt 'cat /proc/sys/kernel/tainted 2>/dev/null; echo "# 0 = unverändert. Siehe Documentation/admin-guide/tainted-kernels.rst"'
   hf_copy /etc/ld.so.preload volatile/ld.so.preload
-  hf_sh  volatile/ld-preload-env.txt 'for p in /proc/[0-9]*; do pid=${p#/proc/}; v=$(tr "\0" "\n" < "$p/environ" 2>/dev/null | grep -E "^LD_(PRELOAD|LIBRARY_PATH|AUDIT)=" || true); [ -n "$v" ] && printf "%s\t%s\n" "$pid" "$(printf "%s" "$v" | tr "\n" ";")"; done'
+  hf_sh  volatile/ld-preload-env.txt 'for p in /proc/[0-9]*; do [ -r "$p/environ" ] || continue; pid=${p#/proc/}; v=$(tr "\0" "\n" < "$p/environ" 2>/dev/null | grep -E "^LD_(PRELOAD|LIBRARY_PATH|AUDIT)=" || true); if [ -n "$v" ]; then printf "%s\t%s\n" "$pid" "$(printf "%s" "$v" | tr "\n" ";")"; fi; done; exit 0'
   hf_run volatile/mounts.txt findmnt -A
   hf_copy /proc/mounts volatile/proc-mounts
   hf_run volatile/who.txt who -a
@@ -222,16 +230,17 @@ collect_persistence_linux() {
   hf_run persistence/systemd-timers.txt systemctl list-timers --all --no-pager
   hf_run persistence/systemd-user-units.txt systemctl --user list-units --all --no-pager
   # Units ausserhalb der Distributionspfade sind die interessanten.
-  hf_sh  persistence/systemd-local-units.txt 'ls -la /etc/systemd/system/ /etc/systemd/user/ /usr/local/lib/systemd/system/ /run/systemd/system/ 2>/dev/null'
+  hf_sh  persistence/systemd-local-units.txt 'for d in /etc/systemd/system /etc/systemd/user /usr/local/lib/systemd/system /run/systemd/system; do if [ -d "$d" ]; then printf "===== %s =====\n" "$d"; ls -la "$d"; else printf "===== %s (nicht vorhanden) =====\n" "$d"; fi; done'
   hf_sh  persistence/systemd-unit-contents.txt 'for f in /etc/systemd/system/*.service /etc/systemd/system/*.timer /etc/systemd/system/*/*.service; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; printf "\n"; done 2>/dev/null'
   hf_sh  persistence/cron-system.txt 'for f in /etc/crontab /etc/cron.d/* /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* /etc/cron.monthly/*; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; printf "\n"; done 2>/dev/null'
   hf_sh  persistence/cron-user.txt 'for d in /var/spool/cron /var/spool/cron/crontabs; do [ -d "$d" ] || continue; for f in "$d"/*; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; printf "\n"; done; done 2>/dev/null'
-  hf_sh  persistence/at-jobs.txt 'ls -la /var/spool/at /var/spool/cron/atjobs 2>/dev/null; atq 2>/dev/null || true'
+  hf_sh  persistence/at-dirs.txt 'ls -la /var/spool/at /var/spool/cron/atjobs 2>/dev/null || true'
+  hf_sh  persistence/at-jobs.txt 'atq 2>/dev/null' atq
   hf_sh  persistence/rc-scripts.txt 'for f in /etc/rc.local /etc/rc.d/rc.local /etc/init.d/*; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; head -c 20000 "$f"; printf "\n"; done 2>/dev/null'
   hf_sh  persistence/xdg-autostart.txt 'ls -la /etc/xdg/autostart/ "$HOME"/.config/autostart/ 2>/dev/null; for f in /etc/xdg/autostart/*.desktop "$HOME"/.config/autostart/*.desktop; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; done 2>/dev/null'
   hf_sh  persistence/shell-rc.txt 'for f in /etc/profile /etc/bash.bashrc /etc/zsh/zshrc /etc/profile.d/* "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.profile "$HOME"/.zshrc "$HOME"/.zshenv; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; printf "\n"; done 2>/dev/null'
-  hf_sh  persistence/udev-rules.txt 'ls -la /etc/udev/rules.d/ 2>/dev/null'
-  hf_sh  persistence/modules-load.txt 'cat /etc/modules /etc/modules-load.d/* 2>/dev/null'
+  hf_sh  persistence/udev-rules.txt 'if [ -d /etc/udev/rules.d ]; then ls -la /etc/udev/rules.d/; else echo "(/etc/udev/rules.d nicht vorhanden)"; fi'
+  hf_sh  persistence/modules-load.txt 'found=0; for f in /etc/modules /etc/modules-load.d/*; do [ -f "$f" ] || continue; found=1; printf "===== %s =====\n" "$f"; cat "$f"; done; [ "$found" -eq 1 ] || echo "(keine Modul-Ladekonfiguration vorhanden)"'
   hf_sh  persistence/dbus-services.txt 'ls -la /usr/share/dbus-1/system-services/ /etc/dbus-1/system.d/ 2>/dev/null'
   hf_sh  persistence/pam-config.txt 'ls -la /etc/pam.d/ 2>/dev/null; grep -rn "pam_exec\|pam_python" /etc/pam.d/ 2>/dev/null || true'
 }
@@ -241,11 +250,11 @@ collect_persistence_darwin() {
   hf_run persistence/launchctl-print-system.txt launchctl print system
   hf_sh  persistence/launch-dirs.txt 'ls -la /Library/LaunchAgents /Library/LaunchDaemons /System/Library/LaunchAgents /System/Library/LaunchDaemons "$HOME"/Library/LaunchAgents 2>/dev/null'
   # Nur Agents/Daemons ausserhalb von /System sind realistisch manipuliert.
-  hf_sh  persistence/launch-plists.txt 'for f in /Library/LaunchAgents/*.plist /Library/LaunchDaemons/*.plist "$HOME"/Library/LaunchAgents/*.plist; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; plutil -p "$f" 2>/dev/null || cat "$f"; printf "\n"; done 2>/dev/null'
-  hf_sh  persistence/login-items.txt 'osascript -e "tell application \"System Events\" to get the name of every login item" 2>/dev/null || true'
-  hf_sh  persistence/config-profiles.txt 'profiles -P 2>/dev/null || true'
+  hf_sh  persistence/launch-plists.txt 'for f in /Library/LaunchAgents/*.plist /Library/LaunchDaemons/*.plist "$HOME"/Library/LaunchAgents/*.plist; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; plutil -p "$f" 2>/dev/null || cat "$f"; printf "\n"; done 2>/dev/null' plutil
+  hf_sh  persistence/login-items.txt 'osascript -e "tell application \"System Events\" to get the name of every login item" 2>/dev/null || true' osascript
+  hf_sh  persistence/config-profiles.txt 'profiles -P 2>/dev/null' profiles
   hf_sh  persistence/periodic.txt 'ls -la /etc/periodic/*/ /etc/periodic.conf 2>/dev/null'
-  hf_sh  persistence/cron-user.txt 'crontab -l 2>/dev/null || true; ls -la /usr/lib/cron/tabs 2>/dev/null'
+  hf_sh  persistence/cron-user.txt 'crontab -l 2>/dev/null || true; ls -la /usr/lib/cron/tabs 2>/dev/null || true' crontab
   hf_sh  persistence/shell-rc.txt 'for f in /etc/profile /etc/zshrc /etc/bashrc "$HOME"/.zshrc "$HOME"/.zprofile "$HOME"/.bash_profile "$HOME"/.profile; do [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; cat "$f"; printf "\n"; done 2>/dev/null'
   hf_sh  persistence/emond.txt 'ls -la /etc/emond.d/ 2>/dev/null'
   hf_sh  persistence/kext-dirs.txt 'ls -la /Library/Extensions /System/Library/Extensions 2>/dev/null'
@@ -293,7 +302,7 @@ collect_logs_linux() {
   hf_run logs/dmesg.txt dmesg -T
   hf_run logs/auditctl-rules.txt auditctl -l
   hf_sh  logs/audit-recent.txt 'if [ -r /var/log/audit/audit.log ]; then tail -n 50000 /var/log/audit/audit.log; else echo "/var/log/audit/audit.log nicht lesbar oder auditd nicht aktiv"; fi'
-  hf_sh  logs/wtmp-btmp-metadata.txt 'for f in /var/log/wtmp /var/log/btmp /var/run/utmp; do [ -e "$f" ] && printf "%s\t%s Bytes\n" "$f" "$(wc -c < "$f" 2>/dev/null)"; done 2>/dev/null'
+  hf_sh  logs/wtmp-btmp-metadata.txt 'for f in /var/log/wtmp /var/log/btmp /var/run/utmp; do if [ -e "$f" ]; then printf "%s\t%s Bytes\n" "$f" "$(wc -c < "$f" 2>/dev/null)"; else printf "%s\tNICHT_VORHANDEN\n" "$f"; fi; done'
   if [ "$MODE" = "collect" ]; then
     hf_copy /var/log/wtmp logs/wtmp
     hf_copy /var/log/btmp logs/btmp
@@ -305,7 +314,7 @@ collect_logs_darwin() {
   hf_run logs/unified-log-auth.txt log show --style syslog --last "${LOG_DAYS}d" \
     --predicate 'subsystem CONTAINS "com.apple.securityd" OR process == "sudo" OR process == "sshd" OR process == "loginwindow" OR eventMessage CONTAINS "authent"'
   hf_run logs/unified-log-install.txt log show --style syslog --last "${LOG_DAYS}d" --predicate 'process == "installd" OR process == "softwareupdated"'
-  hf_sh  logs/install-history.txt 'if [ -r /Library/Receipts/InstallHistory.plist ]; then plutil -p /Library/Receipts/InstallHistory.plist 2>/dev/null; else echo "InstallHistory.plist nicht lesbar"; fi'
+  hf_sh  logs/install-history.txt 'if [ -r /Library/Receipts/InstallHistory.plist ]; then plutil -p /Library/Receipts/InstallHistory.plist 2>/dev/null; else echo "InstallHistory.plist nicht lesbar"; fi' plutil
   hf_sh  logs/system-log-dir.txt 'ls -la /var/log/ /Library/Logs/ 2>/dev/null'
   hf_run logs/spctl-assess.txt spctl --status --verbose
   hf_run logs/csrutil-status.txt csrutil status
@@ -318,7 +327,7 @@ collect_filesystem() {
   # Attacker-kontrollierte Dateinamen: hf_find_tsv haelt die Spalten sauber.
   for tp in $TEMP_PATHS; do
     [ -d "$tp" ] || continue
-    safe=$(printf '%s' "$tp" | tr -c 'A-Za-z0-9._-' '_')
+    safe=$(hf_path_slug "$tp")
     hf_find_tsv "filesystem/temp-executables-${safe}.tsv" "$tp" -xdev -type f -perm -u+x
   done
   hf_sh filesystem/temp-listing.txt "ls -laR $TEMP_PATHS 2>/dev/null | head -n 20000"
@@ -327,15 +336,15 @@ collect_filesystem() {
   hf_find_tsv filesystem/etc-recent-changes.tsv /etc -xdev -type f -mtime "-${LOG_DAYS}"
   for d in /root /home/* /Users/*; do
     [ -d "$d" ] || continue
-    safe=$(printf '%s' "$d" | tr -c 'A-Za-z0-9._-' '_')
+    safe=$(hf_path_slug "$d")
     hf_find_tsv "filesystem/home-hidden-executables-${safe}.tsv" "$d" -xdev -maxdepth 4 -name ".*" -type f -perm -u+x
   done
-  hf_sh filesystem/large-recent-files.tsv "find /home /Users /root /opt /srv -xdev -type f -size +50M -mtime -${LOG_DAYS} 2>/dev/null | head -n 1000"
+  hf_sh filesystem/large-recent-files.tsv "for d in /home /Users /root /opt /srv; do [ -d \"\$d\" ] || continue; find \"\$d\" -xdev -type f -size +50M -mtime -${LOG_DAYS} 2>/dev/null; done | head -n 1000"
   hf_sh filesystem/orphaned-files.tsv 'find /etc /usr /opt -xdev \( -nouser -o -nogroup \) 2>/dev/null | head -n 1000'
 
   if [ "$OS" = "darwin" ]; then
     hf_sh filesystem/quarantine-events.txt 'f="$HOME/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2"; if [ -r "$f" ]; then printf "%s\t%s Bytes\n" "$f" "$(wc -c < "$f")"; else echo "QuarantineEventsV2 nicht lesbar"; fi'
-    hf_sh filesystem/unsigned-apps.tsv 'for a in /Applications/*.app "$HOME"/Applications/*.app; do [ -d "$a" ] || continue; r=$(codesign -dv "$a" 2>&1 | head -3 | tr "\n" ";"); printf "%s\t%s\n" "$a" "$r"; done 2>/dev/null | head -n 500'
+    hf_sh filesystem/unsigned-apps.tsv 'for a in /Applications/*.app "$HOME"/Applications/*.app; do [ -d "$a" ] || continue; r=$(codesign -dv "$a" 2>&1 | head -3 | tr "\n" ";"); printf "%s\t%s\n" "$a" "$r"; done 2>/dev/null | head -n 500' codesign
   fi
 
   # Zusätzliche Verzeichnisse aus --extra-dir. Bewusst keine Pipeline:
@@ -351,7 +360,7 @@ collect_filesystem() {
       hf_skip "filesystem/extra" "nicht vorhanden: $d"
       continue
     fi
-    safe=$(printf '%s' "$d" | tr -c 'A-Za-z0-9._-' '_')
+    safe=$(hf_path_slug "$d")
     HF_FIND_LIMIT=20000 hf_find_tsv "filesystem/extra-${safe}.tsv" "$d" -xdev -type f
   done
   IFS=$local_ifs

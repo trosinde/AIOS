@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseContextYaml, serializeContext, createDefaultContext } from "./schema.js";
 import type { ContextConfig } from "../types.js";
 import { stringify } from "yaml";
@@ -233,6 +233,47 @@ describe("ContextConfig round-trip completeness", () => {
     const reparsed = parseContextYaml(serializeContext(parseContextYaml(yaml)));
     expect(reparsed.security?.codeshield?.allowList).toEqual(["git "]);
     expect(reparsed.security?.codeshield?.denyList).toEqual(["rm -rf /"]);
+  });
+
+  it("drops an unknown integrity_policies value and says so", () => {
+    // A typo in the one flag that turns integrity checks on used to pass the
+    // cast, fail the === "strict" comparison, and leave an empty policy set
+    // with no diagnostic — a security flag failing open in silence.
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const parsed = parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_policies: Strict\n',
+      );
+      expect(parsed.security?.integrity_policies).toBeUndefined();
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/integrity_policies="Strict" ist unbekannt/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("warns about an unknown key inside security", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_polices: strict\n',
+      );
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/security\.integrity_polices ist kein bekannter Schlüssel/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("accepts relaxed without complaint", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const parsed = parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_policies: relaxed\n',
+      );
+      expect(parsed.security?.integrity_policies).toBe("relaxed");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("leaves security absent when the input has none", () => {

@@ -51,10 +51,24 @@ entweder eine neue Upstream-Version oder eine manipulierte Datei.
 
 ## Daten bleiben lokal
 
-`.aios/context.yaml` setzt `default_provider: ollama`. Fallordner enthalten
-Dateipfade mit Nutzernamen, Logauszüge und Kontonamen — diese Rohdaten sollen
-den Rechner nicht verlassen. Nach aussen gehen ausschliesslich **Hashes**, und
-das erst nach Rückfrage (siehe `references/enrichment.md`).
+Fallordner enthalten Dateipfade mit Nutzernamen, Logauszüge und Kontonamen.
+Diese Rohdaten sollen den Rechner nicht verlassen. Nach aussen gehen
+ausschliesslich **Hashes**, und das erst nach Rückfrage (siehe
+`references/enrichment.md`).
+
+Beim Modell-Anbieter ist das aber **keine Automatik**. `.aios/context.yaml`
+setzt `default_provider: ollama`, und das wirkt auf den Federation- und
+Service-Pfaden — **nicht** auf `aios "Aufgabe"` und `aios run`. Die beiden
+nehmen den Provider aus `~/.aios/config.yaml`. Wer die Rohdaten lokal halten
+will, braucht eines davon:
+
+```bash
+aios run forensic-analyze --provider ollama    # pro Aufruf
+aios configure                                 # ollama dauerhaft als Default
+```
+
+Im Skill-Pfad (Claude Code, Copilot CLI) gilt das, was der Agent selbst
+nutzt — dort entscheidet die Wahl des Agenten, nicht diese Datei.
 
 ## AIOS
 
@@ -64,7 +78,15 @@ Details in `.aios/agent-instructions.md`.
 Patterns: `forensic-investigate`, `forensic-analyze`, `forensic-timeline`,
 `forensic-memory`, `forensic-enrich`, `forensic-report`.
 
+**Der normale Weg ist der Skill**, nicht `aios run`: die Prüfung muss Skripte
+ausführen und Dateien im Fallordner lesen, und das kann nur ein Agent wie
+Claude Code oder Copilot CLI. Ein reiner `aios run`-Aufruf bekommt nur Text —
+die Patterns brechen in diesem Fall absichtlich ab, statt einen Bericht mit
+erfundenen Zahlen zu erzeugen.
+
+Sinnvoll ist `aios run` deshalb nur mit übergebenen Rohdaten:
+
 ```bash
-aios run forensic-investigate
-aios "Prüf diesen Rechner und schreib mir einen Bericht"
+aios run forensic-analyze --provider ollama < cases/fall-1/summary.txt
+aios run forensic-report  --provider ollama < befunde.md
 ```

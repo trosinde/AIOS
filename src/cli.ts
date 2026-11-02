@@ -1653,9 +1653,13 @@ program
         console.error(chalk.yellow("  No workspace templates found."));
         process.exit(1);
       }
-      console.error(chalk.cyan("  Workspace templates:"));
+      // The listing is the result, so it goes to stdout (CLAUDE.md: logging
+      // on stderr, results on stdout). Same as `aios patterns list` and
+      // `aios context list`, and it keeps
+      // `aios init --list-templates | grep forensics` working.
+      console.log(chalk.cyan("Workspace templates:"));
       for (const t of templates) {
-        console.error(`    ${chalk.bold(t.name.padEnd(14))} ${chalk.gray(t.description)}`);
+        console.log(`  ${chalk.bold(t.name.padEnd(14))} ${chalk.gray(t.description)}`);
       }
       console.error();
       console.error(chalk.gray("  Use: aios init --template <name>"));
@@ -1664,6 +1668,13 @@ program
 
     // ─── Apply a template (non-interactive) ─────────────────
     if (opts.template) {
+      // --refresh regenerates from an existing context.yaml, --template sets
+      // up a new workspace. Silently letting one win would surprise either way.
+      if (opts.refresh) {
+        console.error(chalk.red("  --template und --refresh schliessen sich aus."));
+        console.error(chalk.gray("    --template richtet ein Arbeitsverzeichnis ein, --refresh erneuert ein bestehendes."));
+        process.exit(1);
+      }
       const { applyTemplate, relativize } = await import("./init/template.js");
       const { detectAiosPath } = await import("./init/aios-path.js");
       const { resolve: pResolve } = await import("path");
@@ -1687,7 +1698,13 @@ program
         }
         if (applied.links.length > 0) {
           console.error(chalk.cyan("  Linked:"));
-          for (const l of applied.links) console.error(chalk.gray(`    ${l}`));
+          // "<workspace path> -> <aios path>": only the left side is inside
+          // cwd, so relativize that half and leave the target absolute.
+          for (const l of applied.links) {
+            const [from, to] = l.split(" -> ");
+            const shown = to ? `${relativize([from!], cwd)[0]} -> ${to}` : l;
+            console.error(chalk.gray(`    ${shown}`));
+          }
         }
         if (applied.skipped.length > 0) {
           console.error(chalk.cyan("  Left alone (already present):"));

@@ -6,6 +6,7 @@ import { join, dirname, resolve, sep, basename, relative } from "path";
 import { fileURLToPath } from "url";
 import { parse as parseYaml } from "yaml";
 import type { ContextConfig } from "../types.js";
+import { isPathWithinBase } from "../context/manifest.js";
 import { parseContextYaml } from "./schema.js";
 import { generate } from "./generator.js";
 
@@ -80,20 +81,16 @@ export function defaultTemplatesRoot(): string {
 }
 
 /**
- * True when `target` is inside `base`.
+ * Throws when `target` is not inside `base`.
  *
- * Deliberately not a bare startsWith: that would accept "/srv/aios-evil"
- * for base "/srv/aios". The separator check is what makes it a containment
- * test rather than a prefix test.
+ * The containment logic lives in `isPathWithinBase` so the repository has
+ * exactly one implementation of it — the older copy used a bare startsWith
+ * and accepted a sibling directory sharing a prefix. Only the message
+ * differs here, because naming *which* input escaped (a `dirs` entry, a link
+ * target, a template file) is what makes the error actionable.
  */
-function isWithin(target: string, base: string): boolean {
-  const b = resolve(base);
-  const t = resolve(target);
-  return t === b || t.startsWith(b.endsWith(sep) ? b : b + sep);
-}
-
 function assertWithin(target: string, base: string, what: string): void {
-  if (!isWithin(target, base)) {
+  if (!isPathWithinBase(target, base)) {
     throw new Error(`Path traversal blocked: ${what} "${target}" is outside "${base}"`);
   }
 }
@@ -131,6 +128,17 @@ function readManifest(templateDir: string): TemplateManifest {
   }
   if (!NAME_PATTERN.test(obj.name)) {
     throw new Error(`Invalid ${MANIFEST_FILE} in ${templateDir}: name must match ${NAME_PATTERN}`);
+  }
+  // listTemplates reports manifest.name while applyTemplate resolves by
+  // directory. If the two disagree, the listing advertises a template that
+  // cannot be applied, and the error even contradicts itself
+  // ('Unknown template "beta". Available: beta'). Require them to match.
+  const dirName = basename(templateDir);
+  if (obj.name !== dirName) {
+    throw new Error(
+      `Invalid ${MANIFEST_FILE} in ${templateDir}: name "${obj.name}" must match ` +
+      `the directory name "${dirName}" — otherwise the template can be listed but not applied.`,
+    );
   }
 
   const dirs = Array.isArray(obj.dirs) ? obj.dirs.filter((d): d is string => typeof d === "string") : undefined;
@@ -200,28 +208,45 @@ export function applyTemplate(options: ApplyTemplateOptions): ApplyTemplateResul
     );
   }
 
-  const result: ApplyTemplateResult = {
-    created: [], modified: [], skipped: [], links: [], warnings: [],
-    manifest,
-    context: {} as ContextConfig,
-  };
-
   // ─── 1. context.yaml from the template drives the standard .aios tree ───
+  // Parsed before `result` is built, so the result never holds a placeholder
+  // cast like `{} as ContextConfig`.
   const workspaceName = options.workspaceName ?? (basename(resolve(cwd)) || name);
   const templateContextPath = join(templateDir, `${DOT_PREFIX}aios`, "context.yaml");
   if (!existsSync(templateContextPath)) {
     throw new Error(`Template "${name}" has no ${DOT_PREFIX}aios/context.yaml`);
   }
   const rendered = readFileSync(templateContextPath, "utf-8").replace(/\{\{name\}\}/g, workspaceName);
-  const context = parseContextYaml(rendered);
+  let context: ContextConfig;
+  try {
+    context = parseContextYaml(rendered);
+  } catch (err) {
+    // Name the template and the file: a bare YAML line/column tells the user
+    // nothing about which of several templates is broken.
+    throw new Error(
+      `Template "${name}": ${DOT_PREFIX}aios/context.yaml could not be parsed — ` +
+      `${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   if (options.aiosRoot) {
     context.aios = { path: options.aiosRoot, readOnly: context.aios?.readOnly ?? true };
   }
-  result.context = context;
+
+  const result: ApplyTemplateResult = {
+    created: [], modified: [], skipped: [], links: [], warnings: [],
+    manifest,
+    context,
+  };
 
   // generate() writes .aios/context.yaml, agent-instructions.md and the
   // knowledge tree. CLAUDE.md comes from the template, so it is not patched.
-  const generated = generate(context, { cwd, patchClaudeMd: false });
+  // preserveExistingContext keeps the promise made above: a second apply
+  // must not throw away edits the user made to context.yaml.
+  const generated = generate(context, {
+    cwd,
+    patchClaudeMd: false,
+    preserveExistingContext: true,
+  });
   result.created.push(...generated.created);
   result.modified.push(...generated.modified);
   result.skipped.push(...generated.skipped);

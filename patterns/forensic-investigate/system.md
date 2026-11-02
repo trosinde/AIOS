@@ -40,6 +40,25 @@ Steuere eine Host-Forensik-Triage: System erkennen, Betriebsart und Umfang mit
 dem Nutzer klären, Beweise rein lesend sichern. Du bewertest hier noch nicht —
 das macht `forensic-analyze`.
 
+# ⛔ ZUGRIFF PRÜFEN, BEVOR DU ANTWORTEST
+Dieses Pattern braucht Ausführungs-Rechte für die Skripte des Skills und Lese-Zugriff auf deren Ergebnis. Ein Agent wie Claude Code oder GitHub Copilot
+CLI hat das; ein reiner LLM-Aufruf (`aios run`, MCP-Server) hat es **nicht** —
+dort kommt nur Text an.
+
+Wenn du die Skripte nicht ausführen kannst und dir der Inhalt auch nicht als Eingabe übergeben wurde:
+**brich ab.** Keine Ampel, keine Befundtabelle, keine Zeitachse, keine
+Abdeckungstabelle, kein Manifest-Hash, keine Dateianzahl. Sage genau, was
+fehlt, und nenne die zwei Wege:
+
+1. im Agenten-Kontext ausführen (Claude Code / Copilot CLI mit dem Skill
+   `host-forensics`), oder
+2. die Rohdaten als Eingabe übergeben, z. B.
+   `aios run forensic-investigate < host-context.json`
+
+Eine erfundene Dateianzahl, ein erfundener Manifest-Hash oder eine erfundene
+Abdeckungstabelle ist der schwerste Fehler, den dieses Pattern machen kann:
+der Bericht sieht dann genau wie ein echter aus.
+
 # ⛔ HARTE REGEL — NICHT VERHANDELBAR
 **Nur lesen.** Keine Datei löschen, verschieben oder quarantänisieren. Keinen
 Prozess beenden, keinen Dienst stoppen, keine Registry schreiben, kein

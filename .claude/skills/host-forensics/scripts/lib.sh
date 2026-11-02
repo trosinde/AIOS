@@ -30,17 +30,33 @@ hf_stamp()    { date -u +%Y%m%dT%H%M%SZ; }
 # ─── JSON ────────────────────────────────────────────────────────────────
 
 # Escaped stdin zu einem JSON-String-Inhalt (ohne umschliessende Anfuehrungszeichen).
-# Reihenfolge wichtig: Backslash zuerst, sonst werden eigene Escapes doppelt escaped.
+#
+# Mit awk, nicht mit sed: der sonst uebliche ":a;N;$!ba"-Trick gibt auf
+# BSD/POSIX-sed (macOS) gar nichts aus, weil dort das Pattern Space bei N am
+# Dateiende verworfen wird. Mit sed waere auf macOS jeder Wert leer — und das
+# Skript haette trotzdem Exit 0 geliefert.
 hf_json_escape() {
-  LC_ALL=C sed \
-    -e 's/\\/\\\\/g' \
-    -e 's/"/\\"/g' \
-    -e 's/\x08/\\b/g' \
-    -e 's/\x0c/\\f/g' \
-    -e 's/\r/\\r/g' \
-    -e 's/\t/\\t/g' \
-    -e 's/[\x00-\x1f]//g' \
-  | LC_ALL=C sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g'
+  LC_ALL=C awk '
+    BEGIN {
+      ORS = ""
+      # awk kennt kein ord(); die Tabelle liefert den Zahlenwert eines Zeichens,
+      # damit Steuerzeichen als \u00XX ausgegeben werden koennen (JSON verlangt das).
+      for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i
+    }
+    {
+      # Zeilenumbrueche im Wert werden zu \n — awk liest zeilenweise.
+      if (NR > 1) printf "\\n"
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if      (c == "\\") printf "\\\\"
+        else if (c == "\"")  printf "\\\""
+        else if (c == "\t")  printf "\\t"
+        else if (c == "\r")  printf "\\r"
+        else if (c < " ")    printf "\\u%04x", ORD[c]
+        else                 printf "%s", c
+      }
+    }'
 }
 
 # hf_json_str <wert> -> "escaped"
@@ -238,10 +254,13 @@ hf_case_init() {
       printf '# Jede Zeile: UTC-Zeitstempel, Zieldatei (relativ), Exit-Code oder "skipped", Bytes, Befehl\n'
       printf '# Spaltentrenner: Tabulator. Diese Datei wird nur angehaengt, nie veraendert.\n'
       printf '#\n'
-      printf '# begin\t%s\tmode=%s\tsource_os=%s\thost=%s\toperator=%s\n' \
-        "$(hf_now)" "$mode" "$source_os" "$(hostname 2>/dev/null || echo unknown)" "$(id -un 2>/dev/null || echo unknown)"
     } > "$HF_COC"
   fi
+  # Der begin-Satz wird bei JEDEM Lauf angehaengt, auch beim zweiten in denselben
+  # Fallordner — sonst fehlen fuer diesen Lauf Startzeit, Modus und Operator.
+  printf '# begin\t%s\tmode=%s\tsource_os=%s\thost=%s\toperator=%s\n' \
+    "$(hf_now)" "$mode" "$source_os" "$(hostname 2>/dev/null || echo unknown)" \
+    "$(id -un 2>/dev/null || echo unknown)" >> "$HF_COC"
 
   HF_SKIPPED=""
   hf_info "Fallordner: $HF_CASE_DIR"
@@ -287,17 +306,96 @@ hf_run() {
   return 0
 }
 
-# hf_sh <ziel-relativ> <shell-schnipsel>
+# hf_sh <ziel-relativ> <shell-schnipsel> [benoetigte-werkzeuge...]
+#
 # Fuer Pipelines und Globs. Der Schnipsel stammt IMMER aus diesem Repo,
 # niemals aus Nutzereingaben — sonst waere das eine Injection-Stelle.
+#
+# Zwei Eigenschaften, die den Unterschied zwischen "geprueft" und "nicht
+# geprueft" tragen:
+#
+#   1. Die benoetigten Werkzeuge werden VORHER geprueft. Fehlt eines, ist das
+#      eine Luecke in der Abdeckung — nicht ein leeres Ergebnis. Ohne diese
+#      Pruefung behauptet summary.txt auf einem macOS ohne profiles(8), die
+#      Konfigurationsprofile seien geprueft und sauber.
+#   2. bash mit pipefail statt sh. Ohne pipefail liefert eine Pipeline den
+#      Status der LETZTEN Stufe: scheitert die erste (fehlendes Werkzeug,
+#      GNU-only Option), kommt trotzdem 0 und 0 Bytes heraus — und genau das
+#      wird als "geprueft, kein Treffer" einsortiert.
 hf_sh() {
   hf_case_assert
-  local rel="$1" snippet="$2" rc=0
+  local rel="$1" snippet="$2"; shift 2
+
+  local t
+  for t in "$@"; do
+    if ! command -v "$t" >/dev/null 2>&1; then
+      hf_skip "$rel" "Werkzeug nicht vorhanden: $t"
+      return 0
+    fi
+  done
+
+  local out="$HF_CASE_DIR/$rel" rc=0
+  mkdir -p "$(dirname "$out")"
+  bash -c "set -o pipefail; $snippet" >"$out" 2>"$out.stderr" || rc=$?
+  if [ ! -s "$out.stderr" ]; then rm -f "$out.stderr"; fi
+  hf_coc "$rel" "$rc" "$(hf_filesize "$out")" "bash -c: $snippet"
+
+  # Ein Fehlschlag ist eine Luecke, kein Befund. Ohne diese Zeile landet er
+  # in "Befehle mit Fehlern", aber eben auch nicht in "nicht gesammelt" —
+  # und ein leeres Ergebnis daneben sieht wie ein saubereres System aus.
+  if [ "$rc" -ne 0 ]; then
+    hf_skip "$rel" "Befehl endete mit Exit-Code $rc — Ergebnis unvollständig"
+  fi
+  return 0
+}
+
+# hf_env_sanitized <ziel-relativ>
+#
+# Umgebungsvariablen sichern, ohne Zugangsdaten in den Fallordner zu schreiben.
+#
+# Warum nicht `env | sed`: `env` gibt einen mehrzeiligen Wert (ein PEM-Key,
+# ein JSON-Service-Account) ueber mehrere Zeilen aus. Eine am Zeilenanfang
+# verankerte Ersetzung trifft nur die ERSTE Zeile; die restlichen Zeilen
+# landen ungeschuetzt in der Datei, und ein nachgeschaltetes sort verteilt sie
+# noch im ganzen File. Der Fallordner wird gehasht, archiviert und
+# weitergegeben — damit waere die Beweissicherung selbst das Leck.
+#
+# Deshalb: pro Variable entscheiden, den Wert auf eine Zeile zwingen, und zum
+# Vergleich selbst grossschreiben statt sed-Flag /I zu nutzen (eine
+# GNU-Erweiterung, die auf macOS einen Fehler wirft).
+hf_env_sanitized() {
+  hf_case_assert
+  local rel="$1"
   local out="$HF_CASE_DIR/$rel"
   mkdir -p "$(dirname "$out")"
-  sh -c "$snippet" >"$out" 2>"$out.stderr" || rc=$?
-  if [ ! -s "$out.stderr" ]; then rm -f "$out.stderr"; fi
-  hf_coc "$rel" "$rc" "$(hf_filesize "$out")" "sh -c: $snippet"
+
+  local n u v redacted=0 total=0
+  {
+    for n in $(compgen -e 2>/dev/null); do
+      total=$((total + 1))
+      u=$(printf '%s' "$n" | LC_ALL=C tr 'a-z' 'A-Z')
+      case "$u" in
+        # Eine Zeile, keine Fortsetzung: ein "\" mitten in einem case-Muster
+        # macht die folgenden Zeichen zu Teil des Musters (mit Leerzeichen),
+        # und *CREDENTIAL* haette dann nie gegriffen.
+        # *PASS* deckt PASSWORD/PASSWD mit ab, *KEY* auch APIKEY.
+        *TOKEN*|*SECRET*|*PASS*|*KEY*|*SESSION*|*CREDENTIAL*|*AUTH*|*COOKIE*|*BEARER*|*PRIVATE*|*SIGNATURE*|*SALT*)
+          printf '%s=<redigiert>\n' "$n"
+          redacted=$((redacted + 1))
+          ;;
+        *)
+          # Mehrzeilige Werte auf eine Zeile zwingen: sonst bricht die Zuordnung
+          # Name->Wert, und ein Geheimnis in Zeile 2 waere nicht mehr erkennbar.
+          v=$(printf '%s' "${!n}" | tr '\n\r\t' '   ')
+          # Zugangsdaten in URLs (https://nutzer:geheim@host) ebenfalls entfernen.
+          v=$(printf '%s' "$v" | LC_ALL=C sed -E 's#(://)[^/:@[:space:]]+:[^/@[:space:]]+@#\1<redigiert>:<redigiert>@#g')
+          printf '%s=%s\n' "$n" "$v"
+          ;;
+      esac
+    done | LC_ALL=C sort
+  } > "$out"
+
+  hf_coc "$rel" "0" "$(hf_filesize "$out")" "hf_env_sanitized ($total Variablen, $redacted redigiert)"
   return 0
 }
 
@@ -325,6 +423,24 @@ hf_copy() {
   return 0
 }
 
+# hf_path_slug <pfad> -> dateinamenstauglicher, EINDEUTIGER Bezeichner
+#
+# Ein reines tr -c kollabiert verschiedene Pfade auf denselben Namen
+# (/opt/a und /opt-a werden beide zu _opt_a). Die zweite Liste ueberschreibt
+# dann die erste, waehrend das Protokoll zwei Einträge zeigt — und niemand
+# merkt, dass eine Quelle fehlt. Ein kurzer Hash des Originalpfads haengt
+# hinten dran und macht den Namen wieder eindeutig.
+hf_path_slug() {
+  local p="$1" base h
+  base=$(printf '%s' "$p" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')
+  h=$(printf '%s' "$p" | hf_sha256_stdin 2>/dev/null) || h=""
+  if [ -n "$h" ]; then
+    printf '%s-%s' "$base" "$(printf '%s' "$h" | cut -c1-8)"
+  else
+    printf '%s' "$base"
+  fi
+}
+
 # hf_find_tsv <ziel-relativ> <verzeichnis> [find-argumente...]
 #
 # Dateiliste mit echten Spalten: Pfad, Bytes, mtime (UTC), Rechte, Eigner.
@@ -346,6 +462,14 @@ hf_find_tsv() {
     hf_skip "$rel" "nicht vorhanden: $dir"
     return 0
   fi
+
+  # Ein relativer Pfad, der mit "-" beginnt, wuerde von find als Praedikat
+  # gelesen; find haette dann keinen Pfad-Operanden und wuerde "." durchsuchen.
+  # Das "./" davor macht daraus wieder einen Pfad.
+  case "$dir" in
+    /*) ;;
+    *)  dir="./${dir#./}" ;;
+  esac
 
   {
     printf '# Spalten (Tabulator): pfad\tbytes\tmtime_utc\trechte\teigner\n'
@@ -438,13 +562,15 @@ hf_case_finalize() {
     # Wichtig für den Bericht: ein leeres Ergebnis ist eine Feststellung,
     # eine ausgelassene Quelle ist eine Lücke. Beides darf nicht verwechselt
     # werden, sonst wird aus "nicht geprüft" versehentlich ein "sauber".
-    awk -F'\t' '!/^#/ && $3 == "0" && $4 == "0" { print "  " $2 }' "$HF_COC" 2>/dev/null \
-      | LC_ALL=C sort -u || printf '(keine)\n'
+    # awk und sort liefern bei leerer Eingabe beide Exit 0, ein "|| printf"
+    # haette also nie gegriffen. Deshalb erst einsammeln, dann pruefen.
+    _empty_ok=$(awk -F'\t' '!/^#/ && $2 !~ /^#/ && $3 == "0" && $4 == "0" { print "  " $2 }' "$HF_COC" 2>/dev/null | LC_ALL=C sort -u)
+    if [ -n "$_empty_ok" ]; then printf '%s\n' "$_empty_ok"; else printf '%s\n' '  (keine)'; fi
     printf '\n'
     printf 'Befehle mit Fehlern (Ergebnis unvollständig, stderr im Fallordner)\n'
     printf '%s\n' '-----------------------------------------------------------------'
-    awk -F'\t' '!/^#/ && $3 != "0" && $3 != "skipped" && $3 !~ /^#/ { print "  Exit " $3 "  " $2 }' "$HF_COC" 2>/dev/null \
-      | LC_ALL=C sort -u || printf '(keine)\n'
+    _failed=$(awk -F'\t' '!/^#/ && $2 !~ /^#/ && $3 != "0" && $3 != "skipped" { print "  Exit " $3 "  " $2 }' "$HF_COC" 2>/dev/null | LC_ALL=C sort -u)
+    if [ -n "$_failed" ]; then printf '%s\n' "$_failed"; else printf '%s\n' '  (keine)'; fi
     printf '\n'
     printf 'Diese Sammlung ist eine Momentaufnahme mit Bordmitteln des laufenden\n'
     printf 'Systems. Ein Rootkit kann Prozesse, Dateien und Verbindungen vor diesen\n'

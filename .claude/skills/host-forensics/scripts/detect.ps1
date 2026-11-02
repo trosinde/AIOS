@@ -148,8 +148,8 @@ $avs = Invoke-Probe { Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassNa
 foreach ($av in @($avs)) {
   if (-not $av) { continue }
   # Drittanbieter-Einträge liefern nicht immer alle Properties.
-  $avName = try { [string]$av.displayName } catch { 'unbekannt' }
-  $avPath = try { [string]$av.pathToSignedProductExe } catch { '' }
+  $avName = Invoke-Probe { [string]$av.displayName } 'unbekannt'
+  $avPath = Invoke-Probe { [string]$av.pathToSignedProductExe } ''
   Add-Sec $avName 'registriert' ("Pfad=" + $avPath)
 }
 
@@ -209,8 +209,12 @@ foreach ($name in @('Security','System','Application','Microsoft-Windows-Sysmon/
     }
   }
 }
-if (($logs | Where-Object { $_.name -eq 'Security' } | Measure-Object).Count -eq 0) {
-  Add-Limit 'Das Security-Eventlog ist nicht lesbar (Admin-Rechte nötig). Anmeldungen, Rechteausweitungen und Kontoänderungen bleiben ungeprüft.'
+# -ListLog gelingt auch ohne Admin-Rechte, es sagt also nichts über die
+# Lesbarkeit. Erst der Versuch, einen Datensatz zu holen, zeigt es.
+$securityReadable = $null -ne (Invoke-Probe { Get-WinEvent -LogName 'Security' -MaxEvents 1 -ErrorAction Stop })
+$logging['security_log_readable'] = [bool]$securityReadable
+if (-not $securityReadable) {
+  Add-Limit 'Das Security-Eventlog ist nicht lesbar (Administrator-Rechte nötig). Anmeldungen, Rechteausweitungen und Kontoänderungen bleiben ungeprüft.'
 }
 
 # ─── Ergebnis ─────────────────────────────────────────────────────────────
@@ -237,6 +241,12 @@ $result['logging']           = $logging
 $result['event_logs']        = @($logs)
 $result['recommended_mode']  = 'live'
 $result['limitations']       = @($limits)
+
+# -Json ist der Standard; der Schalter macht ihn explizit und schliesst -Text aus.
+if ($Json -and $Text) {
+  [Console]::Error.WriteLine('  -Json und -Text schliessen sich aus.')
+  exit 1
+}
 
 if ($Text) {
   $sb = New-Object System.Text.StringBuilder

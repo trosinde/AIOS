@@ -216,3 +216,52 @@ describe("generator", () => {
     });
   });
 });
+
+describe("generate — preserveExistingContext", () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `aios-gen-preserve-${randomUUID()}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+  afterEach(() => { rmSync(testDir, { recursive: true, force: true }); });
+
+  const ctx = () => createDefaultContext({
+    project: { name: "preserve-test", description: "", domain: "general", language: "unknown", repo: null },
+    aios: { path: "/aios", readOnly: true },
+  });
+
+  it("overwrites context.yaml by default", () => {
+    generate(ctx(), { cwd: testDir, skipClaudeMdPrompt: true });
+    const p = join(testDir, ".aios", "context.yaml");
+    writeFileSync(p, "# hand-edited\n");
+
+    const result = generate(ctx(), { cwd: testDir, skipClaudeMdPrompt: true });
+
+    expect(readFileSync(p, "utf-8")).not.toBe("# hand-edited\n");
+    expect(result.created).toContain(p);
+  });
+
+  it("leaves an existing context.yaml alone and reports it as skipped", () => {
+    generate(ctx(), { cwd: testDir, skipClaudeMdPrompt: true });
+    const p = join(testDir, ".aios", "context.yaml");
+    writeFileSync(p, "# hand-edited\n");
+
+    const result = generate(ctx(), {
+      cwd: testDir, skipClaudeMdPrompt: true, preserveExistingContext: true,
+    });
+
+    expect(readFileSync(p, "utf-8")).toBe("# hand-edited\n");
+    expect(result.skipped).toContain(p);
+    expect(result.created).not.toContain(p);
+  });
+
+  it("still writes context.yaml when it does not exist yet", () => {
+    const result = generate(ctx(), {
+      cwd: testDir, skipClaudeMdPrompt: true, preserveExistingContext: true,
+    });
+    const p = join(testDir, ".aios", "context.yaml");
+    expect(existsSync(p)).toBe(true);
+    expect(result.created).toContain(p);
+  });
+});

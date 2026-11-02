@@ -21,6 +21,16 @@ export interface GenerateOptions {
   cwd?: string;
   skipClaudeMdPrompt?: boolean;
   patchClaudeMd?: boolean;
+  /**
+   * Leave an existing .aios/context.yaml untouched and report it as skipped.
+   *
+   * The wizard asks before it reaches this point, so it keeps the default
+   * (overwrite). `aios init --template` sets it, because a template may be
+   * re-applied — after `aios update`, or simply twice — and the user is told
+   * to edit context.yaml and run `aios init --refresh`. Overwriting it there
+   * would silently throw those edits away.
+   */
+  preserveExistingContext?: boolean;
 }
 
 // ─── Generator ───────────────────────────────────────────
@@ -91,9 +101,13 @@ export function generate(
 
   // ─── Write context.yaml ────────────────────────────
   const contextPath = join(aiosDir, "context.yaml");
-  const contextContent = "# AIOS Project Context\n# Regenerate with: aios init --refresh\n\n" + serializeContext(context);
-  writeFileAtomic(contextPath, contextContent);
-  result.created.push(contextPath);
+  if (options.preserveExistingContext && existsSync(contextPath)) {
+    result.skipped.push(contextPath);
+  } else {
+    const contextContent = "# AIOS Project Context\n# Regenerate with: aios init --refresh\n\n" + serializeContext(context);
+    writeFileAtomic(contextPath, contextContent);
+    result.created.push(contextPath);
+  }
 
   // ─── Write agent-instructions.md ───────────────────
   const instructionsPath = join(aiosDir, "agent-instructions.md");

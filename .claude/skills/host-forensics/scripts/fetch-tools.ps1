@@ -61,6 +61,16 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 function Write-Note([string]$m) { [Console]::Error.WriteLine("  $m") }
 function Write-Fail([string]$m) { [Console]::Error.WriteLine("ERROR $m") }
 function Write-Warn2([string]$m) { [Console]::Error.WriteLine("WARN  $m") }
+# try/catch ist in PowerShell eine Anweisung, kein Ausdruck. Welche
+# Ausdrucks-Schreibweise trotzdem funktioniert, haengt von der Version ab —
+# und der Parser meldet die ungueltigen NICHT, sie scheitern erst zur
+# Laufzeit. Deshalb geht jede "nimm den Wert, sonst den Ersatz"-Stelle hier
+# durch diesen Helfer: try/catch im Funktionskoerper ist immer eine Anweisung
+# und damit auf 5.1 wie auf 7 gueltig.
+function Invoke-Probe([scriptblock]$Script, $Default = $null) {
+  try { & $Script } catch { $Default }
+}
+
 function Get-NowUtc { (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
 
 if (-not ($List -or $Verify -or @($Install).Count -gt 0)) {
@@ -169,9 +179,9 @@ function Get-GithubAssetDigest([string]$Url) {
     $rel = Invoke-RestMethod -Uri $api -Headers @{ 'Accept' = 'application/vnd.github+json'; 'User-Agent' = 'aios-host-forensics' } -TimeoutSec 60 -ErrorAction Stop
   } catch { return '' }
   foreach ($a in @($rel.assets)) {
-    $name = try { [string]$a.name } catch { '' }
+    $name = Invoke-Probe { [string]$a.name } ''
     if ($name -eq $asset) {
-      $d = try { [string]$a.digest } catch { '' }
+      $d = Invoke-Probe { [string]$a.digest } ''
       if ($d -like 'sha256:*') { return $d.Substring(7).ToLowerInvariant() }
       return $d.ToLowerInvariant()
     }
@@ -179,13 +189,27 @@ function Get-GithubAssetDigest([string]$Url) {
   return ''
 }
 
+# Gleiche Semantik wie checksum_from_url in fetch-tools.sh — die beiden
+# Fassungen müssen übereinstimmen, sonst verifiziert eine Plattform anders
+# als die andere:
+#   - der Dateiname wird als ganzes Feld verglichen, nicht als Teilstring
+#     (sonst passt "x.tar.gz.sha256" auf die Suche nach "x.tar.gz")
+#   - eine Datei mit nur einem Hash (ein Feld) wird ohne Namensvergleich
+#     akzeptiert, das ist der dokumentierte Normalfall
+#   - kein Übertrag zwischen Zeilen
 function Get-ChecksumFromUrl([string]$Url, [string]$Asset) {
-  try { $body = Invoke-RestMethod -Uri $Url -TimeoutSec 60 -ErrorAction Stop } catch { return '' }
+  $body = Invoke-Probe { Invoke-RestMethod -Uri $Url -TimeoutSec 60 -ErrorAction Stop } ''
+  if (-not $body) { return '' }
   foreach ($line in (([string]$body) -split "`r?`n")) {
     if (-not $line.Trim()) { continue }
-    if ($Asset -and ($line -notlike "*$Asset*") -and ($line -split '\s+').Count -gt 1) { continue }
-    $m = [regex]::Match($line, '[0-9a-fA-F]{64}')
-    if ($m.Success) { return $m.Value.ToLowerInvariant() }
+    $fields = $line -split '\s+' | Where-Object { $_ -ne '' }
+    $hash = ''
+    $matched = $false
+    foreach ($f in $fields) {
+      if ($f -match '^[0-9a-fA-F]{64}$') { $hash = $f }
+      elseif ($Asset -and ($f -eq $Asset -or $f -eq ('*' + $Asset))) { $matched = $true }
+    }
+    if ($hash -and (@($fields).Count -eq 1 -or $matched)) { return $hash.ToLowerInvariant() }
   }
   return ''
 }
@@ -211,6 +235,19 @@ function Test-ArchiveSafe([string]$ZipPath) {
 # ─── Installation ─────────────────────────────────────────────────────────
 
 function Install-Tool($Row) {
+  # Diese Werte kommen aus der Katalogdatei, nicht von der Kommandozeile —
+  # $Row.Id landet in einem Remove-Item-Pfad, $Row.Entry in Zielpfaden. Eine
+  # manipulierte Katalogdatei wäre sonst ein Primitiv zum Löschen beliebiger
+  # Verzeichnisse. Datei-Eingaben genauso prüfen wie CLI-Eingaben.
+  if ($Row.Id -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or $Row.Id -eq '.' -or $Row.Id -eq '..') {
+    Write-Fail "Katalog: ungültige id '$($Row.Id)'"; return 1
+  }
+  if (-not $Row.Entry -or $Row.Entry -match '\.\.' -or $Row.Entry -match '^([A-Za-z]:)?[\\/]') {
+    Write-Fail "$($Row.Id): ungültiger entry '$($Row.Entry)' (leer, absolut oder mit '..')"; return 1
+  }
+  if ($Row.Extract -notin @('zip','targz','gz','none')) {
+    Write-Fail "$($Row.Id): unbekannter extract-Typ '$($Row.Extract)'"; return 1
+  }
   if ($Row.Url -notlike 'https://*') { Write-Fail "$($Row.Id): nur https-Quellen erlaubt: $($Row.Url)"; return 1 }
   $asset = ($Row.Url -split '/')[-1]
 
@@ -238,12 +275,24 @@ function Install-Tool($Row) {
   }
 
   if (-not $expected) {
-    if (-not $AllowUnpinned) {
-      Write-Fail "$($Row.Id): keine Prüfsumme verfügbar ($($Row.DigestSource)). Übersprungen."
-      Write-Fail "      Mit -AllowUnpinned wird der erste Download in lock.tsv festgeschrieben."
+    # Entscheidend ist die DEKLARIERTE Quelle, nicht die Leerheit von
+    # $expected: leer ist es auch, wenn die gh-api- oder Checksum-Abfrage
+    # bloss fehlgeschlagen ist (kein Netz, GitHub-Rate-Limit von 60/h ohne
+    # Token). Würde -AllowUnpinned das mitabdecken, liesse sich durch
+    # Störung der Digest-Abfrage ein manipulierter Download in lock.tsv
+    # festschreiben — und -Verify würde ihn danach bestätigen.
+    if ($Row.DigestSource -ne 'none') {
+      Write-Fail "$($Row.Id): Prüfsumme über '$($Row.DigestSource)' nicht abrufbar."
+      Write-Fail "      Mögliche Ursachen: kein Netz, GitHub-Rate-Limit (60/h ohne Token), Asset umbenannt."
+      Write-Fail "      Abbruch. -AllowUnpinned gilt NUR für digest_source=none, nicht für fehlgeschlagene Abfragen."
       return 1
     }
-    Write-Warn2 "$($Row.Id): ohne veröffentlichte Prüfsumme. Der Hash des Downloads wird in lock.tsv festgeschrieben."
+    if (-not $AllowUnpinned) {
+      Write-Fail "$($Row.Id): Projekt veröffentlicht keine Prüfsumme (digest_source=none). Übersprungen."
+      Write-Fail "      Mit -AllowUnpinned wird der erste Download in lock.tsv festgeschrieben (Trust-on-First-Use)."
+      return 1
+    }
+    Write-Warn2 "$($Row.Id): ohne veröffentlichte Prüfsumme (digest_source=none). Der Hash des Downloads wird in lock.tsv festgeschrieben."
   } else {
     Write-Note "Erwartet: $expected ($sourceLabel)"
   }
@@ -253,9 +302,29 @@ function Install-Tool($Row) {
   New-Item -ItemType Directory -Path $tmp -Force | Out-Null
   $dl = Join-Path $tmp $asset
   try {
-    # TLS 1.2 erzwingen: aeltere Windows-Installationen verhandeln sonst TLS 1.0.
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $Row.Url -OutFile $dl -UseBasicParsing -TimeoutSec 900 -ErrorAction Stop
+    # TLS 1.2 nur auf Windows PowerShell 5.1 erzwingen: dort verhandeln alte
+    # Installationen sonst TLS 1.0. Auf PS 7 würde die Zeile TLS 1.3
+    # ausschliessen und ist für Invoke-WebRequest ohnehin wirkungslos.
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    }
+    # Redirects NICHT blind folgen: Invoke-WebRequest folgt bis zu 5 Weiterleitungen
+    # ohne Protokollgrenze, ein https-Start könnte also auf http landen. Die
+    # Shell-Fassung nagelt das mit `curl --proto '=https'` fest; hier wird die
+    # Kette selbst verfolgt und jedes Ziel geprüft.
+    $target = $Row.Url
+    for ($hop = 0; $hop -lt 6; $hop++) {
+      if ($target -notlike 'https://*') {
+        throw "Weiterleitung auf ein Nicht-HTTPS-Ziel abgelehnt: $target"
+      }
+      $resp = Invoke-WebRequest -Uri $target -OutFile $dl -UseBasicParsing -TimeoutSec 900 `
+                -MaximumRedirection 0 -ErrorAction Stop
+      $loc = $null
+      if ($resp -and $resp.Headers -and $resp.Headers['Location']) { $loc = [string]$resp.Headers['Location'] }
+      if (-not $loc) { break }
+      # Relative Location gegen das aktuelle Ziel auflösen.
+      $target = ([uri]::new([uri]$target, $loc)).AbsoluteUri
+    }
   } catch {
     Write-Fail "$($Row.Id): Download fehlgeschlagen: $($_.Exception.Message)"
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

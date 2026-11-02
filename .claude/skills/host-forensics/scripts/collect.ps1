@@ -55,6 +55,16 @@ if ($LogDays -le 0) { $LogDays = if ($Mode -eq 'collect') { 30 } else { 7 } }
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
+# try/catch ist in PowerShell eine Anweisung, kein Ausdruck. Welche
+# Ausdrucks-Schreibweise trotzdem funktioniert, haengt von der Version ab —
+# und der Parser meldet die ungueltigen NICHT, sie scheitern erst zur
+# Laufzeit. Deshalb geht jede "nimm den Wert, sonst den Ersatz"-Stelle hier
+# durch diesen Helfer: try/catch im Funktionskoerper ist immer eine Anweisung
+# und damit auf 5.1 wie auf 7 gueltig.
+function Invoke-Probe([scriptblock]$Script, $Default = $null) {
+  try { & $Script } catch { $Default }
+}
+
 function Get-NowUtc { (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
 function Write-Note([string]$m) { [Console]::Error.WriteLine("  $m") }
 
@@ -72,12 +82,12 @@ foreach ($d in @('host','volatile','persistence','accounts','logs','filesystem',
 $CocPath = Join-Path $CaseRoot 'chain-of-custody.log'
 $skipped = @()
 
-$identity = try { [Security.Principal.WindowsIdentity]::GetCurrent() } catch { $null }
+$identity = Invoke-Probe { [Security.Principal.WindowsIdentity]::GetCurrent() } $null
 $isAdmin  = $false
 if ($identity) {
-  $isAdmin = try {
+  $isAdmin = Invoke-Probe {
     ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  } catch { $false }
+  } $false
 }
 $operator = if ($identity) { [string]$identity.Name } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
 
@@ -142,7 +152,8 @@ function Save-Output {
     Add-Coc $Rel 0 (Get-FileSizeSafe $path) $Label
   } catch {
     [System.IO.File]::WriteAllText(($path + '.stderr'), $_.Exception.Message, $Utf8NoBom)
-    Add-Coc $Rel 1 (Get-FileSizeSafe $path) $Label
+    # Nur Add-Skip, nicht zusätzlich eine rc=1-Zeile: sonst taucht derselbe
+    # Posten in "nicht gesammelt" UND in "Befehle mit Fehlern" auf.
     Add-Skip $Rel ("Fehler: " + $_.Exception.Message)
   }
 }
@@ -277,7 +288,7 @@ Save-Output 'volatile/processes.csv' {
 
 Save-Output 'volatile/process-owners.csv' {
   Get-CimInstance Win32_Process | ForEach-Object {
-    $o = try { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction Stop) } catch { $null }
+    $o = Invoke-Probe { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction Stop) } $null
     [pscustomobject]@{
       ProcessId = $_.ProcessId
       Name      = $_.Name
@@ -300,7 +311,7 @@ Save-Output 'volatile/processes-suspicious-paths.csv' {
 
 Save-Output 'volatile/net-tcp.csv' {
   Get-NetTCPConnection | ForEach-Object {
-    $p = try { Get-Process -Id $_.OwningProcess -ErrorAction Stop } catch { $null }
+    $p = Invoke-Probe { Get-Process -Id $_.OwningProcess -ErrorAction Stop } $null
     [pscustomobject]@{
       LocalAddress  = $_.LocalAddress
       LocalPort     = $_.LocalPort
@@ -340,11 +351,17 @@ Save-Output 'volatile/drivers.csv' {
 } -As Csv
 Save-Output 'volatile/loaded-modules-unsigned.csv' {
   # Nicht signierte oder nicht prüfbare Module in laufenden Prozessen.
+  #
+  # Prozesse, deren Modulliste nicht lesbar ist (fehlende Rechte, 32/64-Bit-
+  # Mismatch, Prozess beendet sich), werden gezählt und als eigene Zeile
+  # ausgegeben: eine leere Datei soll nicht wie "alles signiert" aussehen,
+  # wenn in Wahrheit nicht hineingesehen werden konnte.
+  $unreadable = 0
   Get-Process | Where-Object { $_.Path } | ForEach-Object {
     $pname = $_.Name; $pid_ = $_.Id
     try {
       $_.Modules | ForEach-Object {
-        $sig = try { Get-AuthenticodeSignature -LiteralPath $_.FileName -ErrorAction Stop } catch { $null }
+        $sig = Invoke-Probe { Get-AuthenticodeSignature -LiteralPath $_.FileName -ErrorAction Stop } $null
         if (-not $sig -or $sig.Status -ne 'Valid') {
           [pscustomobject]@{
             ProcessId = $pid_; Process = $pname; Module = $_.ModuleName
@@ -353,7 +370,13 @@ Save-Output 'volatile/loaded-modules-unsigned.csv' {
           }
         }
       }
-    } catch { }
+    } catch { $unreadable++ }
+  }
+  if ($unreadable -gt 0) {
+    [pscustomobject]@{
+      ProcessId = -1; Process = "($unreadable Prozesse)"; Module = '(Modulliste nicht lesbar)'
+      Path = ''; SignatureStatus = 'nicht prüfbar — Ergebnis unvollständig'
+    }
   }
 } -As Csv
 
@@ -366,13 +389,13 @@ Save-Output 'persistence/scheduled-tasks.csv' {
   # Ausdruck, und darf deshalb nicht in einem Hashtable-Literal stehen.
   Get-ScheduledTask | ForEach-Object {
     $task = $_
-    $info = try { Get-ScheduledTaskInfo -TaskPath $task.TaskPath -TaskName $task.TaskName -ErrorAction Stop } catch { $null }
-    $runAs = try { [string]$task.Principal.UserId } catch { '' }
+    $info = Invoke-Probe { Get-ScheduledTaskInfo -TaskPath $task.TaskPath -TaskName $task.TaskName -ErrorAction Stop } $null
+    $runAs = Invoke-Probe { [string]$task.Principal.UserId } ''
     $exes  = @()
     $args_ = @()
     foreach ($a in @($task.Actions)) {
-      $exes  += (try { [string]$a.Execute }   catch { '' })
-      $args_ += (try { [string]$a.Arguments } catch { '' })
+      $exes  += (Invoke-Probe { [string]$a.Execute }   '')
+      $args_ += (Invoke-Probe { [string]$a.Arguments } '')
     }
     [pscustomobject]@{
       TaskPath  = [string]$task.TaskPath
@@ -569,6 +592,10 @@ Save-Output 'logs/eventlog-inventory.csv' {
 # Die Event-IDs sind in references/windows.md erklärt.
 $since = (Get-Date).AddDays(-$LogDays)
 Save-Output 'logs/security-key-events.csv' {
+  # "No events were found" ist der NORMALE Fall, wenn im Zeitfenster nichts
+  # Passendes passiert ist — und damit eine Feststellung, keine Lücke.
+  # Ohne dieses catch meldet summary.txt das Security-Log als nicht gesammelt.
+  try {
   Get-WinEvent -FilterHashtable @{
     LogName = 'Security'
     StartTime = $since
@@ -577,9 +604,13 @@ Save-Output 'logs/security-key-events.csv' {
     Select-Object @{n='TimeUtc';e={ $_.TimeCreated.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }},
                   Id, LevelDisplayName, ProviderName,
                   @{n='Message';e={ ($_.Message -replace "\s+", ' ') }}
+  } catch {
+    if ($_.Exception.Message -notmatch 'No events were found') { throw }
+  }
 } -As Csv
 
 Save-Output 'logs/system-key-events.csv' {
+  try {
   Get-WinEvent -FilterHashtable @{
     LogName = 'System'
     StartTime = $since
@@ -588,6 +619,9 @@ Save-Output 'logs/system-key-events.csv' {
     Select-Object @{n='TimeUtc';e={ $_.TimeCreated.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }},
                   Id, LevelDisplayName, ProviderName,
                   @{n='Message';e={ ($_.Message -replace "\s+", ' ') }}
+  } catch {
+    if ($_.Exception.Message -notmatch 'No events were found') { throw }
+  }
 } -As Csv
 
 Save-Output 'logs/defender-detections.csv' { Get-MpThreatDetection | Select-Object * } -As Csv
@@ -637,7 +671,7 @@ Save-Output 'filesystem/alternate-data-streams.csv' {
   foreach ($p in $tempPaths) {
     Get-ChildItem -LiteralPath $p -Recurse -File -Force -ErrorAction SilentlyContinue |
       Select-Object -First 2000 | ForEach-Object {
-        $streams = try { Get-Item -LiteralPath $_.FullName -Stream * -ErrorAction Stop } catch { $null }
+        $streams = Invoke-Probe { Get-Item -LiteralPath $_.FullName -Stream * -ErrorAction Stop } $null
         if ($streams) {
           $streams | Where-Object { $_.Stream -ne ':$DATA' } | ForEach-Object {
             [pscustomobject]@{ File = $_.FileName; Stream = $_.Stream; Length = $_.Length }
@@ -650,7 +684,7 @@ Save-Output 'filesystem/alternate-data-streams.csv' {
 Save-Output 'filesystem/unsigned-in-system32.csv' {
   Get-ChildItem -LiteralPath "$env:SystemRoot\System32" -File -Filter *.exe -ErrorAction SilentlyContinue |
     Select-Object -First 3000 | ForEach-Object {
-      $sig = try { Get-AuthenticodeSignature -LiteralPath $_.FullName -ErrorAction Stop } catch { $null }
+      $sig = Invoke-Probe { Get-AuthenticodeSignature -LiteralPath $_.FullName -ErrorAction Stop } $null
       if (-not $sig -or $sig.Status -ne 'Valid') {
         [pscustomobject]@{
           Path = $_.FullName; Status = if ($sig) { [string]$sig.Status } else { 'nicht prüfbar' }
@@ -721,8 +755,8 @@ if ($Mode -eq 'collect') {
 Save-Output 'hashes/process-binaries.csv' {
   Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } |
     Select-Object -Property ExecutablePath -Unique | ForEach-Object {
-      $h = try { (Get-FileHash -LiteralPath $_.ExecutablePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNREADABLE' }
-      $sig = try { [string](Get-AuthenticodeSignature -LiteralPath $_.ExecutablePath -ErrorAction Stop).Status } catch { 'nicht prüfbar' }
+      $h = Invoke-Probe { (Get-FileHash -LiteralPath $_.ExecutablePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNREADABLE'
+      $sig = Invoke-Probe { [string](Get-AuthenticodeSignature -LiteralPath $_.ExecutablePath -ErrorAction Stop).Status } 'nicht prüfbar'
       [pscustomobject]@{ Sha256 = $h; Signature = $sig; Path = $_.ExecutablePath }
     }
 } -As Csv
@@ -732,8 +766,8 @@ Save-Output 'hashes/service-binaries.csv' {
     # PathName enthält Argumente; nur der Programmpfad wird gehasht.
     $exe = if ($_.PathName -match '^"([^"]+)"') { $Matches[1] } else { ($_.PathName -split ' ')[0] }
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return }
-    $h = try { (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNREADABLE' }
-    $sig = try { [string](Get-AuthenticodeSignature -LiteralPath $exe -ErrorAction Stop).Status } catch { 'nicht prüfbar' }
+    $h = Invoke-Probe { (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNREADABLE'
+    $sig = Invoke-Probe { [string](Get-AuthenticodeSignature -LiteralPath $exe -ErrorAction Stop).Status } 'nicht prüfbar'
     [pscustomobject]@{ Sha256 = $h; Signature = $sig; Service = $_.Name; Path = $exe }
   }
 } -As Csv
@@ -742,12 +776,12 @@ Save-Output 'hashes/scheduled-task-binaries.csv' {
   Get-ScheduledTask | ForEach-Object {
     $task = $_
     foreach ($a in @($task.Actions)) {
-      $exe = try { $a.Execute } catch { $null }
+      $exe = Invoke-Probe { $a.Execute } $null
       if (-not $exe) { continue }
       $exe = $exe.Trim('"')
-      $resolved = try { [Environment]::ExpandEnvironmentVariables($exe) } catch { $exe }
+      $resolved = Invoke-Probe { [Environment]::ExpandEnvironmentVariables($exe) } $exe
       if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { continue }
-      $h = try { (Get-FileHash -LiteralPath $resolved -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNREADABLE' }
+      $h = Invoke-Probe { (Get-FileHash -LiteralPath $resolved -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNREADABLE'
       [pscustomobject]@{ Sha256 = $h; Task = ($task.TaskPath + $task.TaskName); Path = $resolved }
     }
   }
@@ -758,7 +792,7 @@ Save-Output 'hashes/temp-executables.csv' {
     Get-ChildItem -LiteralPath $p -Recurse -File -Force -ErrorAction SilentlyContinue |
       Where-Object { $_.Extension -match '(?i)^\.(exe|dll|scr|sys|ps1|bat|cmd|vbs|js|hta|msi|com)$' -and $_.Length -lt 200MB } |
       Select-Object -First 2000 | ForEach-Object {
-        $h = try { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNREADABLE' }
+        $h = Invoke-Probe { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNREADABLE'
         [pscustomobject]@{ Sha256 = $h; Path = $_.FullName; Length = $_.Length }
       }
   }
@@ -785,7 +819,7 @@ $count = 0
 foreach ($f in (Get-ChildItem -LiteralPath $CaseRoot -Recurse -File -Force -ErrorAction SilentlyContinue)) {
   $rel = $f.FullName.Substring($CaseRoot.Length).TrimStart('\','/')
   if ($bookkeeping -contains $rel) { continue }
-  $h = try { (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNAVAILABLE' }
+  $h = Invoke-Probe { (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNAVAILABLE'
   $manifestLines += ("{0}`t{1}`t{2}`t{3}" -f $h, $f.Length,
                      $f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ'),
                      ($rel -replace "[`t`r`n]", '?'))
@@ -793,7 +827,7 @@ foreach ($f in (Get-ChildItem -LiteralPath $CaseRoot -Recurse -File -Force -Erro
 }
 [System.IO.File]::WriteAllText($manifestPath, (($manifestLines -join "`n") + "`n"), $Utf8NoBom)
 
-$manifestHash = try { (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } catch { 'UNAVAILABLE' }
+$manifestHash = Invoke-Probe { (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() } 'UNAVAILABLE'
 
 # Die drei Zustände getrennt halten: "geprüft, kein Treffer" ist eine
 # Feststellung, "nicht gesammelt" ist eine Lücke. Verwechslung macht aus
@@ -838,7 +872,13 @@ $sum += 'Systems. Ein Rootkit kann Prozesse, Dateien und Verbindungen vor diesen
 $sum += 'Werkzeugen verbergen. Die Ergebnisse sind daher "mindestens", nie "genau".'
 [System.IO.File]::WriteAllText($summaryPath, (($sum -join "`n") + "`n"), $Utf8NoBom)
 
-Add-Coc '# end' $count $manifestHash 'manifest + summary geschrieben'
+# Kommentar-Zeichen zuerst, wie in lib.sh: sonst liest der Filter in
+# hf_case_finalize diese Zeile als normalen Befehl und meldet die
+# Dateianzahl als Exit-Code.
+[System.IO.File]::AppendAllText(
+  $CocPath,
+  ("# end`t{0}`tfiles={1}`tmanifest_sha256={2}`n" -f (Get-NowUtc), $count, $manifestHash),
+  $Utf8NoBom)
 
 Write-Note ("Manifest: {0} Dateien, sha256 {1}" -f $count, $manifestHash)
 [Console]::Error.WriteLine("")
