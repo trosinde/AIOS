@@ -1,0 +1,17 @@
+# Host-Forensik-Arbeitsverzeichnis
+
+# Beweismittel. Enthalten Dateipfade mit Nutzernamen, Logauszüge, Kontonamen
+# und je nach Betriebsart Registry-Hives mit Passwort-Hashes. Gehören nicht
+# in ein Repository.
+cases/
+
+# Portable Werkzeuge und ihre Prüfsummen-Datei. Binaries gehören nicht in
+# Git; lock.tsv beschreibt den lokalen Stand und ist pro Rechner anders.
+tools/
+
+# Lokale Zugangsdaten für die Hash-Anreicherung (VT_API_KEY, MB_API_KEY).
+.env
+
+# AIOS-Laufzeitdaten
+.aios/knowledge/
+.aios/services.generated.yaml

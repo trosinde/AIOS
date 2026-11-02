@@ -139,6 +139,48 @@ aios init --refresh          # agent-instructions.md explizit neu generieren
 | `--yes` | Plan anzeigen und automatisch bestätigen |
 | `--refresh` | `agent-instructions.md` aus bestehender `context.yaml` neu generieren |
 | `--aios-path <path>` | AIOS-Installationspfad vorgeben |
+| `--template <name>` | Arbeitsverzeichnis aus einer Vorlage einrichten (ohne Wizard) |
+| `--list-templates` | Verfügbare Vorlagen auflisten und beenden |
+
+#### Arbeitsverzeichnis-Vorlagen
+
+`--template` richtet ein fertiges Arbeitsverzeichnis ein, statt den Wizard zu
+durchlaufen. Die Vorlagen liegen unter `templates/workspaces/<name>/`; der
+Mechanismus ist generisch, der Inhalt gehört in den User Space.
+
+```bash
+aios init --list-templates
+
+mkdir ~/forensik && cd ~/forensik
+aios init --template forensics
+```
+
+Eine Vorlage bringt mit:
+
+- `.aios/context.yaml` (Personas, Patterns, Provider-Routing, Security-Flags)
+- `CLAUDE.md` und `AGENTS.md` mit den Verhaltensregeln des Arbeitsverzeichnisses
+- `.gitignore`, `.env` und die Verzeichnisse, die sie in `template.yaml` deklariert
+- Symlinks in die AIOS-Installation, damit `aios update` verlinkte Inhalte
+  (z. B. Skills unter `.claude/skills/`) mitzieht
+
+Eigenschaften, auf die man sich verlassen kann:
+
+- **Nichts wird überschrieben.** Vorhandene Dateien bleiben unberührt und
+  werden als „Left alone“ gemeldet. Ein zweiter Lauf ist damit gefahrlos.
+- **Kein Lauf im AIOS-Verzeichnis.** Der Aufruf im Installationsverzeichnis
+  selbst bricht mit einer Erklärung ab — er würde das Repository in ein
+  Arbeitsverzeichnis verwandeln.
+- **Ohne AIOS-Pfad kein Symlink.** Wird die Installation nicht gefunden, läuft
+  alles andere durch und die fehlenden Links werden als Warnung mit dem
+  passenden `ln -s`-Befehl gemeldet. `--aios-path` setzt den Pfad explizit.
+- **Auf Windows ohne Symlink-Recht** wird kopiert statt verlinkt, mit dem
+  Hinweis, dass `aios update` diese Kopie nicht aktualisiert.
+
+Verfügbare Vorlage:
+
+| Vorlage | Zweck |
+|---------|-------|
+| `forensics` | Host-Forensik: rein lesende Prüfung von Windows/macOS/Linux, Fallordner mit SHA-256-Manifest, Bericht mit Ampel. Aktiviert Persona `forensic_analyst` und die `forensic-*`-Patterns, setzt `default_provider: ollama`, damit Fallordner-Inhalte lokal bleiben. Siehe `docs/requirements/REQ-002-host-forensics.md`. |
 
 ---
 

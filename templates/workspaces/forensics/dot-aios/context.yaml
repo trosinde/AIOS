@@ -1,0 +1,71 @@
+# AIOS Context — Host-Forensik
+# Erzeugt von: aios init --template forensics
+# Anpassen und danach: aios init --refresh
+
+schema_version: "1.0"
+name: "{{name}}"
+description: >
+  Host-Forensik-Arbeitsverzeichnis. Rein lesende Prüfung von Windows, macOS
+  und Linux auf Anzeichen einer Kompromittierung. Beweise liegen in cases/,
+  portable Werkzeuge in tools/. Massnahmen werden vorgeschlagen, nie
+  ausgeführt.
+type: project
+
+capabilities:
+  - id: host-triage
+    description: Rein lesende Triage eines einzelnen Rechners mit Fallordner und Prüfsummen
+  - id: evidence-collection
+    description: Beweissicherung nach RFC 3227 mit SHA-256-Manifest und Chain of Custody
+  - id: artifact-analysis
+    description: Auswertung von Eventlogs, Registry, Dateizeiten und Speicherabbildern
+
+exports: []
+accepts: []
+links: []
+
+config:
+  # Lokales Modell als Standard: Fallordner enthalten Dateipfade mit
+  # Nutzernamen, Logauszüge und Kontonamen. Diese Rohdaten sollen den
+  # Rechner nicht verlassen. Mit `aios run <pattern> --provider claude`
+  # lässt sich das pro Aufruf überschreiben.
+  default_provider: ollama
+  patterns_dir: ./patterns
+  personas_dir: ./personas
+  knowledge_dir: ./knowledge
+
+project:
+  domain: security-forensics
+  language: shell
+  repo: null
+
+compliance:
+  standards: []
+  requireTraceability: true
+  requireTestCoverage: false
+
+personas:
+  active:
+    - forensic_analyst
+  inactive: []
+
+providers:
+  routing:
+    forensic-investigate: ollama
+    forensic-analyze: ollama
+    forensic-timeline: ollama
+    forensic-memory: ollama
+    forensic-report: ollama
+    # Anreicherung spricht mit externen Diensten und braucht kein lokales
+    # Modell für Datenschutz — nur Hashes gehen nach aussen.
+    forensic-enrich: ollama
+
+knowledge:
+  autoIndex: []
+  autoExtract: false
+
+security:
+  # Fallordner sind nicht vertrauenswürdige Eingaben: sie enthalten
+  # Dateinamen, Logzeilen und Registry-Werte von einem möglicherweise
+  # kompromittierten System. Eine Logzeile kann eine Anweisung an das
+  # Modell enthalten, die jemand absichtlich dort hinterlassen hat.
+  integrity_policies: strict

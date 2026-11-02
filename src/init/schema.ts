@@ -271,5 +271,12 @@ function normalizeContextConfig(obj: Record<string, unknown>): ContextConfig {
     ...(obj.memory && typeof obj.memory === "object" && !Array.isArray(obj.memory)
       ? { memory: obj.memory as ContextConfig["memory"] }
       : {}),
+    // security carries integrity_policies, which buildSecurityLayer() reads to
+    // decide between strict and relaxed policies. Dropping it here silently
+    // downgraded any context that asked for strict on the next round-trip
+    // (aios init --refresh re-serialises from this very function).
+    ...(obj.security && typeof obj.security === "object" && !Array.isArray(obj.security)
+      ? { security: obj.security as ContextConfig["security"] }
+      : {}),
   };
 }

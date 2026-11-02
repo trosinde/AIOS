@@ -189,3 +189,54 @@ describe("schema", () => {
     });
   });
 });
+
+describe("ContextConfig round-trip completeness", () => {
+  /**
+   * parseContextYaml + serializeContext is the round-trip that
+   * `aios init --refresh` performs. A field dropped here is a setting the
+   * user loses without being told — the security block in particular, since
+   * buildSecurityLayer() reads integrity_policies from it.
+   */
+  it("keeps security.integrity_policies across parse and serialize", () => {
+    const yaml = [
+      'schema_version: "1.0"',
+      "name: forensics-workspace",
+      "type: project",
+      "security:",
+      "  integrity_policies: strict",
+      "",
+    ].join("\n");
+
+    const parsed = parseContextYaml(yaml);
+    expect(parsed.security?.integrity_policies).toBe("strict");
+
+    const reparsed = parseContextYaml(serializeContext(parsed));
+    expect(reparsed.security?.integrity_policies).toBe("strict");
+  });
+
+  it("keeps the security codeshield allow/deny lists", () => {
+    const yaml = [
+      'schema_version: "1.0"',
+      "name: ws",
+      "security:",
+      "  integrity_policies: strict",
+      "  codeshield:",
+      "    allowList:",
+      // Quoted on purpose: a CodeShield prefix normally ends in a space
+      // ("git " must not match "gitx"), and YAML strips a trailing space
+      // from a plain scalar.
+      '      - "git "',
+      "    denyList:",
+      "      - rm -rf /",
+      "",
+    ].join("\n");
+    const reparsed = parseContextYaml(serializeContext(parseContextYaml(yaml)));
+    expect(reparsed.security?.codeshield?.allowList).toEqual(["git "]);
+    expect(reparsed.security?.codeshield?.denyList).toEqual(["rm -rf /"]);
+  });
+
+  it("leaves security absent when the input has none", () => {
+    const parsed = parseContextYaml('schema_version: "1.0"\nname: ws\n');
+    expect(parsed.security).toBeUndefined();
+  });
+});

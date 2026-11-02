@@ -1,0 +1,20 @@
+# Host-Forensik — lokale Einstellungen
+#
+# Diese Datei steht in .gitignore und wird nicht committet.
+# Die Skripte des Skills lesen Umgebungsvariablen; eine Datei wird von bash
+# nicht automatisch geladen. Zum Setzen in der Shell:
+#   set -a; . ./.env; set +a
+
+# Wo die portablen Werkzeuge liegen. Ohne diese Variable suchen die Skripte
+# ohnehin in ./tools — der Eintrag macht es nur explizit und gilt auch für
+# "aios run".
+HOST_FORENSICS_TOOLS=./tools
+
+# Lokales Modell, damit Fallordner-Inhalte den Rechner nicht verlassen.
+OLLAMA_HOST=http://localhost:11434
+
+# Hash-Anreicherung (optional). Ohne Schlüssel wird nur CIRCL hashlookup
+# abgefragt — das braucht keinen und liefert nur bekannte GUTE Dateien.
+# Es gehen ausschliesslich Hashes nach aussen, nie Dateien.
+# VT_API_KEY=
+# MB_API_KEY=

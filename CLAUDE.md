@@ -208,6 +208,21 @@ Jede Implementierung MUSS vor dem Commit diese drei Reviews durchlaufen. Führe 
 5. Erst dann committen
 ```
 
+## Agent Skills (`.claude/skills/`)
+
+Claude Code und GitHub Copilot CLI lesen beide Skills aus `.claude/skills/`.
+Ein Skill dort ist damit in beiden Agenten nutzbar, aus einer Quelle.
+
+- `host-forensics` — rein lesende Host-Forensik (Windows, macOS, Linux, WSL).
+  Sichert Beweise in einen Fallordner mit SHA-256-Manifest und Chain of
+  Custody, erstellt einen Bericht mit Ampel und Abdeckungstabelle. Schlägt
+  Massnahmen vor, führt sie nie aus. Siehe
+  `docs/requirements/REQ-002-host-forensics.md`.
+
+Ein Skill im Repo bleibt User Space: er wird zur Laufzeit gelesen, nie
+gebündelt. Arbeitsverzeichnisse binden ihn per Symlink ein
+(`aios init --template forensics`), damit `aios update` ihn mitzieht.
+
 ## Security Guidelines
 
 - Every LLM call MUST use the PromptBuilder for Data/Instruction Separation
@@ -237,6 +252,8 @@ aios persona validate [name]             # Validate persona against Base Trait P
 aios update                              # Update AIOS auf neueste Version
 aios update --check                      # Nur prüfen ob Updates verfügbar
 aios configure                           # Interaktiver Setup-Wizard
+aios init --template <name>              # Arbeitsverzeichnis aus Vorlage anlegen
+aios init --list-templates               # Verfügbare Arbeitsverzeichnis-Vorlagen
 aios context init <name> [--local]       # Create new context
 aios context switch <name>               # Switch active context
 aios context rename <new-name>           # Rename active context
