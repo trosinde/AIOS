@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { stringify, parse } from "yaml";
 import type { ContextConfig } from "../types.js";
 
@@ -73,12 +73,28 @@ export function validateManifest(manifest: ContextConfig): void {
 
 /**
  * Prüft ob ein aufgelöster Pfad innerhalb einer Basis liegt.
+ *
+ * Bewusst KEIN nacktes startsWith: damit würde "/srv/aios-evil" als innerhalb
+ * von "/srv/aios" gelten, weil die Zeichenkette passt, obwohl es ein
+ * Nachbarverzeichnis ist. Die Prüfung auf den Separator macht daraus einen
+ * Containment-Test statt eines Präfix-Tests.
+ *
+ * Einzige Stelle mit dieser Logik im Repo — src/init/template.ts nutzt sie
+ * ebenfalls, damit nicht zwei Fassungen auseinanderlaufen.
+ */
+export function isPathWithinBase(resolvedPath: string, basePath: string): boolean {
+  const base = resolve(basePath);
+  const target = resolve(resolvedPath);
+  if (target === base) return true;
+  return target.startsWith(base.endsWith(sep) ? base : base + sep);
+}
+
+/**
+ * Wie isPathWithinBase, wirft aber bei Verletzung.
  * Verhindert Path-Traversal-Angriffe über patterns_dir/personas_dir.
  */
 export function assertPathWithinBase(resolvedPath: string, basePath: string): void {
-  const normalizedBase = resolve(basePath);
-  const normalizedTarget = resolve(resolvedPath);
-  if (!normalizedTarget.startsWith(normalizedBase)) {
+  if (!isPathWithinBase(resolvedPath, basePath)) {
     throw new Error(`Path Traversal blockiert: "${resolvedPath}" liegt außerhalb von "${basePath}"`);
   }
 }

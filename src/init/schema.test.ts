@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseContextYaml, serializeContext, createDefaultContext } from "./schema.js";
 import type { ContextConfig } from "../types.js";
 import { stringify } from "yaml";
@@ -187,5 +187,97 @@ describe("schema", () => {
       expect(ctx.name).toBe("my-project");
       expect(ctx.project?.language).toBe("python");
     });
+  });
+});
+
+describe("ContextConfig round-trip completeness", () => {
+  /**
+   * parseContextYaml + serializeContext is the round-trip that
+   * `aios init --refresh` performs. A field dropped here is a setting the
+   * user loses without being told — the security block in particular, since
+   * buildSecurityLayer() reads integrity_policies from it.
+   */
+  it("keeps security.integrity_policies across parse and serialize", () => {
+    const yaml = [
+      'schema_version: "1.0"',
+      "name: forensics-workspace",
+      "type: project",
+      "security:",
+      "  integrity_policies: strict",
+      "",
+    ].join("\n");
+
+    const parsed = parseContextYaml(yaml);
+    expect(parsed.security?.integrity_policies).toBe("strict");
+
+    const reparsed = parseContextYaml(serializeContext(parsed));
+    expect(reparsed.security?.integrity_policies).toBe("strict");
+  });
+
+  it("keeps the security codeshield allow/deny lists", () => {
+    const yaml = [
+      'schema_version: "1.0"',
+      "name: ws",
+      "security:",
+      "  integrity_policies: strict",
+      "  codeshield:",
+      "    allowList:",
+      // Quoted on purpose: a CodeShield prefix normally ends in a space
+      // ("git " must not match "gitx"), and YAML strips a trailing space
+      // from a plain scalar.
+      '      - "git "',
+      "    denyList:",
+      "      - rm -rf /",
+      "",
+    ].join("\n");
+    const reparsed = parseContextYaml(serializeContext(parseContextYaml(yaml)));
+    expect(reparsed.security?.codeshield?.allowList).toEqual(["git "]);
+    expect(reparsed.security?.codeshield?.denyList).toEqual(["rm -rf /"]);
+  });
+
+  it("drops an unknown integrity_policies value and says so", () => {
+    // A typo in the one flag that turns integrity checks on used to pass the
+    // cast, fail the === "strict" comparison, and leave an empty policy set
+    // with no diagnostic — a security flag failing open in silence.
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const parsed = parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_policies: Strict\n',
+      );
+      expect(parsed.security?.integrity_policies).toBeUndefined();
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/integrity_policies="Strict" ist unbekannt/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("warns about an unknown key inside security", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_polices: strict\n',
+      );
+      expect(warn.mock.calls.flat().join(" ")).toMatch(/security\.integrity_polices ist kein bekannter Schlüssel/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("accepts relaxed without complaint", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const parsed = parseContextYaml(
+        'schema_version: "1.0"\nname: ws\nsecurity:\n  integrity_policies: relaxed\n',
+      );
+      expect(parsed.security?.integrity_policies).toBe("relaxed");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("leaves security absent when the input has none", () => {
+    const parsed = parseContextYaml('schema_version: "1.0"\nname: ws\n');
+    expect(parsed.security).toBeUndefined();
   });
 });

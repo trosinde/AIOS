@@ -1633,15 +1633,110 @@ Du bist ein Experte für [Bereich]. [Beschreibung deiner Rolle und Expertise.]
 // ─── aios init ──────────────────────────────────────────
 program
   .command("init")
-  .description("Initialize .aios/ project context (interactive wizard)")
+  .description("Initialize .aios/ project context (interactive wizard, or --template)")
   .option("--quick", "Auto-detect everything, no questions")
   .option("--yes", "Show plan and auto-confirm")
   .option("--refresh", "Regenerate agent-instructions.md from existing context.yaml")
   .option("--aios-path <path>", "Pre-set AIOS installation path")
+  .option("--template <name>", "Set up a workspace from a template instead of the wizard")
+  .option("--list-templates", "List available workspace templates and exit")
   .action(async (opts) => {
     const cwd = process.cwd();
     const { existsSync: exists } = await import("fs");
     const { join: pJoin } = await import("path");
+
+    // ─── List available templates ───────────────────────────
+    if (opts.listTemplates) {
+      const { listTemplates } = await import("./init/template.js");
+      const templates = listTemplates();
+      if (templates.length === 0) {
+        console.error(chalk.yellow("  No workspace templates found."));
+        process.exit(1);
+      }
+      // The listing is the result, so it goes to stdout (CLAUDE.md: logging
+      // on stderr, results on stdout). Same as `aios patterns list` and
+      // `aios context list`, and it keeps
+      // `aios init --list-templates | grep forensics` working.
+      console.log(chalk.cyan("Workspace templates:"));
+      for (const t of templates) {
+        console.log(`  ${chalk.bold(t.name.padEnd(14))} ${chalk.gray(t.description)}`);
+      }
+      console.error();
+      console.error(chalk.gray("  Use: aios init --template <name>"));
+      process.exit(0);
+    }
+
+    // ─── Apply a template (non-interactive) ─────────────────
+    if (opts.template) {
+      // --refresh regenerates from an existing context.yaml, --template sets
+      // up a new workspace. Silently letting one win would surprise either way.
+      if (opts.refresh) {
+        console.error(chalk.red("  --template und --refresh schliessen sich aus."));
+        console.error(chalk.gray("    --template richtet ein Arbeitsverzeichnis ein, --refresh erneuert ein bestehendes."));
+        process.exit(1);
+      }
+      const { applyTemplate, relativize } = await import("./init/template.js");
+      const { detectAiosPath } = await import("./init/aios-path.js");
+      const { resolve: pResolve } = await import("path");
+
+      const aiosRoot = opts.aiosPath ? pResolve(cwd, opts.aiosPath) : detectAiosPath(cwd);
+      if (!aiosRoot) {
+        console.error(chalk.yellow("  ⚠ No AIOS installation found — links into it will be skipped."));
+        console.error(chalk.gray("    Pass --aios-path <path> to set it explicitly."));
+      }
+
+      try {
+        const applied = applyTemplate({ name: opts.template, cwd, aiosRoot });
+
+        console.error();
+        console.error(chalk.green(`  ✓ Workspace ready from template "${applied.manifest.name}"`));
+        console.error(chalk.gray(`    ${applied.manifest.description}`));
+        console.error();
+        if (applied.created.length > 0) {
+          console.error(chalk.cyan("  Created:"));
+          for (const f of relativize(applied.created, cwd)) console.error(chalk.gray(`    ${f}`));
+        }
+        if (applied.links.length > 0) {
+          console.error(chalk.cyan("  Linked:"));
+          // "<workspace path> -> <aios path>": only the left side is inside
+          // cwd, so relativize that half and leave the target absolute.
+          for (const l of applied.links) {
+            const [from, to] = l.split(" -> ");
+            const shown = to ? `${relativize([from!], cwd)[0]} -> ${to}` : l;
+            console.error(chalk.gray(`    ${shown}`));
+          }
+        }
+        if (applied.skipped.length > 0) {
+          console.error(chalk.cyan("  Left alone (already present):"));
+          for (const f of relativize(applied.skipped, cwd)) console.error(chalk.gray(`    ${f}`));
+        }
+        if (applied.warnings.length > 0) {
+          console.error();
+          for (const w of applied.warnings) console.error(chalk.yellow(`  ⚠ ${w}`));
+        }
+
+        // Register in the federation registry (best-effort, same as the wizard path)
+        try {
+          const { registerContext } = await import("./context/registry.js");
+          registerContext(applied.context, cwd);
+        } catch {
+          // Registry registration is best-effort
+        }
+
+        const steps = applied.manifest.next_steps ?? [];
+        if (steps.length > 0) {
+          console.error();
+          console.error(chalk.gray("  Next steps:"));
+          for (const step of steps) console.error(chalk.gray(`    ${step}`));
+        }
+        console.error();
+        process.exit(0);
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        console.error(chalk.gray("  List templates: aios init --list-templates"));
+        process.exit(1);
+      }
+    }
 
     // ─── Refresh mode: regenerate from existing context.yaml ───
     if (opts.refresh) {

@@ -7,6 +7,9 @@ dist/
 .env
 azdo-config.json
 output/
+# Audit-Trail des AuditLoggers: entsteht beim Ausführen von aios,
+# enthält Laufzeitdaten und gehört nicht ins Repository.
+logs/
 scripts/perf/results-*.json
 scripts/perf/kb-scenarios-*.json
 scripts/perf/mempalace-parity-*.json

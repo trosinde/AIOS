@@ -2,11 +2,12 @@ import { createInterface, type Interface } from "readline";
 import chalk from "chalk";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve, join } from "path";
-import { homedir } from "os";
+
 import { parse as parseYaml } from "yaml";
 import type { ScanResult } from "./scanner.js";
 import type { ContextConfig, ComplianceStandard } from "../types.js";
 import { createDefaultContext } from "./schema.js";
+import { detectAiosPath } from "./aios-path.js";
 
 // ─── Options ─────────────────────────────────────────────
 
@@ -70,22 +71,8 @@ async function askMultiChoice(rl: Interface, prompt: string, options: string[], 
 }
 
 // ─── AIOS Path Detection ─────────────────────────────────
-
-function detectAiosPath(cwd: string): string | null {
-  const candidates = [
-    resolve(cwd, "..", "AIOS"),
-    resolve(cwd, "..", "aios"),
-    join(homedir(), "tools", "AIOS"),
-    join(homedir(), "AIOS"),
-    join(homedir(), ".local", "share", "aios"),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "patterns")) && existsSync(join(candidate, "src"))) {
-      return candidate;
-    }
-  }
-  return null;
-}
+// Shared with `aios init --template`, so both find the same installation —
+// including ~/.aios/repo, where install.sh puts the clone.
 
 // ─── Domain Suggestions ──────────────────────────────────
 

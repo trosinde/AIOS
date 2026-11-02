@@ -1,0 +1,28 @@
+# Arbeitsverzeichnis-Vorlage: Host-Forensik
+#
+# Wird von `aios init --template forensics` angewendet. Der Mechanismus liegt
+# in src/init/template.ts; der Inhalt hier ist User Space.
+#
+# Konventionen:
+#   dot-<name>   wird als .<name> ins Arbeitsverzeichnis geschrieben
+#   {{name}}     in dot-aios/context.yaml durch den Verzeichnisnamen ersetzt
+#   links        Symlinks in die AIOS-Installation, damit `aios update` wirkt
+
+name: forensics
+description: Host-Forensik — rein lesende Prüfung mit Fallordner, Prüfsummen und Ampel-Bericht
+
+dirs:
+  - cases
+  - tools
+
+links:
+  # Claude Code und GitHub Copilot CLI lesen beide .claude/skills/.
+  # Ein Symlink statt einer Kopie: so bringt `aios update` auch den Skill mit.
+  - path: .claude/skills/host-forensics
+    target: .claude/skills/host-forensics
+
+next_steps:
+  - "Werkzeuge ansehen:  bash .claude/skills/host-forensics/scripts/fetch-tools.sh --list"
+  - "Werkzeuge laden:    bash .claude/skills/host-forensics/scripts/fetch-tools.sh --install hayabusa,chainsaw,yara-x"
+  - "Agent starten:      claude     (oder: copilot)"
+  - 'Dann fragen:        "Prüf meinen Rechner auf verdächtige Aktivität."'

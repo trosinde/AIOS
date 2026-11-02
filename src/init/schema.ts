@@ -223,6 +223,38 @@ function legacyToContextConfig(legacy: AiosContext): ContextConfig {
   };
 }
 
+/**
+ * Validate the security block instead of casting it.
+ *
+ * integrity_policies is the one flag in the schema that turns integrity
+ * checks on. A typo ("Strict", "integrity_polices", `true`) used to pass the
+ * cast, fail the `=== "strict"` comparison in buildSecurityLayer, and produce
+ * an empty policy set with no diagnostic — a security flag failing open in
+ * silence. The forensics workspace template depends on this flag precisely
+ * because a case folder is untrusted input, so say something instead.
+ */
+function normalizeSecurity(raw: Record<string, unknown>): ContextConfig["security"] {
+  const out: Record<string, unknown> = { ...raw };
+  const ip = raw.integrity_policies;
+  if (ip !== undefined && ip !== "strict" && ip !== "relaxed") {
+    console.error(
+      `⚠️  context.yaml: security.integrity_policies="${String(ip)}" ist unbekannt — ` +
+      `gültig sind "strict" und "relaxed". Es gilt "relaxed" (leeres Policy-Set).`,
+    );
+    delete out.integrity_policies;
+  }
+  // A misspelled key is the other half of the same mistake and just as silent.
+  for (const key of Object.keys(raw)) {
+    if (!["integrity_policies", "codeshield"].includes(key)) {
+      console.error(
+        `⚠️  context.yaml: security.${key} ist kein bekannter Schlüssel und wird ignoriert. ` +
+        `Bekannt sind: integrity_policies, codeshield.`,
+      );
+    }
+  }
+  return out as ContextConfig["security"];
+}
+
 /** Normalize a parsed YAML object into a ContextConfig with defaults.
  *  Validates structural types at runtime to catch malformed YAML early. */
 function normalizeContextConfig(obj: Record<string, unknown>): ContextConfig {
@@ -270,6 +302,13 @@ function normalizeContextConfig(obj: Record<string, unknown>): ContextConfig {
     ...(Array.isArray(obj.required_traits) ? { required_traits: obj.required_traits as string[] } : {}),
     ...(obj.memory && typeof obj.memory === "object" && !Array.isArray(obj.memory)
       ? { memory: obj.memory as ContextConfig["memory"] }
+      : {}),
+    // security carries integrity_policies, which buildSecurityLayer() reads to
+    // decide between strict and relaxed policies. Dropping it here silently
+    // downgraded any context that asked for strict on the next round-trip
+    // (aios init --refresh re-serialises from this very function).
+    ...(obj.security && typeof obj.security === "object" && !Array.isArray(obj.security)
+      ? { security: normalizeSecurity(obj.security as Record<string, unknown>) }
       : {}),
   };
 }

@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # Defaults are opened/synchronize/reopened. ready_for_review is added so
+    # that taking a PR out of draft runs CI and lets auto-merge pick it up —
+    # without it, a draft marked ready would sit there until the next push.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       ref:
@@ -116,12 +120,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUM: ${{ github.event.pull_request.number }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           # Only auto-merge PRs authored by the repo owner or github-actions
           # (mirrors the pr-admin-merge rule: own/CI PRs only, never third-party).
           OWNER="${{ github.repository_owner }}"
           if [ "$PR_AUTHOR" != "$OWNER" ] && [ "$PR_AUTHOR" != "github-actions[bot]" ]; then
             echo "PR #$PR_NUM authored by $PR_AUTHOR — skipping auto-merge (not owner/CI)."
+            exit 0
+          fi
+          # A draft is an explicit "not yet": gh pr merge fails on one
+          # ("Pull Request is still a draft"), which left every draft PR with a
+          # permanently red check for no reason. Skip instead — marking the PR
+          # ready for review triggers a fresh run that does merge it.
+          if [ "$PR_DRAFT" = "true" ]; then
+            echo "PR #$PR_NUM is a draft — skipping auto-merge."
+            echo "Mark it ready for review to merge it."
             exit 0
           fi
           MERGE_STATE=$(gh pr view "$PR_NUM" --json mergeStateStatus --jq '.mergeStateStatus')

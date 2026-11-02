@@ -1,0 +1,41 @@
+# AIOS host-forensics — Tool-Katalog (Quellen ausschliesslich offizielle Projekt-Releases)
+# Felder: id	os	arch	version	url	digest_source	extract	entry	license	purpose
+#   digest_source: gh-api = SHA-256 aus der GitHub-Release-API (Feld "digest");
+#                  <URL>  = veroeffentlichte Checksum-Datei;
+#                  none   = Projekt veroeffentlicht keine Pruefsumme -> TOFU via tools/lock.tsv
+#   extract:       zip 	 targz 	 gz 	 none
+#   entry:         Pfad der Binary im Archiv, oder * fuer ganze Baeume (Regeln)
+# Versionen sind Stand 2026-11-02 gepinnt. Aktualisieren: fetch-tools.sh --check
+hayabusa	linux	x86_64	4.3.1	https://github.com/Yamato-Security/hayabusa/releases/download/v4.3.1/hayabusa-4.3.1-lin-x64-gnu.zip	gh-api	zip	hayabusa	AGPL-3.0	Windows-Eventlogs zu Sigma-Timeline
+hayabusa	linux	aarch64	4.3.1	https://github.com/Yamato-Security/hayabusa/releases/download/v4.3.1/hayabusa-4.3.1-lin-aarch64-gnu.zip	gh-api	zip	hayabusa	AGPL-3.0	Windows-Eventlogs zu Sigma-Timeline
+hayabusa	darwin	x86_64	4.3.1	https://github.com/Yamato-Security/hayabusa/releases/download/v4.3.1/hayabusa-4.3.1-mac-x64.zip	gh-api	zip	hayabusa	AGPL-3.0	Windows-Eventlogs zu Sigma-Timeline
+hayabusa	darwin	aarch64	4.3.1	https://github.com/Yamato-Security/hayabusa/releases/download/v4.3.1/hayabusa-4.3.1-mac-aarch64.zip	gh-api	zip	hayabusa	AGPL-3.0	Windows-Eventlogs zu Sigma-Timeline
+hayabusa	windows	x86_64	4.3.1	https://github.com/Yamato-Security/hayabusa/releases/download/v4.3.1/hayabusa-4.3.1-win-x64.zip	gh-api	zip	hayabusa.exe	AGPL-3.0	Windows-Eventlogs zu Sigma-Timeline
+chainsaw	linux	x86_64	2.17.1	https://github.com/WithSecureLabs/chainsaw/releases/download/v2.17.1/chainsaw_x86_64-unknown-linux-gnu.tar.gz	gh-api	targz	chainsaw	GPL-3.0	Eventlog-Hunting mit Sigma-Regeln
+chainsaw	linux	aarch64	2.17.1	https://github.com/WithSecureLabs/chainsaw/releases/download/v2.17.1/chainsaw_aarch64-unknown-linux-gnu.tar.gz	gh-api	targz	chainsaw	GPL-3.0	Eventlog-Hunting mit Sigma-Regeln
+chainsaw	darwin	x86_64	2.17.1	https://github.com/WithSecureLabs/chainsaw/releases/download/v2.17.1/chainsaw_x86_64-apple-darwin.zip	gh-api	zip	chainsaw	GPL-3.0	Eventlog-Hunting mit Sigma-Regeln
+chainsaw	darwin	aarch64	2.17.1	https://github.com/WithSecureLabs/chainsaw/releases/download/v2.17.1/chainsaw_aarch64-apple-darwin.zip	gh-api	zip	chainsaw	GPL-3.0	Eventlog-Hunting mit Sigma-Regeln
+chainsaw	windows	x86_64	2.17.1	https://github.com/WithSecureLabs/chainsaw/releases/download/v2.17.1/chainsaw_x86_64-pc-windows-msvc.zip	gh-api	zip	chainsaw.exe	GPL-3.0	Eventlog-Hunting mit Sigma-Regeln
+yara-x	linux	x86_64	1.22.1	https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-x86_64-unknown-linux-gnu.tar.gz	gh-api	targz	yr	BSD-3-Clause	YARA-Regeln auf Dateien anwenden
+yara-x	linux	aarch64	1.22.1	https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-aarch64-unknown-linux-gnu.tar.gz	gh-api	targz	yr	BSD-3-Clause	YARA-Regeln auf Dateien anwenden
+yara-x	darwin	x86_64	1.22.1	https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-x86_64-apple-darwin.tar.gz	gh-api	targz	yr	BSD-3-Clause	YARA-Regeln auf Dateien anwenden
+yara-x	darwin	aarch64	1.22.1	https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-aarch64-apple-darwin.tar.gz	gh-api	targz	yr	BSD-3-Clause	YARA-Regeln auf Dateien anwenden
+yara-x	windows	x86_64	1.22.1	https://github.com/VirusTotal/yara-x/releases/download/v1.22.1/yara-x-v1.22.1-x86_64-pc-windows-msvc.zip	gh-api	zip	yr.exe	BSD-3-Clause	YARA-Regeln auf Dateien anwenden
+velociraptor	linux	x86_64	0.77.3	https://github.com/Velocidex/velociraptor/releases/download/v0.77.3/velociraptor-v0.77.3-linux-amd64.gz	gh-api	gz	velociraptor	AGPL-3.0	Offline-Collector, rohes Lesen gesperrter Dateien
+velociraptor	linux	aarch64	0.77.3	https://github.com/Velocidex/velociraptor/releases/download/v0.77.3/velociraptor-v0.77.3-linux-arm64.gz	gh-api	gz	velociraptor	AGPL-3.0	Offline-Collector, rohes Lesen gesperrter Dateien
+velociraptor	darwin	x86_64	0.77.3	https://github.com/Velocidex/velociraptor/releases/download/v0.77.3/velociraptor-v0.77.3-darwin-amd64.gz	gh-api	gz	velociraptor	AGPL-3.0	Offline-Collector, rohes Lesen gesperrter Dateien
+velociraptor	darwin	aarch64	0.77.3	https://github.com/Velocidex/velociraptor/releases/download/v0.77.3/velociraptor-v0.77.3-darwin-arm64.gz	gh-api	gz	velociraptor	AGPL-3.0	Offline-Collector, rohes Lesen gesperrter Dateien
+velociraptor	windows	x86_64	0.77.3	https://github.com/Velocidex/velociraptor/releases/download/v0.77.3/velociraptor-v0.77.3-windows-amd64.exe.gz	gh-api	gz	velociraptor.exe	AGPL-3.0	Offline-Collector, rohes Lesen gesperrter Dateien
+osquery	linux	x86_64	5.24.0	https://github.com/osquery/osquery/releases/download/5.24.0/osquery-5.24.0_1.linux_x86_64.tar.gz	gh-api	targz	opt/osquery/bin/osqueryi	Apache-2.0 OR GPL-2.0	SQL-Abfragen auf Systemzustand
+osquery	linux	aarch64	5.24.0	https://github.com/osquery/osquery/releases/download/5.24.0/osquery-5.24.0_1.linux_aarch64.tar.gz	gh-api	targz	opt/osquery/bin/osqueryi	Apache-2.0 OR GPL-2.0	SQL-Abfragen auf Systemzustand
+osquery	darwin	aarch64	5.24.0	https://github.com/osquery/osquery/releases/download/5.24.0/osquery-5.24.0_1.macos_arm64.tar.gz	gh-api	targz	opt/osquery/bin/osqueryi	Apache-2.0 OR GPL-2.0	SQL-Abfragen auf Systemzustand
+osquery	windows	x86_64	5.24.0	https://github.com/osquery/osquery/releases/download/5.24.0/osquery-5.24.0.windows_x86_64.zip	gh-api	zip	osquery/osqueryi.exe	Apache-2.0 OR GPL-2.0	SQL-Abfragen auf Systemzustand
+avml	linux	x86_64	0.21.0	https://github.com/microsoft/avml/releases/download/v0.21.0/avml	gh-api	none	avml	MIT	Speicherabbild unter Linux
+avml	linux	aarch64	0.21.0	https://github.com/microsoft/avml/releases/download/v0.21.0/avml-aarch64	gh-api	none	avml	MIT	Speicherabbild unter Linux
+winpmem	windows	x86_64	1.0-rc2	https://github.com/Velocidex/WinPmem/releases/download/v4.0.rc1/winpmem_mini_x64_rc2.exe	gh-api	none	winpmem.exe	Apache-2.0	Speicherabbild unter Windows
+uac	linux	any	3.4.0	https://github.com/tclahr/uac/releases/download/v3.4.0/uac-3.4.0.tar.gz	https://github.com/tclahr/uac/releases/download/v3.4.0/uac-3.4.0.tar.gz.sha256	targz	uac-3.4.0/uac	Apache-2.0	Artefakt-Sammler fuer Unix-artige Systeme
+uac	darwin	any	3.4.0	https://github.com/tclahr/uac/releases/download/v3.4.0/uac-3.4.0.tar.gz	https://github.com/tclahr/uac/releases/download/v3.4.0/uac-3.4.0.tar.gz.sha256	targz	uac-3.4.0/uac	Apache-2.0	Artefakt-Sammler fuer Unix-artige Systeme
+yara-forge-core	any	any	20261101	https://github.com/YARAHQ/yara-forge/releases/download/20261101/yara-forge-rules-core.zip	gh-api	zip	*	gemischt, siehe yara-forge-log.txt	Kuratierte YARA-Regeln, wenig Falschalarme
+yara-forge-extended	any	any	20261101	https://github.com/YARAHQ/yara-forge/releases/download/20261101/yara-forge-rules-extended.zip	gh-api	zip	*	gemischt, siehe yara-forge-log.txt	Kuratierte YARA-Regeln, breiter, mehr Falschalarme
+volatility3-win	windows	x86_64	2.28.2	https://github.com/volatilityfoundation/volatility3/releases/download/v2.28.2/volatility3-win-exes-2.28.2.zip	gh-api	zip	vol.exe	VSL-1.0	Speicherabbild-Analyse, Windows-Binary
+autoruns	windows	x86_64	live	https://download.sysinternals.com/files/Autoruns.zip	none	zip	Autoruns64.exe	Sysinternals EULA	Autostart-Inventar Windows (immer neueste Version, keine Pruefsumme veroeffentlicht)

@@ -12,6 +12,7 @@ import {
   createDefaultManifest,
   mergeWithDefaults,
   assertPathWithinBase,
+  isPathWithinBase,
 } from "./manifest.js";
 import type { ContextManifest } from "../types.js";
 
@@ -249,5 +250,25 @@ describe("manifest", () => {
   it("blockiert absoluten Pfad außerhalb der Basis", () => {
     expect(() => assertPathWithinBase("/etc/passwd", "/home/user/project"))
       .toThrow("Path Traversal");
+  });
+
+  it("blockiert ein Nachbarverzeichnis mit gleichem Präfix", () => {
+    // Ein nacktes startsWith hätte das durchgelassen: die Zeichenkette passt,
+    // das Verzeichnis liegt aber daneben, nicht darin.
+    expect(() => assertPathWithinBase("/home/user/project-evil/patterns", "/home/user/project"))
+      .toThrow("Path Traversal");
+    expect(() => assertPathWithinBase("/home/user/projectX", "/home/user/project"))
+      .toThrow("Path Traversal");
+  });
+
+  it("akzeptiert die Basis selbst", () => {
+    expect(() => assertPathWithinBase("/home/user/project", "/home/user/project")).not.toThrow();
+  });
+
+  it("isPathWithinBase liefert denselben Befund ohne zu werfen", () => {
+    expect(isPathWithinBase("/home/user/project/.aios", "/home/user/project")).toBe(true);
+    expect(isPathWithinBase("/home/user/project", "/home/user/project")).toBe(true);
+    expect(isPathWithinBase("/home/user/project-evil", "/home/user/project")).toBe(false);
+    expect(isPathWithinBase("/etc/passwd", "/home/user/project")).toBe(false);
   });
 });
